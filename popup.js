@@ -1,64 +1,2214 @@
-(()=>{var Y=[],Z="todayProfit",te=-1,_=new Set,K=-1;function le(){_.clear(),K=-1}var N={loggedApis:new Set,reset(){this.loggedApis.clear(),console.log("%c[API Monitor] \u65E5\u5FD7\u72B6\u6001\u5DF2\u91CD\u7F6E\uFF0C\u5F00\u59CB\u76D1\u6D4B\u63A5\u53E3...","color: #1890ff; font-weight: bold;")},log(e,o,n){this.loggedApis.has(e)||(console.log(`[API Monitor] ${e} | \u72B6\u6001: ${n} | \u5730\u5740: ${o}`),this.loggedApis.add(e))}},p={addBtn:document.getElementById("addBtn"),groupList:document.getElementById("groupList"),groupFilter:document.getElementById("groupFilter"),tableBody:document.getElementById("fundTableBody"),status:document.getElementById("status"),fullscreenBtn:document.getElementById("fullscreenBtn"),refreshBtn:document.getElementById("refreshBtn"),totalAmount:document.getElementById("totalAmount"),totalTodayProfit:document.getElementById("totalTodayProfit"),totalTotalProfit:document.getElementById("totalTotalProfit"),totalYesterdayProfit:document.getElementById("totalYesterdayProfit"),exportBtn:document.getElementById("exportBtn"),importBtn:document.getElementById("importBtn"),importFile:document.getElementById("importFile"),modalOverlay:document.getElementById("modalOverlay"),modalTitle:document.getElementById("modalTitle"),modalMsg:document.getElementById("modalMsg"),modalInput:document.getElementById("modalInput"),modalFooter:document.getElementById("modalFooter"),toastContainer:document.getElementById("toastContainer"),batchGroupBtn:document.getElementById("batchGroupBtn"),batchClearBtn:document.getElementById("batchClearBtn")};function F(e,o="info",n=3e3){let a=document.createElement("div");a.className=`toast ${o}`,a.textContent=e,p.toastContainer.appendChild(a),setTimeout(()=>{a.classList.add("fade-out"),a.addEventListener("animationend",()=>a.remove())},n)}function H(e,o="\u63D0\u793A"){return new Promise(n=>{ie(o,e,!1),Q([{text:"\u786E\u5B9A",cls:"modal-btn-ok",onClick:()=>{q(),n()}}])})}function O(e,o="\u786E\u8BA4",n=!1){return new Promise(a=>{ie(o,e,!1),Q([{text:"\u53D6\u6D88",cls:"modal-btn-cancel",onClick:()=>{q(),a(!1)}},{text:"\u786E\u5B9A",cls:n?"modal-btn-danger":"modal-btn-ok",onClick:()=>{q(),a(!0)}}])})}function Fe(e,o="",n="\u8BF7\u8F93\u5165"){return new Promise(a=>{ie(n,e,!0,o);let s=()=>{let r=p.modalInput.value;q(),a(r)};p.modalInput.onkeydown=r=>{r.key==="Enter"&&s()},Q([{text:"\u53D6\u6D88",cls:"modal-btn-cancel",onClick:()=>{q(),a(null)}},{text:"\u786E\u5B9A",cls:"modal-btn-ok",onClick:s}]),p.modalInput.focus()})}function ie(e,o,n,a=""){p.modalTitle.textContent=e,p.modalMsg.textContent=o,n?(p.modalInput.value=a,p.modalInput.style.display="block"):p.modalInput.style.display="none",p.modalFooter.innerHTML="",p.modalOverlay.classList.add("visible")}function q(){p.modalOverlay.classList.remove("visible"),p.modalInput.onkeydown=null}function Q(e){p.modalFooter.innerHTML="",e.forEach(({text:o,cls:n,onClick:a})=>{let s=document.createElement("button");s.textContent=o,s.className=`modal-btn ${n}`,s.onclick=a,p.modalFooter.appendChild(s)})}function ne(){chrome.storage.local.get(["backupFunds","lastSettlementDate"],e=>{let o=document.getElementById("fabRollback");o&&(e.backupFunds&&e.lastSettlementDate===W()?o.style.display="block":o.style.display="none")})}function $e(){return new Promise(e=>{chrome.storage.local.get(["myFunds","lastUpdateDate","lastDayProfits"],o=>{let n=o.myFunds||{};if(Object.keys(n).length===0){e();return}let a={backupTime:new Date().toLocaleString(),lastUpdateDate:o.lastUpdateDate||"",lastDayProfits:o.lastDayProfits||{},myFunds:n};chrome.storage.local.set({backupFunds:a},()=>{console.log("[Backup] \u6570\u636E\u5DF2\u5907\u4EFD:",a),e()})})})}async function ke(){await O(`\u786E\u8BA4\u8FDB\u884C\u65E5\u7ED3\u7B97\u5417\uFF1F
-\u7CFB\u7EDF\u5C06\u5BF9\u6BD4\u6700\u65B0\u516C\u5E03\u7684\u51C0\u503C\u4E0E\u4E0A\u6B21\u7ED3\u7B97\u7684\u51C0\u503C\uFF0C\u8BA1\u7B97\u5E76\u8BB0\u5F55\u6536\u76CA\u3002`,"\u65E5\u7ED3\u7B97\u786E\u8BA4")&&(p.status.innerText="\u6B63\u5728\u5907\u4EFD\u6570\u636E...",await $e(),p.status.innerText="\u6B63\u5728\u6267\u884C\u65E5\u7ED3\u7B97...",chrome.storage.local.get(["myFunds"],async o=>{let n=o.myFunds||{},a=0;for(let s in n){let r=n[s],c=Y.find(l=>l.code===s);if(!c||!c.prevPrice)continue;let t=r.savedPrevPrice||(r.shares>0?r.amount/r.shares:c.prevPrice),u=parseFloat((r.shares*(c.prevPrice-t)).toFixed(2));n[s].holdProfit=parseFloat(((r.holdProfit||0)+u).toFixed(2)),n[s].yesterdayProfit=u,n[s].amount=parseFloat((r.shares*c.prevPrice).toFixed(2)),n[s].savedPrevPrice=c.prevPrice,n[s].savedPrevDate=c.prevPriceDate||W(),a++}chrome.storage.local.set({myFunds:n,lastSettlementDate:W(),lastUpdateDate:new Date().toLocaleDateString()},()=>{F(`\u2705 \u7ED3\u7B97\u5B8C\u6210\uFF01\u5DF2\u66F4\u65B0 ${a} \u6761`,"success"),ne(),B()})}))}async function De(){chrome.storage.local.get(["backupFunds"],async e=>{if(!e.backupFunds||!e.backupFunds.myFunds){await H("\u672A\u627E\u5230\u5907\u4EFD\u6570\u636E\uFF0C\u65E0\u6CD5\u64A4\u9500\uFF01");return}let o=e.backupFunds,n=o.backupTime||"\u672A\u77E5\u65F6\u95F4";await O(`\u786E\u5B9A\u8981\u64A4\u9500\u65E5\u7ED3\u7B97\u5417\uFF1F
+// ==================== 全局状态 ====================
+let currentFundsData = [];
+let sortField = 'todayProfit'; // 默认排序字段
+let sortDirection = -1;        // 1:升序, -1:降序
+let selectedCodes = new Set();
+let lastClickedIndex = -1; // 上次点击行索引，用于 Shift 范围选
 
-\u6570\u636E\u5C06\u6062\u590D\u81F3\u5907\u4EFD\u65F6\u95F4\uFF1A
-\u3010${n}\u3011
+function clearSelection() {
+    selectedCodes.clear();
+    lastClickedIndex = -1;
+}
 
-\u8BF7\u6CE8\u610F\uFF1A\u64A4\u9500\u540E\uFF0C\u5F53\u5929\u7684\u7ED3\u7B97\u72B6\u6001\u4E5F\u5C06\u91CD\u7F6E\u3002`,"\u64A4\u9500\u786E\u8BA4",!0)&&chrome.storage.local.set({myFunds:o.myFunds,lastDayProfits:o.lastDayProfits||{},lastUpdateDate:o.lastUpdateDate||"",lastSettlementDate:W(),backupFunds:null},()=>{F("\u2705 \u5DF2\u6210\u529F\u64A4\u9500\uFF0C\u6570\u636E\u5DF2\u6062\u590D\uFF01","success"),ne(),B()})})}async function Ee(e,o,n){console.log("[autoSettlement] \u68C0\u6D4B\u5230\u51C0\u503C\u66F4\u65B0\uFF0C\u5F00\u59CB\u81EA\u52A8\u7ED3\u7B97..."),p.status.innerText="\u6B63\u5728\u81EA\u52A8\u7ED3\u7B97...";let a={backupTime:new Date().toLocaleString(),myFunds:JSON.parse(JSON.stringify(e))};await new Promise(r=>chrome.storage.local.set({backupFunds:a},r));let s=0;for(let{code:r,live:c}of o){let t=e[r];if(!t||!c||c.prevPrice<=0)continue;let u=c.prevPrice,l=t.savedPrevPrice||(t.shares>0?t.amount/t.shares:u);if(Math.abs(u-l)<1e-5)continue;let i=parseFloat((t.shares*(u-l)).toFixed(2));e[r].holdProfit=parseFloat(((t.holdProfit||0)+i).toFixed(2)),e[r].yesterdayProfit=i,e[r].amount=parseFloat((t.shares*u).toFixed(2)),e[r].savedPrevPrice=u,e[r].savedPrevDate=c.prevPriceDate||n,s++}if(s===0){console.log("[autoSettlement] \u51C0\u503C\u65E0\u53D8\u5316\uFF0C\u8DF3\u8FC7");return}chrome.storage.local.set({myFunds:e,lastSettlementDate:n,lastUpdateDate:new Date().toLocaleDateString()},()=>{console.log(`[autoSettlement] \u2705 \u5B8C\u6210\uFF0C\u5171\u66F4\u65B0 ${s} \u6761`),F(`\u2705 \u5DF2\u81EA\u52A8\u5B8C\u6210\u65E5\u7ED3\u7B97\uFF08${s} \u6761\uFF09`,"success",4e3),ne(),B()})}function W(){let e=new Date;return`${e.getFullYear()}-${String(e.getMonth()+1).padStart(2,"0")}-${String(e.getDate()).padStart(2,"0")}`}document.addEventListener("DOMContentLoaded",async()=>{chrome.extension.getViews({type:"popup"}).includes(window)||document.body.classList.add("is-fullscreen"),ne(),B(),p.importFile.addEventListener("change",je),_e()});p.fullscreenBtn.onclick=()=>chrome.tabs.create({url:chrome.runtime.getURL("popup.html")});p.refreshBtn.onclick=()=>{p.refreshBtn.classList.add("spinning"),B().finally(()=>{setTimeout(()=>p.refreshBtn.classList.remove("spinning"),500)})};p.groupFilter.onchange=()=>{le(),V()};document.querySelectorAll(".sortable").forEach(e=>{e.addEventListener("click",()=>{let o=e.dataset.sort;Z===o?te*=-1:(Z=o,te=-1),V()})});function pe(e){return N.log("\u65B0\u6D6A\u4EE3\u7406",e,"\u53D1\u8D77\u8BF7\u6C42"),new Promise(o=>{chrome.runtime.sendMessage({type:"FETCH_SINA",url:e},n=>{if(n&&n.success&&n.data){let a=n.data.match(/"(.*)"/),s=a?a[1]:null;s?N.log("\u65B0\u6D6A\u4EE3\u7406",e,"\u6210\u529F\u83B7\u53D6\u6570\u636E"):N.log("\u65B0\u6D6A\u4EE3\u7406",e,"\u8FD4\u56DE\u6570\u636E\u683C\u5F0F\u65E0\u6548"),o(s)}else N.log("\u65B0\u6D6A\u4EE3\u7406",e,"\u8BF7\u6C42\u5931\u8D25\u6216\u65E0\u54CD\u5E94"),o(null)})})}async function G(e){let o=e.trim();if(/^\d{6}$/.test(o)){let n=`https://fundgz.1234567.com.cn/js/${o}.js?rt=${Date.now()}`;try{N.log("\u573A\u5916\u4E3B\u63A5\u53E3",n,"\u53D1\u8D77\u8BF7\u6C42");let c=(await(await fetch(n)).text()).match(/jsonpgz\((.*)\)/);if(c){let t=JSON.parse(c[1]);if(t&&(t.gsz||t.dwjz)){let u=parseFloat(t.dwjz)||0,l=parseFloat(t.gsz||t.dwjz)||0,i=parseFloat(t.gszzl)||0,d=t.gztime||"";return N.log("\u573A\u5916\u4E3B\u63A5\u53E3",n,"\u6210\u529F"),{name:t.name||`[\u672A\u77E5]${o}`,rate:i,price:l,prevPrice:u,prevPriceDate:t.jzrq||"",priceTime:d}}}N.log("\u573A\u5916\u4E3B\u63A5\u53E3",n,"\u6570\u636E\u65E0\u6548(\u5C1D\u8BD5\u5907\u7528)")}catch(s){N.log("\u573A\u5916\u4E3B\u63A5\u53E3",n,`\u8BF7\u6C42\u5F02\u5E38(${s.message})`)}let a=`https://fund.eastmoney.com/pingzhongdata/${o}.js?v=${Date.now()}`;try{N.log("\u573A\u5916\u5907\u7528\u63A5\u53E3",a,"\u53D1\u8D77\u8BF7\u6C42");let s=await fetch(a).then(r=>r.text());if(s&&s.includes("fS_name")){let r=s.match(/fS_name\s*=\s*"([^"]+)"/),c=r?r[1]:`[\u573A\u5916\u5907\u7528]${o}`,t=s.match(/Data_netWorthTrend\s*=\s*(\[.*?\])\s*;/);if(t){let u=JSON.parse(t[1]);if(u&&u.length>=2){let l=u[u.length-1],i=parseFloat(l.y)||parseFloat(l.unitMoney)||0,d=i,b=l.x?(()=>{let g=new Date(l.x);return`${g.getFullYear()}-${String(g.getMonth()+1).padStart(2,"0")}-${String(g.getDate()).padStart(2,"0")}`})():"";return N.log("\u573A\u5916\u5907\u7528\u63A5\u53E3",a,"\u6210\u529F"),{name:c,rate:null,price:i,prevPrice:d,prevPriceDate:b,isFallback:!0}}}}N.log("\u573A\u5916\u5907\u7528\u63A5\u53E3",a,"\u6570\u636E\u65E0\u6548")}catch(s){N.log("\u573A\u5916\u5907\u7528\u63A5\u53E3",a,`\u8BF7\u6C42\u5F02\u5E38(${s.message})`)}try{let r=`https://hq.sinajs.cn/list=${o.startsWith("5")?"sh":"sz"}${o}`,c=await pe(r);if(c&&c.split(",").length>10){let t=c.split(","),u=parseFloat(t[3])||0,l=parseFloat(t[2])||0,i=l!==0?parseFloat(((u-l)/l*100).toFixed(2)):0;return{name:"[\u573A]"+(t[0]||o),rate:i,price:u,prevPrice:l}}}catch(s){console.warn(`\u573A\u5185\u57FA\u91D1\u89E3\u6790\u5931\u8D25 ${o}:`,s)}}try{let n=`https://hq.sinajs.cn/list=nf_${o.toUpperCase()}`,a=await pe(n);if(a){let s=a.split(",");if(s.length>10){let r=parseFloat(s[8])||0,c=parseFloat(s[5])||0,t=c!==0?parseFloat(((r-c)/c*100).toFixed(2)):0;return{name:"[\u671F]"+(s[0]||o),rate:t,price:r,prevPrice:c}}}}catch(n){console.warn(`\u671F\u8D27\u89E3\u6790\u5931\u8D25 ${o}:`,n)}return{name:`[\u672A\u77E5]${o}`,rate:0,price:0,prevPrice:0}}async function B(){return le(),p.status.innerText="\u540C\u6B65\u884C\u60C5\u4E2D...",N.reset(),new Promise(e=>{chrome.storage.local.get(["myFunds","lastSettlementDate"],async o=>{let n=o.myFunds||{},a=Object.keys(n),s=!1,r=[],c=await Promise.all(a.map(async(l,i)=>{await new Promise(b=>setTimeout(b,i*50));let d=await G(l);return{code:l,live:d}})),t=W();o.lastSettlementDate!==t&&c.some(({code:i,live:d})=>{if(!d||d.prevPrice<=0)return!1;let b=n[i];return b.savedPrevPrice?Math.abs(d.prevPrice-b.savedPrevPrice)>1e-5:!1})&&await Ee(n,c,t);for(let{code:l,live:i}of c)if(i&&i.prevPrice>0){let d=n[l];if(d.pendingAdjustments&&d.pendingAdjustments.length>0){for(let y of d.pendingAdjustments)if(y.status!=="confirmed"&&t>=y.targetDate){if(y.type==="add"){let C=(y.feeRate||0)/100,P=i.prevPrice;if(P>0){let D=y.amount*(1-C)/P;d.shares=parseFloat((d.shares+D).toFixed(6)),d.amount=parseFloat((d.shares*P).toFixed(2)),y.status="confirmed",y.confirmedPrice=P,y.confirmedShares=parseFloat(D.toFixed(6)),y.confirmedDate=t,F(`\u2705 ${l} \u52A0\u4ED3\u5DF2\u786E\u8BA4 (\u51C0\u503C${P}, +${y.confirmedShares}\u4EFD)`,"success"),s=!0}}else if(y.type==="remove"){let C=i.prevPrice;C>0&&(d.shares=parseFloat((d.shares-y.shares).toFixed(6)),d.shares<0&&(d.shares=0),d.amount=parseFloat((d.shares*C).toFixed(2)),y.status="confirmed",y.confirmedPrice=C,y.confirmedShares=y.shares,y.confirmedDate=t,F(`\u2705 ${l} \u51CF\u4ED3\u5DF2\u786E\u8BA4 (\u51C0\u503C${C}, -${y.shares}\u4EFD)`,"success"),s=!0)}}}if(!d.shares&&d.amount>0&&(i.prevPrice>0?(d.shares=parseFloat((d.amount/i.prevPrice).toFixed(6)),s=!0):i.price>0&&(d.shares=parseFloat((d.amount/i.price).toFixed(6)),s=!0)),d.shares>0&&Math.abs(d.amount-d.shares)<1e-4&&i.prevPrice>0&&!i.name.includes("[\u672A\u77E5]")){let y=parseFloat((d.shares*i.prevPrice).toFixed(2));d.amount=y,s=!0}let b,g=!1;!i.isFallback&&i.price>0?b=d.shares?parseFloat((d.shares*(i.price-i.prevPrice)).toFixed(2)):0:i.prevPrice>0&&d.savedPrevPrice>0?(b=d.shares?parseFloat((d.shares*(i.prevPrice-d.savedPrevPrice)).toFixed(2)):0,g=!0):b=null;let $=parseFloat(((d.holdProfit||0)+(b||0)).toFixed(2));r.push({code:l,name:i.name,amount:d.amount||0,yesterdayProfit:d.yesterdayProfit||0,group:d.group||"\u9ED8\u8BA4",rate:i.rate,prevPrice:i.prevPrice||0,price:i.price||0,prevPriceDate:i.prevPriceDate||"",priceTime:i.priceTime||"",todayProfit:b,totalProfit:$,holdProfit:d.holdProfit||0,shares:d.shares||0,useFallbackNav:g,pendingAdjustments:d.pendingAdjustments})}Y=r.filter(Boolean);let u={};r.forEach(l=>{l&&(u[l.code]=l.todayProfit)}),chrome.storage.local.set({lastDayProfits:u}),s&&chrome.storage.local.set({myFunds:n}),Le(),V(),p.status.innerText=`\u6700\u540E\u66F4\u65B0: ${new Date().toLocaleTimeString()}`,e()})})}async function Se(){if(_.size===0)return F("\u274C \u8BF7\u5148\u52FE\u9009\u57FA\u91D1","error");await O(`\u786E\u8BA4\u6839\u636E\u5F53\u524D\u91D1\u989D\u91CD\u7B97\u9009\u4E2D\u7684 ${_.size} \u652F\u57FA\u91D1\u7684\u4EFD\u989D\u5417\uFF1F`)&&chrome.storage.local.get(["myFunds"],async o=>{let n=o.myFunds||{},a=0;for(let s of _)if(n[s]){let r=await G(s);r&&r.prevPrice>0&&(n[s].shares=parseFloat((n[s].amount/r.prevPrice).toFixed(6)),a++)}chrome.storage.local.set({myFunds:n},()=>{F(`\u2705 \u5DF2\u91CD\u7B97 ${a} \u652F\u57FA\u91D1\u4EFD\u989D`,"success"),B()})})}async function ye(){if(_.size===0)return F("\u274C \u8BF7\u5148\u52FE\u9009\u57FA\u91D1","error");let e=await Fe("\u8BF7\u8F93\u5165\u65B0\u7684\u5206\u7EC4\u540D\u79F0\uFF1A","\u6279\u91CF\u4FEE\u6539\u5206\u7EC4","\u9ED8\u8BA4");e!==null&&chrome.storage.local.get(["myFunds"],o=>{let n=o.myFunds||{};_.forEach(a=>{n[a]&&(n[a].group=e||"\u9ED8\u8BA4")}),chrome.storage.local.set({myFunds:n},()=>{F(`\u{1F4C1} \u5DF2\u5C06\u9009\u4E2D\u57FA\u91D1\u79FB\u81F3\u5206\u7EC4\uFF1A${e||"\u9ED8\u8BA4"}`,"success"),B()})})}async function ve(){if(_.size===0)return F("\u274C \u8BF7\u5148\u52FE\u9009\u57FA\u91D1","error");await O(`\u786E\u8BA4\u8981\u6E05\u7A7A\u9009\u4E2D ${_.size} \u652F\u57FA\u91D1\u7684\u6301\u4ED3\u91D1\u989D\u548C\u4EFD\u989D\u5417\uFF1F(\u76C8\u4E8F\u6570\u636E\u4FDD\u7559)`,"\u6E05\u7A7A\u786E\u8BA4")&&chrome.storage.local.get(["myFunds"],o=>{let n=o.myFunds||{};_.forEach(a=>{n[a]&&(n[a].amount=0,n[a].shares=0)}),chrome.storage.local.set({myFunds:n},()=>{F("\u{1F9F9} \u9009\u4E2D\u6301\u4ED3\u5DF2\u6E05\u7A7A","success"),B()})})}async function Ce(){_.size===0||!await O(`\u786E\u5B9A\u8981\u5220\u9664\u9009\u4E2D\u7684 ${_.size} \u652F\u57FA\u91D1\u5417\uFF1F\u8BE5\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\uFF01`,"\u5371\u9669\u64CD\u4F5C")||chrome.storage.local.get(["myFunds"],o=>{let n=o.myFunds||{};_.forEach(a=>delete n[a]),chrome.storage.local.set({myFunds:n},()=>{F("\u{1F5D1} \u9009\u4E2D\u57FA\u91D1\u5DF2\u5220\u9664","success"),B()})})}function _e(){let e=document.getElementById("fabMain"),o=document.getElementById("fabMenu");if(!e)return;e.onclick=a=>{a.stopPropagation(),e.classList.toggle("active"),o.classList.toggle("show")},document.addEventListener("click",()=>{e.classList.remove("active"),o.classList.remove("show")});let n=(a,s)=>{let r=document.getElementById(a);r&&(r.onclick=()=>{s(),e.classList.remove("active"),o.classList.remove("show")})};n("fabSelectAll",()=>{let a=p.groupFilter.value,s=Y.filter(c=>a==="all"||c.group===a),r=s.every(c=>_.has(c.code));s.forEach(c=>r?_.delete(c.code):_.add(c.code)),V()}),n("fabAdd",()=>ae()),n("fabOCRBatch",Ge),n("fabBatchCalc",Se),n("fabBatchGroup",ye),n("fabBatchClear",ve),n("fabBatchDel",Ce),n("fabSettlement",()=>ke()),n("fabRollback",()=>De()),n("fabExport",Pe),n("fabImport",()=>document.getElementById("importFile").click())}function U(e){let o=new Date(e);do o.setDate(o.getDate()+1);while(o.getDay()===0||o.getDay()===6);return o}function J(e){return`${e.getFullYear()}-${String(e.getMonth()+1).padStart(2,"0")}-${String(e.getDate()).padStart(2,"0")}`}function Te(){let e=new Date,o=e.getDay(),n=e.getHours(),a=e.getMinutes(),s=o===0||o===6,r=!s&&(n>15||n===15&&a>0),c=new Date(e);if(s){for(;c.getDay()===0||c.getDay()===6;)c.setDate(c.getDate()+1);return J(U(c))}else if(r){let t=U(c);return J(U(t))}else return J(U(c))}function Le(){let e=["all",...new Set(Y.map(o=>o.group))];if(p.groupFilter){let o=p.groupFilter.value;p.groupFilter.innerHTML=e.map(n=>`<option value="${n}" ${n===o?"selected":""}>${n==="all"?"\u5168\u90E8\u663E\u793A":n}</option>`).join("")}p.groupList&&(p.groupList.innerHTML=e.filter(o=>o!=="all").map(o=>`<option value="${o}">`).join(""))}function be(e){return new Promise(o=>{let{title:n,subTitle:a,fields:s,actionText:r="\u4FDD\u5B58"}=e;p.modalTitle.textContent=n;let c=`<div class="form-header-sub">${a||""}</div>`;c+='<div class="form-container">',s.forEach(t=>{if(t.type==="hidden"){c+=`<input type="hidden" id="modal_field_${t.id}" value="${t.value??""}">`;return}c+='<div class="form-group">',c+=`<label for="modal_field_${t.id}">${t.label}</label>`;let u=t.value!==void 0&&t.value!==null?t.value:"";t.type==="number"&&t.showAll?(c+='<div style="display: flex; align-items: center; gap: 6px;">',c+=`<input type="number" id="modal_field_${t.id}" 
-        placeholder="${t.placeholder||""}" 
-        value="${t.value!==void 0&&t.value!==null?t.value:""}"
-        ${t.min!==void 0?`min="${t.min}"`:""} 
-        ${t.step!==void 0?`step="${t.step}"`:""}
-        style="flex: 1;">`,c+=`<button type="button" class="all-btn" data-target="${t.id}" data-max="${t.max}">\u5168\u90E8</button>`,c+="</div>"):c+=`<input type="${t.type||"text"}" id="modal_field_${t.id}" 
-        placeholder="${t.placeholder||""}" 
-        value="${t.value!==void 0&&t.value!==null?t.value:""}"
-        ${t.min!==void 0?`min="${t.min}"`:""} 
-        ${t.step!==void 0?`step="${t.step}"`:""}>`,c+="</div>"}),c+="</div>",p.modalMsg.innerHTML=c,p.modalInput.style.display="none",Q([{text:"\u53D6\u6D88",cls:"modal-btn-cancel",onClick:()=>{q(),o(null)}},{text:r,cls:"modal-btn-ok",onClick:()=>{let t={};s.forEach(u=>{let i=document.getElementById(`modal_field_${u.id}`).value;(u.type==="number"||u.type==="hidden")&&(i=parseFloat(i)||0),t[u.id]=i}),q(),o(t)}}]),p.modalOverlay.classList.add("visible"),setTimeout(()=>{document.querySelectorAll(".all-btn").forEach(t=>{t.addEventListener("click",()=>{let u=t.dataset.target,l=t.dataset.max,i=document.getElementById(`modal_field_${u}`);i&&(i.value=l,i.dispatchEvent(new Event("change")))})})},50)})}async function fe(e,o){try{let n=await new Promise(P=>chrome.storage.local.get(["myFunds"],D=>P(D.myFunds||{}))),a=n[e];if(!a){await H("\u672A\u627E\u5230\u8BE5\u6807\u7684\u6570\u636E\uFF01");return}let s=await G(e),r=s?.prevPrice||1,c=o==="add",t=c?"\u52A0\u4ED3\u8BBE\u7F6E":"\u51CF\u4ED3\u8BBE\u7F6E",u=Te(),l=new Date,i=l.getDay()===0||l.getDay()===6,d=!i&&(l.getHours()>15||l.getHours()===15&&l.getMinutes()>0),b=i?"\u{1F4C5} \u5468\u672B\u4E0B\u5355\uFF0C\u987A\u5EF6\u81F3\u4E0B\u4E00\u4EA4\u6613\u65E5T+1\u786E\u8BA4":d?"\u23F0 15:00\u540E\u4E0B\u5355\uFF0C\u6309T+2\u786E\u8BA4":"\u2705 15:00\u524D\u4E0B\u5355\uFF0C\u6309T+1\u786E\u8BA4",g=`${s?.name||e} (#${e})\u3000${b}`,$=[];if(c)$=[{id:"amount",label:"\u4E70\u5165\u91D1\u989D (\u5143)",type:"number",placeholder:"\u8BF7\u8F93\u5165\u91D1\u989D",value:"",min:0},{id:"feeRate",label:"\u4EA4\u6613\u8D39\u7387 (%)",type:"number",placeholder:"0.15",value:"0",step:"0.01"},{id:"confirmDate",label:"\u786E\u8BA4\u65E5\u671F\uFF08\u53EF\u624B\u52A8\u8C03\u6574\uFF09",type:"date",value:u},{id:"estNav",type:"hidden",value:r}];else{let P=a.shares||0;$=[{id:"shares",label:"\u5356\u51FA\u4EFD\u989D",type:"number",placeholder:`\u6700\u591A\u53EF\u5356 ${P.toFixed(2)} \u4EFD`,value:"",min:0,step:"0.01",showAll:!0,max:P},{id:"feeRate",label:"\u4EA4\u6613\u8D39\u7387 (%)",type:"number",placeholder:"0",value:"0",step:"0.01"},{id:"confirmDate",label:"\u786E\u8BA4\u65E5\u671F\uFF08\u53EF\u624B\u52A8\u8C03\u6574\uFF09",type:"date",value:u}]}let y=be({title:t,subTitle:g,fields:$,actionText:"\u786E\u8BA4"+(c?"\u52A0\u4ED3":"\u51CF\u4ED3")});setTimeout(()=>{let P=document.getElementById("modal_field_confirmDate");if(!P)return;let D=P.closest(".form-group");if(!D)return;let T=document.createElement("div");T.className="timing-switcher",T.innerHTML=`
-                <span>\u4E0B\u5355\u65F6\u95F4\uFF1A</span>
-                <label id="timingBefore" class="timing-btn">15:00\u524D</label>
-                <label id="timingAfter"  class="timing-btn">15:00\u540E</label>
-            `,D.parentNode.insertBefore(T,D);let M=document.getElementById("timingBefore"),f=document.getElementById("timingAfter"),v=d;function h(){M.className="timing-btn"+(v?"":" active-before"),f.className="timing-btn"+(v?" active-after":"")}function m(){let E=new Date,S=E.getDay()===0||E.getDay()===6,x=new Date(E),I;if(S){for(;x.getDay()===0||x.getDay()===6;)x.setDate(x.getDate()+1);I=J(U(x))}else v?I=J(U(U(x))):I=J(U(x));P.value=I}h(),M.addEventListener("click",()=>{v=!1,h(),m()}),f.addEventListener("click",()=>{v=!0,h(),m()})},80);let C=await y;if(!C)return;if(c){let{amount:P,feeRate:D,confirmDate:T}=C;a.pendingAdjustments||(a.pendingAdjustments=[]),a.pendingAdjustments.push({type:"add",amount:P,feeRate:D,targetDate:T,orderNav:r,orderDate:new Date().toLocaleDateString(),status:"pending"})}else{let{shares:P,feeRate:D,confirmDate:T}=C;a.pendingAdjustments||(a.pendingAdjustments=[]),a.pendingAdjustments.push({type:"remove",shares:P,feeRate:D,targetDate:T,orderNav:r,orderDate:new Date().toLocaleDateString(),status:"pending"})}await new Promise(P=>chrome.storage.local.set({myFunds:n},P)),F(`\u2705 \u64CD\u4F5C\u6210\u529F\uFF01\u5C06\u5728 ${C.confirmDate} \u786E\u8BA4`,"success"),B()}catch(n){console.error(`${o}\u4ED3\u64CD\u4F5C\u5931\u8D25:`,n),H(`\u64CD\u4F5C\u5931\u8D25: ${n.message}`)}}async function ae(e=null){let o=null,n=null,a=1;e&&(o=(await new Promise(u=>chrome.storage.local.get(["myFunds"],l=>u(l.myFunds||{}))))[e],n=await G(e),a=n?.prevPrice||1);let s=[{id:"code",label:"\u8D44\u4EA7\u4EE3\u7801 (\u5FC5\u586B)",type:"text",value:e||"",placeholder:"\u5982: 005827"},{id:"amount",label:"\u6301\u6709\u91D1\u989D (\u5143)",type:"number",value:o?.amount||"",min:0,step:"0.01"},{id:"shares",label:"\u6301\u6709\u4EFD\u989D",type:"number",value:o?.shares||"",step:"0.0001"},{id:"holdProfit",label:"\u7D2F\u8BA1\u76C8\u4E8F (\u5143)",type:"number",value:o?.holdProfit||0},{id:"yesterdayProfit",label:"\u6628\u65E5\u6536\u76CA (\u5143)",type:"number",value:o?.yesterdayProfit||0},{id:"group",label:"\u5206\u7EC4\u540D\u79F0",type:"text",value:o?.group||"\u9ED8\u8BA4"}];setTimeout(()=>{let t=document.getElementById("modal_field_code"),u=document.getElementById("modal_field_amount"),l=document.getElementById("modal_field_shares");e?t.disabled=!0:t.addEventListener("blur",async()=>{let i=t.value.trim();if(i.length>=5){let d=await G(i);d&&d.prevPrice>0&&(a=d.prevPrice,F(`\u5DF2\u83B7\u53D6\u6700\u65B0\u51C0\u503C: ${a}`,"info",2e3),u.value&&!l.value&&(l.value=(parseFloat(u.value)/a).toFixed(4)))}}),u.addEventListener("input",()=>{let i=parseFloat(u.value)||0;a>0&&(l.value=(i/a).toFixed(4))}),l.addEventListener("input",()=>{let i=parseFloat(l.value)||0;a>0&&(u.value=(i*a).toFixed(2))})},100);let r=await be({title:e?"\u7F16\u8F91\u6301\u4ED3":"\u6DFB\u52A0\u8D44\u4EA7",subTitle:e?`${n?.name||e}`:"\u8F93\u5165\u4EE3\u7801\u540E\u70B9\u51FB\u7A7A\u767D\u5904\uFF0C\u83B7\u53D6\u51C0\u503C\u8FDB\u884C\u8054\u52A8\u8BA1\u7B97",fields:s,actionText:"\u4FDD\u5B58"});if(!r)return;let c=(e||r.code).trim().toUpperCase();if(!c){await H("\u8D44\u4EA7\u4EE3\u7801\u4E0D\u80FD\u4E3A\u7A7A\uFF01");return}if(p.status.innerText="\u6B63\u5728\u4FDD\u5B58...",!e&&!n&&(n=await G(c),(!n||n.name.includes("[\u672A\u77E5]"))&&!await O(`\u672A\u68C0\u7D22\u5230\u4EE3\u7801 ${c} \u7684\u6570\u636E\uFF0C\u662F\u5426\u5F3A\u5236\u4FDD\u5B58\uFF1F`,"\u63D0\u793A",!0))){p.status.innerText="\u51C6\u5907\u5C31\u7EEA";return}chrome.storage.local.get(["myFunds"],async t=>{let u=t.myFunds||{};u[c]={...u[c]||{},amount:parseFloat(r.amount)||0,shares:parseFloat(r.shares)||0,holdProfit:parseFloat(r.holdProfit)||0,yesterdayProfit:parseFloat(r.yesterdayProfit)||0,group:r.group||"\u9ED8\u8BA4",savedPrevPrice:u[c]?.savedPrevPrice||n?.prevPrice||1,savedPrevDate:u[c]?.savedPrevDate||n?.prevPriceDate||W()},chrome.storage.local.set({myFunds:u},()=>{F(`\u2705 ${c} \u4FDD\u5B58\u6210\u529F\uFF01`,"success"),p.status.innerText="\u51C6\u5907\u5C31\u7EEA",B()})})}p.addBtn.onclick=()=>ae(null);var j=null;function Be(){j=document.createElement("div"),j.className="center-modal-overlay",j.onclick=e=>{e.target===j&&ce()},document.body.appendChild(j)}function Ae(e){j||Be();let o=Y.find(r=>r.code===e);if(!o)return;let n=`
+// --- 新增：API 日志控制器 ---
+const apiLogger = {
+    loggedApis: new Set(), // 用于记录已打印日志的接口
+
+    // 重置状态（在 loadData 开始时调用）
+    reset() {
+        this.loggedApis.clear();
+        console.log('%c[API Monitor] 日志状态已重置，开始监测接口...', 'color: #1890ff; font-weight: bold;');
+    },
+
+    /**
+     * 打印日志（仅第一次调用时打印）
+     * @param {string} apiName 接口名称
+     * @param {string} url 请求地址
+     * @param {string} status 状态描述
+     */
+    log(apiName, url, status) {
+        if (this.loggedApis.has(apiName)) return; // 已经记录过，跳过
+
+        console.log(`[API Monitor] ${apiName} | 状态: ${status} | 地址: ${url}`);
+        this.loggedApis.add(apiName);
+    }
+};
+
+// ==================== DOM 元素引用 ====================
+const elements = {
+    addBtn: document.getElementById('addBtn'),
+    groupList: document.getElementById('groupList'),
+    groupFilter: document.getElementById('groupFilter'),
+    tableBody: document.getElementById('fundTableBody'),
+    status: document.getElementById('status'),
+    fullscreenBtn: document.getElementById('fullscreenBtn'),
+    refreshBtn: document.getElementById('refreshBtn'),
+    totalAmount: document.getElementById('totalAmount'),
+    totalTodayProfit: document.getElementById('totalTodayProfit'),
+    totalTotalProfit: document.getElementById('totalTotalProfit'),
+    totalYesterdayProfit: document.getElementById('totalYesterdayProfit'),
+    exportBtn: document.getElementById('exportBtn'),
+    importBtn: document.getElementById('importBtn'),
+    importFile: document.getElementById('importFile'),
+    // Modal 相关
+    modalOverlay: document.getElementById('modalOverlay'),
+    modalTitle: document.getElementById('modalTitle'),
+    modalMsg: document.getElementById('modalMsg'),
+    modalInput: document.getElementById('modalInput'),
+    modalFooter: document.getElementById('modalFooter'),
+    toastContainer: document.getElementById('toastContainer'),
+    batchGroupBtn: document.getElementById('batchGroupBtn'),
+    batchClearBtn: document.getElementById('batchClearBtn'),
+};
+
+// ==================== Toast / Modal 工具函数 ====================
+
+/**
+ * 显示底部 Toast 提示
+ */
+function showToast(msg, type = 'info', duration = 3000) {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = msg;
+    elements.toastContainer.appendChild(toast);
+
+    setTimeout(() => {
+        toast.classList.add('fade-out');
+        toast.addEventListener('animationend', () => toast.remove());
+    }, duration);
+}
+
+function showAlert(msg, title = '提示') {
+    return new Promise(resolve => {
+        _openModal(title, msg, false);
+        _setFooter([
+            { text: '确定', cls: 'modal-btn-ok', onClick: () => { _closeModal(); resolve(); } }
+        ]);
+    });
+}
+
+function showConfirm(msg, title = '确认', danger = false) {
+    return new Promise(resolve => {
+        _openModal(title, msg, false);
+        _setFooter([
+            { text: '取消', cls: 'modal-btn-cancel', onClick: () => { _closeModal(); resolve(false); } },
+            { text: '确定', cls: danger ? 'modal-btn-danger' : 'modal-btn-ok', onClick: () => { _closeModal(); resolve(true); } }
+        ]);
+    });
+}
+
+function showPrompt(msg, defaultVal = '', title = '请输入') {
+    return new Promise(resolve => {
+        _openModal(title, msg, true, defaultVal);
+        const onOk = () => {
+            const val = elements.modalInput.value;
+            _closeModal();
+            resolve(val);
+        };
+        elements.modalInput.onkeydown = (e) => { if (e.key === 'Enter') onOk(); };
+        _setFooter([
+            { text: '取消', cls: 'modal-btn-cancel', onClick: () => { _closeModal(); resolve(null); } },
+            { text: '确定', cls: 'modal-btn-ok', onClick: onOk }
+        ]);
+        elements.modalInput.focus();
+    });
+}
+
+function _openModal(title, msg, showInput, defaultVal = '') {
+    elements.modalTitle.textContent = title;
+    elements.modalMsg.textContent = msg;
+    if (showInput) {
+        elements.modalInput.value = defaultVal;
+        elements.modalInput.style.display = 'block';
+    } else {
+        elements.modalInput.style.display = 'none';
+    }
+    elements.modalFooter.innerHTML = '';
+    elements.modalOverlay.classList.add('visible');
+}
+
+function _closeModal() {
+    elements.modalOverlay.classList.remove('visible');
+    elements.modalInput.onkeydown = null;
+}
+
+function _setFooter(btns) {
+    elements.modalFooter.innerHTML = '';
+    btns.forEach(({ text, cls, onClick }) => {
+        const btn = document.createElement('button');
+        btn.textContent = text;
+        btn.className = `modal-btn ${cls}`;
+        btn.onclick = onClick;
+        elements.modalFooter.appendChild(btn);
+    });
+}
+
+// ==================== 撤销结算功能 ====================
+function checkBackup() {
+    chrome.storage.local.get(['backupFunds', 'lastSettlementDate'], (res) => {
+        const fabRollback = document.getElementById('fabRollback');
+        if (fabRollback) {
+            if (res.backupFunds && res.lastSettlementDate === getToday()) {
+                fabRollback.style.display = 'block';
+            } else {
+                fabRollback.style.display = 'none';
+            }
+        }
+    });
+}
+
+
+
+// ==================== 1. 新增：统一的备份函数 ====================
+/**
+ * 执行结算前，先备份当前数据（模拟导出功能）
+ * @returns {Promise<void>}
+ */
+function backupFundsData() {
+    return new Promise(resolve => {
+        chrome.storage.local.get(['myFunds', 'lastUpdateDate', 'lastDayProfits'], (res) => {
+            const funds = res.myFunds || {};
+            if (Object.keys(funds).length === 0) {
+                resolve();
+                return;
+            }
+            // 将当前数据存入 backupFunds 字段，结构完全模拟导出文件
+            const backupData = {
+                backupTime: new Date().toLocaleString(),
+                lastUpdateDate: res.lastUpdateDate || '',
+                lastDayProfits: res.lastDayProfits || {},
+                myFunds: funds
+            };
+            chrome.storage.local.set({ backupFunds: backupData }, () => {
+                console.log('[Backup] 数据已备份:', backupData);
+                resolve();
+            });
+        });
+    });
+}
+// ==================== 2. 修改：手动日结算（增加备份步骤）====================
+async function manualSettlement() {
+    const ok = await showConfirm('确认进行日结算吗？\n系统将对比最新公布的净值与上次结算的净值，计算并记录收益。', '日结算确认');
+    if (!ok) return;
+    elements.status.innerText = '正在备份数据...';
+    // 【关键修改】结算前先备份！
+    await backupFundsData();
+    elements.status.innerText = '正在执行日结算...';
+    chrome.storage.local.get(['myFunds'], async (res) => {
+        const funds = res.myFunds || {};
+        let updatedCount = 0;
+        for (const code in funds) {
+            const item = funds[code];
+            const live = currentFundsData.find(f => f.code === code);
+            if (!live || !live.prevPrice) continue;
+            const basePrice = item.savedPrevPrice || (item.shares > 0 ? (item.amount / item.shares) : live.prevPrice);
+            const actualProfit = parseFloat((item.shares * (live.prevPrice - basePrice)).toFixed(2));
+            funds[code].holdProfit = parseFloat(((item.holdProfit || 0) + actualProfit).toFixed(2));
+            funds[code].yesterdayProfit = actualProfit;
+            funds[code].amount = parseFloat((item.shares * live.prevPrice).toFixed(2));
+            funds[code].savedPrevPrice = live.prevPrice;
+            funds[code].savedPrevDate = live.prevPriceDate || getToday();
+            updatedCount++;
+        }
+        chrome.storage.local.set({
+            myFunds: funds,
+            lastSettlementDate: getToday(), // 记录今天已结算
+            lastUpdateDate: new Date().toLocaleDateString()
+        }, () => {
+            showToast(`✅ 结算完成！已更新 ${updatedCount} 条`, 'success');
+            checkBackup(); // 刷新撤销按钮状态
+            loadData();
+        });
+    });
+}
+// ==================== 3. 修改：撤销结算（使用备份数据覆盖）====================
+async function rollbackSettlement() {
+    // 1. 检查是否有备份
+    chrome.storage.local.get(['backupFunds'], async (res) => {
+        if (!res.backupFunds || !res.backupFunds.myFunds) {
+            await showAlert('未找到备份数据，无法撤销！');
+            return;
+        }
+        const backup = res.backupFunds;
+        const backupTime = backup.backupTime || '未知时间';
+        // 2. 确认提示
+        const ok = await showConfirm(
+            `确定要撤销日结算吗？\n\n数据将恢复至备份时间：\n【${backupTime}】\n\n请注意：撤销后，当天的结算状态也将重置。`,
+            '撤销确认',
+            true
+        );
+        if (!ok) return;
+        // 3. 执行恢复（直接覆盖）
+        chrome.storage.local.set({
+            myFunds: backup.myFunds,
+            lastDayProfits: backup.lastDayProfits || {},
+            lastUpdateDate: backup.lastUpdateDate || '',
+            // 【关键点】保持今天日期，防止 loadData 触发自动结算循环
+            lastSettlementDate: getToday(),
+            // 清空备份，防止重复撤销
+            backupFunds: null
+        }, () => {
+            showToast('✅ 已成功撤销，数据已恢复！', 'success');
+            checkBackup(); // 隐藏撤销按钮
+            loadData();    // 刷新界面
+        });
+    });
+}
+// ==================== 4. 自动结算部分（确保也有备份）====================
+async function autoSettlement(funds, fetchedData, todayStr) {
+    console.log('[autoSettlement] 检测到净值更新，开始自动结算...');
+    elements.status.innerText = '正在自动结算...';
+    // 1. 备份原始数据
+    // 构造和手动备份一样的结构
+    const backupData = {
+        backupTime: new Date().toLocaleString(),
+        myFunds: JSON.parse(JSON.stringify(funds)) // 深拷贝当前数据
+    };
+    await new Promise(r => chrome.storage.local.set({ backupFunds: backupData }, r));
+    let updatedCount = 0;
+    for (const { code, live } of fetchedData) {
+        const item = funds[code];
+        if (!item || !live || live.prevPrice <= 0) continue;
+        const settlementPrice = live.prevPrice;
+        const basePrice = item.savedPrevPrice || (item.shares > 0 ? (item.amount / item.shares) : settlementPrice);
+        if (Math.abs(settlementPrice - basePrice) < 0.00001) continue;
+        const actualProfit = parseFloat((item.shares * (settlementPrice - basePrice)).toFixed(2));
+        funds[code].holdProfit = parseFloat(((item.holdProfit || 0) + actualProfit).toFixed(2));
+        funds[code].yesterdayProfit = actualProfit;
+        funds[code].amount = parseFloat((item.shares * settlementPrice).toFixed(2));
+        funds[code].savedPrevPrice = settlementPrice;
+        funds[code].savedPrevDate = live.prevPriceDate || todayStr;
+        updatedCount++;
+    }
+    if (updatedCount === 0) {
+        console.log('[autoSettlement] 净值无变化，跳过');
+        return;
+    }
+    chrome.storage.local.set({
+        myFunds: funds,
+        lastSettlementDate: todayStr,
+        lastUpdateDate: new Date().toLocaleDateString()
+    }, () => {
+        console.log(`[autoSettlement] ✅ 完成，共更新 ${updatedCount} 条`);
+        showToast(`✅ 已自动完成日结算（${updatedCount} 条）`, 'success', 4000);
+        checkBackup();
+        loadData();
+    });
+}
+
+
+
+
+function getToday() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+// ==================== 初始化 ====================
+document.addEventListener('DOMContentLoaded', async () => {
+    const isPopup = chrome.extension.getViews({ type: 'popup' }).includes(window);
+    if (!isPopup) document.body.classList.add('is-fullscreen');
+
+    checkBackup();
+    loadData();
+
+    elements.importFile.addEventListener('change', importFundsData);
+    initFabMenu();
+});
+
+elements.fullscreenBtn.onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') });
+
+elements.refreshBtn.onclick = () => {
+    elements.refreshBtn.classList.add('spinning');
+    loadData().finally(() => {
+        setTimeout(() => elements.refreshBtn.classList.remove('spinning'), 500);
+    });
+};
+
+elements.groupFilter.onchange = () => {
+    clearSelection();
+
+    renderTable();
+};
+
+document.querySelectorAll('.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+        const field = th.dataset.sort;
+        if (sortField === field) {
+            sortDirection *= -1;
+        } else {
+            sortField = field;
+            sortDirection = -1;
+        }
+        renderTable();
+    });
+});
+
+// ==================== 新浪行情代理请求 ====================
+function proxyFetchSina(url) {
+    // --- 新增日志 ---
+    apiLogger.log('新浪代理', url, '发起请求');
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: 'FETCH_SINA', url: url }, (response) => {
+            if (response && response.success && response.data) {
+                const content = response.data.match(/"(.*)"/);
+                const result = content ? content[1] : null;
+                // --- 新增日志：记录成功 ---
+                if (result) {
+                    apiLogger.log('新浪代理', url, '成功获取数据');
+                } else {
+                    apiLogger.log('新浪代理', url, '返回数据格式无效');
+                }
+                resolve(result);
+            } else {
+                // --- 新增日志：记录失败 ---
+                apiLogger.log('新浪代理', url, '请求失败或无响应');
+                resolve(null);
+            }
+        });
+    });
+}
+// ==================== 综合行情接口 ====================
+async function fetchLiveInfo(code) {
+    const cleanCode = code.trim();
+    if (/^\d{6}$/.test(cleanCode)) {
+        // 1. 场外基金（主接口）
+        // 【修复】将 url 定义提到 try 外面
+        const url1 = `https://fundgz.1234567.com.cn/js/${cleanCode}.js?rt=${Date.now()}`;
+        try {
+            apiLogger.log('场外主接口', url1, '发起请求');
+            const res = await fetch(url1);
+            const text = await res.text();
+            const jsonMatch = text.match(/jsonpgz\((.*)\)/);
+            if (jsonMatch) {
+                const d = JSON.parse(jsonMatch[1]);
+                if (d && (d.gsz || d.dwjz)) {
+                    const dwjz = parseFloat(d.dwjz) || 0;
+                    const gsz = parseFloat(d.gsz || d.dwjz) || 0;
+                    const gszzl = parseFloat(d.gszzl) || 0;
+                    const gztime = d.gztime || '';
+                    apiLogger.log('场外主接口', url1, '成功');
+                    return {
+                        name: d.name || `[未知]${cleanCode}`,
+                        rate: gszzl,
+                        price: gsz,
+                        prevPrice: dwjz,
+                        prevPriceDate: d.jzrq || '',
+                        priceTime: gztime
+                    };
+                }
+            }
+            apiLogger.log('场外主接口', url1, '数据无效(尝试备用)');
+        } catch (e) {
+            apiLogger.log('场外主接口', url1, `请求异常(${e.message})`);
+        }
+        // 1.5 场外基金备用接口
+        // 【修复】将 url 定义提到 try 外面
+        const url2 = `https://fund.eastmoney.com/pingzhongdata/${cleanCode}.js?v=${Date.now()}`;
+        try {
+            apiLogger.log('场外备用接口', url2, '发起请求');
+            const extData = await fetch(url2).then(r => r.text());
+            if (extData && extData.includes('fS_name')) {
+                const nameMatch = extData.match(/fS_name\s*=\s*"([^"]+)"/);
+                const name = nameMatch ? nameMatch[1] : `[场外备用]${cleanCode}`;
+                const netWorthMatch = extData.match(/Data_netWorthTrend\s*=\s*(\[.*?\])\s*;/);
+                if (netWorthMatch) {
+                    const netWorthData = JSON.parse(netWorthMatch[1]);
+                    if (netWorthData && netWorthData.length >= 2) {
+                        const latest = netWorthData[netWorthData.length - 1];
+                        const gsz = parseFloat(latest.y) || parseFloat(latest.unitMoney) || 0;
+                        const dwjz = gsz;
+                        const dateStr = latest.x ? (() => { const d = new Date(latest.x); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })() : '';
+                        apiLogger.log('场外备用接口', url2, '成功');
+                        return {
+                            name: name,
+                            rate: null,
+                            price: gsz,
+                            prevPrice: dwjz,
+                            prevPriceDate: dateStr,
+                            isFallback: true
+                        };
+                    }
+                }
+            }
+            apiLogger.log('场外备用接口', url2, '数据无效');
+        } catch (e) {
+            apiLogger.log('场外备用接口', url2, `请求异常(${e.message})`);
+        }
+        // 2. 场内基金（ETF/LOF）
+        try {
+            const p = cleanCode.startsWith('5') ? 'sh' : 'sz';
+            const url = `https://hq.sinajs.cn/list=${p}${cleanCode}`;
+            // proxyFetchSina 内部已经有日志了，这里不需要重复加
+            const data = await proxyFetchSina(url);
+            if (data && data.split(',').length > 10) {
+                const parts = data.split(',');
+                const cur = parseFloat(parts[3]) || 0;
+                const pre = parseFloat(parts[2]) || 0;
+                const rate = pre !== 0 ? parseFloat(((cur - pre) / pre * 100).toFixed(2)) : 0;
+                return {
+                    name: '[场]' + (parts[0] || cleanCode),
+                    rate: rate,
+                    price: cur,
+                    prevPrice: pre
+                };
+            }
+        } catch (e) {
+            console.warn(`场内基金解析失败 ${cleanCode}:`, e);
+        }
+    }
+    // 3. 期货
+    try {
+        const url = `https://hq.sinajs.cn/list=nf_${cleanCode.toUpperCase()}`;
+        // proxyFetchSina 内部已经有日志了
+        const fut = await proxyFetchSina(url);
+        if (fut) {
+            const parts = fut.split(',');
+            if (parts.length > 10) {
+                const cur = parseFloat(parts[8]) || 0;
+                const pre = parseFloat(parts[5]) || 0;
+                const rate = pre !== 0 ? parseFloat(((cur - pre) / pre * 100).toFixed(2)) : 0;
+                return {
+                    name: '[期]' + (parts[0] || cleanCode),
+                    rate: rate,
+                    price: cur,
+                    prevPrice: pre
+                };
+            }
+        }
+    } catch (e) {
+        console.warn(`期货解析失败 ${cleanCode}:`, e);
+    }
+    return {
+        name: `[未知]${cleanCode}`,
+        rate: 0,
+        price: 0,
+        prevPrice: 0
+    };
+}
+
+// ==================== 加载数据 ====================
+async function loadData() {
+    clearSelection();
+    elements.status.innerText = '同步行情中...';
+    apiLogger.reset();
+    return new Promise(resolve => {
+        chrome.storage.local.get(['myFunds', 'lastSettlementDate'], async (res) => {
+            let funds = res.myFunds || {};
+            const codes = Object.keys(funds);
+            let dataChanged = false;
+            const results = [];
+            // 1. 获取行情数据
+            const fetchedData = await Promise.all(
+                codes.map(async (code, index) => {
+                    await new Promise(r => setTimeout(r, index * 50));
+                    const live = await fetchLiveInfo(code);
+                    return { code, live };
+                })
+            );
+            const todayStr = getToday();
+            // 2. 自动结算逻辑
+            if (res.lastSettlementDate !== todayStr) {
+                const needsSettlement = fetchedData.some(({ code, live }) => {
+                    if (!live || live.prevPrice <= 0) return false;
+                    const fund = funds[code];
+                    if (!fund.savedPrevPrice) return false;
+                    return Math.abs(live.prevPrice - fund.savedPrevPrice) > 0.00001;
+                });
+                if (needsSettlement) {
+                    await autoSettlement(funds, fetchedData, todayStr);
+                }
+            }
+            // 3. 处理数据 & 自动确认份额
+            for (const { code, live } of fetchedData) {
+                if (live && live.prevPrice > 0) {
+                    const item = funds[code];
+                    // --- A. 处理待确认份额 ---
+                    if (item.pendingAdjustments && item.pendingAdjustments.length > 0) {
+                        for (const adj of item.pendingAdjustments) {
+                            if (adj.status === 'confirmed') continue; // 已确认跳过
+                            if (todayStr >= adj.targetDate) {
+                                if (adj.type === 'add') {
+                                    const actualRate = (adj.feeRate || 0) / 100;
+                                    const price = live.prevPrice;
+                                    if (price > 0) {
+                                        const deltaShares = (adj.amount * (1 - actualRate)) / price;
+                                        item.shares = parseFloat((item.shares + deltaShares).toFixed(6));
+                                        item.amount = parseFloat((item.shares * price).toFixed(2));
+                                        // 标记已确认，保留记录
+                                        adj.status = 'confirmed';
+                                        adj.confirmedPrice = price;
+                                        adj.confirmedShares = parseFloat(deltaShares.toFixed(6));
+                                        adj.confirmedDate = todayStr;
+                                        showToast(`✅ ${code} 加仓已确认 (净值${price}, +${adj.confirmedShares}份)`, 'success');
+                                        dataChanged = true;
+                                    }
+                                } else if (adj.type === 'remove') {
+                                    const price = live.prevPrice;
+                                    if (price > 0) {
+                                        item.shares = parseFloat((item.shares - adj.shares).toFixed(6));
+                                        if (item.shares < 0) item.shares = 0;
+                                        item.amount = parseFloat((item.shares * price).toFixed(2));
+                                        adj.status = 'confirmed';
+                                        adj.confirmedPrice = price;
+                                        adj.confirmedShares = adj.shares;
+                                        adj.confirmedDate = todayStr;
+                                        showToast(`✅ ${code} 减仓已确认 (净值${price}, -${adj.shares}份)`, 'success');
+                                        dataChanged = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // --- B. 原有份额修正逻辑 (必须放在 if(pending) 外面) ---
+                    if (!item.shares && item.amount > 0) {
+                        if (live.prevPrice > 0) {
+                            item.shares = parseFloat((item.amount / live.prevPrice).toFixed(6));
+                            dataChanged = true;
+                        } else if (live.price > 0) {
+                            item.shares = parseFloat((item.amount / live.price).toFixed(6));
+                            dataChanged = true;
+                        }
+                    }
+                    if (item.shares > 0 && Math.abs(item.amount - item.shares) < 0.0001 && live.prevPrice > 0 && !live.name.includes('[未知]')) {
+                        const correctedAmount = parseFloat((item.shares * live.prevPrice).toFixed(2));
+                        item.amount = correctedAmount;
+                        dataChanged = true;
+                    }
+                    // --- C. 收益计算 ---
+                    let todayProfit, useFallbackNav = false;
+                    if (!live.isFallback && live.price > 0) {
+                        todayProfit = item.shares ? parseFloat((item.shares * (live.price - live.prevPrice)).toFixed(2)) : 0;
+                    } else if (live.prevPrice > 0 && item.savedPrevPrice > 0) {
+                        todayProfit = item.shares ? parseFloat((item.shares * (live.prevPrice - item.savedPrevPrice)).toFixed(2)) : 0;
+                        useFallbackNav = true;
+                    } else {
+                        todayProfit = null;
+                    }
+                    const totalProfit = parseFloat(((item.holdProfit || 0) + (todayProfit || 0)).toFixed(2));
+                    // --- D. 构造结果集 ---
+                    results.push({
+                        code,
+                        name: live.name,
+                        amount: item.amount || 0,
+                        yesterdayProfit: item.yesterdayProfit || 0,
+                        group: item.group || '默认',
+                        rate: live.rate,
+                        prevPrice: live.prevPrice || 0,
+                        price: live.price || 0,
+                        prevPriceDate: live.prevPriceDate || '',
+                        priceTime: live.priceTime || '',
+                        todayProfit,
+                        totalProfit,
+                        holdProfit: item.holdProfit || 0,
+                        shares: item.shares || 0,
+                        useFallbackNav,
+                        pendingAdjustments: item.pendingAdjustments
+                    });
+                }
+            }
+            currentFundsData = results.filter(Boolean);
+            const todayProfits = {};
+            results.forEach(r => { if (r) todayProfits[r.code] = r.todayProfit; });
+            chrome.storage.local.set({ lastDayProfits: todayProfits });
+            if (dataChanged) {
+                chrome.storage.local.set({ myFunds: funds });
+            }
+            updateGroupFilter();
+            renderTable();
+            elements.status.innerText = `最后更新: ${new Date().toLocaleTimeString()}`;
+            resolve();
+        });
+    });
+}
+
+// ==================== 批量操作核心逻辑 ====================
+
+// 1. 批量重算份额 (根据金额和净值)
+async function batchRecalculateShares() {
+    if (selectedCodes.size === 0) return showToast('❌ 请先勾选基金', 'error');
+    const ok = await showConfirm(`确认根据当前金额重算选中的 ${selectedCodes.size} 支基金的份额吗？`);
+    if (!ok) return;
+
+    chrome.storage.local.get(['myFunds'], async (res) => {
+        const funds = res.myFunds || {};
+        let count = 0;
+        for (const code of selectedCodes) {
+            if (funds[code]) {
+                const live = await fetchLiveInfo(code);
+                if (live && live.prevPrice > 0) {
+                    funds[code].shares = parseFloat((funds[code].amount / live.prevPrice).toFixed(6));
+                    count++;
+                }
+            }
+        }
+        chrome.storage.local.set({ myFunds: funds }, () => {
+            showToast(`✅ 已重算 ${count} 支基金份额`, 'success');
+            loadData();
+        });
+    });
+}
+
+// 2. 批量修改分组
+async function batchChangeGroup() {
+    if (selectedCodes.size === 0) return showToast('❌ 请先勾选基金', 'error');
+    const newGroup = await showPrompt('请输入新的分组名称：', '批量修改分组', '默认');
+    if (newGroup === null) return;
+
+    chrome.storage.local.get(['myFunds'], (res) => {
+        const funds = res.myFunds || {};
+        selectedCodes.forEach(code => {
+            if (funds[code]) funds[code].group = newGroup || '默认';
+        });
+        chrome.storage.local.set({ myFunds: funds }, () => {
+            showToast(`📁 已将选中基金移至分组：${newGroup || '默认'}`, 'success');
+            loadData();
+        });
+    });
+}
+
+// 3. 批量清空持仓 (金额和份额归零)
+async function batchClearPositions() {
+    if (selectedCodes.size === 0) return showToast('❌ 请先勾选基金', 'error');
+    const ok = await showConfirm(`确认要清空选中 ${selectedCodes.size} 支基金的持仓金额和份额吗？(盈亏数据保留)`, '清空确认');
+    if (!ok) return;
+
+    chrome.storage.local.get(['myFunds'], (res) => {
+        const funds = res.myFunds || {};
+        selectedCodes.forEach(code => {
+            if (funds[code]) {
+                funds[code].amount = 0;
+                funds[code].shares = 0;
+            }
+        });
+        chrome.storage.local.set({ myFunds: funds }, () => {
+            showToast('🧹 选中持仓已清空', 'success');
+            loadData();
+        });
+    });
+}
+
+// 4. 批量删除
+async function batchDeleteFunds() {
+    if (selectedCodes.size === 0) return;
+    const ok = await showConfirm(`确定要删除选中的 ${selectedCodes.size} 支基金吗？该操作不可恢复！`, '危险操作');
+    if (!ok) return;
+
+    chrome.storage.local.get(['myFunds'], (res) => {
+        const funds = res.myFunds || {};
+        selectedCodes.forEach(code => delete funds[code]);
+        chrome.storage.local.set({ myFunds: funds }, () => {
+            showToast('🗑 选中基金已删除', 'success');
+            loadData();
+        });
+    });
+}
+
+// ==================== 悬浮球交互绑定 ====================
+function initFabMenu() {
+    const fabMain = document.getElementById('fabMain');
+    const fabMenu = document.getElementById('fabMenu');
+    if (!fabMain) return;
+
+    // 切换菜单显示
+    fabMain.onclick = (e) => {
+        e.stopPropagation();
+        fabMain.classList.toggle('active');
+        fabMenu.classList.toggle('show');
+    };
+
+    // 点击外部自动收起
+    document.addEventListener('click', () => {
+        fabMain.classList.remove('active');
+        fabMenu.classList.remove('show');
+    });
+
+    // 统一绑定按钮事件
+    const bind = (id, fn) => {
+        const el = document.getElementById(id);
+        if (el) el.onclick = () => {
+            fn();
+            fabMain.classList.remove('active');
+            fabMenu.classList.remove('show');
+        };
+    };
+
+    bind('fabSelectAll', () => {
+        const filter = elements.groupFilter.value;
+        const visible = currentFundsData.filter(i => filter === 'all' || i.group === filter);
+        const allSelected = visible.every(i => selectedCodes.has(i.code));
+        visible.forEach(i => allSelected ? selectedCodes.delete(i.code) : selectedCodes.add(i.code));
+        renderTable();
+    });
+    bind('fabAdd', () => openFundEditor());
+    bind('fabOCRBatch', openOCRBatchAdd);
+    bind('fabBatchCalc', batchRecalculateShares);
+    bind('fabBatchGroup', batchChangeGroup);
+    bind('fabBatchClear', batchClearPositions);
+    bind('fabBatchDel', batchDeleteFunds);
+    bind('fabSettlement', () => manualSettlement());
+    bind('fabRollback', () => rollbackSettlement());
+    bind('fabExport', exportFundsData);
+    bind('fabImport', () => document.getElementById('importFile').click());
+}
+
+// 确保在页面加载时启动
+// ==================== 交易确认日期计算 ====================
+/**
+ * 获取下一个交易日（跳过周六日）
+ * 注意：未内置节假日，如遇法定假日用户可手动调整确认日期
+ */
+function nextTradingDay(date) {
+    const d = new Date(date);
+    do {
+        d.setDate(d.getDate() + 1);
+    } while (d.getDay() === 0 || d.getDay() === 6); // 跳过周日(0)和周六(6)
+    return d;
+}
+
+function formatDate(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * 计算基金申购/赎回的确认日期
+ * 规则：
+ *   15:00前提交 → T日净值成交 → T+1个交易日确认
+ *   15:00后提交 → T+1日净值成交 → T+2个交易日确认
+ *   周末提交 → 视为下一个交易日15:00前提交（T+1确认）
+ */
+function getConfirmDate() {
+    const now = new Date();
+    const day = now.getDay(); // 0=周日, 6=周六
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    const isWeekend = (day === 0 || day === 6);
+    const isAfterCutoff = !isWeekend && (hour > 15 || (hour === 15 && minute > 0));
+
+    let base = new Date(now);
+
+    if (isWeekend) {
+        // 周末：找到下一个交易日作为提交日，再+1
+        while (base.getDay() === 0 || base.getDay() === 6) {
+            base.setDate(base.getDate() + 1);
+        }
+        // 此时 base 是下一个交易日（相当于T），确认日是再下一个交易日
+        return formatDate(nextTradingDay(base));
+    } else if (isAfterCutoff) {
+        // 15:00后：T+2个交易日
+        const t1 = nextTradingDay(base);
+        return formatDate(nextTradingDay(t1));
+    } else {
+        // 15:00前：T+1个交易日
+        return formatDate(nextTradingDay(base));
+    }
+}
+
+// ==================== 更新分组筛选下拉 ====================
+function updateGroupFilter() {
+    const groups = ['all', ...new Set(currentFundsData.map(item => item.group))];
+
+    // 加个保护，防止找不到 groupFilter 报错
+    if (elements.groupFilter) {
+        const currentVal = elements.groupFilter.value;
+        elements.groupFilter.innerHTML = groups.map(g =>
+            `<option value="${g}" ${g === currentVal ? 'selected' : ''}>${g === 'all' ? '全部显示' : g}</option>`
+        ).join('');
+    }
+
+    // 【修复点】：增加 if 判断。因为旧的输入框已经删除，groupList 不存在了，直接赋值会报错 null
+    if (elements.groupList) {
+        elements.groupList.innerHTML = groups.filter(g => g !== 'all').map(g => `<option value="${g}">`).join('');
+    }
+}
+
+// ==================== 1. 新增：通用表单弹窗函数 ====================
+/**
+ * 显示一个包含表单的模态框（替代多个连续 prompt）
+ * @param {Object} config 配置对象
+ * @returns {Promise<Object|null>} 返回表单数据或 null
+ */
+function showFormModal(config) {
+    return new Promise(resolve => {
+        const { title, subTitle, fields, actionText = '保存' } = config;
+        // 1. 设置标题和副标题
+        elements.modalTitle.textContent = title;
+        // 构建内容区域
+        let html = `<div class="form-header-sub">${subTitle || ''}</div>`;
+        html += '<div class="form-container">';
+        fields.forEach(field => {
+            // hidden 字段只渲染隐藏 input，不包裹 form-group
+            if (field.type === 'hidden') {
+                html += `<input type="hidden" id="modal_field_${field.id}" value="${field.value ?? ''}">`;
+                return;
+            }
+            html += `<div class="form-group">`;
+            html += `<label for="modal_field_${field.id}">${field.label}</label>`;
+            const value = (field.value !== undefined && field.value !== null) ? field.value : '';
+            if (field.type === 'number' && field.showAll) {
+                html += `<div style="display: flex; align-items: center; gap: 6px;">`;
+                html += `<input type="number" id="modal_field_${field.id}" 
+        placeholder="${field.placeholder || ''}" 
+        value="${field.value !== undefined && field.value !== null ? field.value : ''}"
+        ${field.min !== undefined ? `min="${field.min}"` : ''} 
+        ${field.step !== undefined ? `step="${field.step}"` : ''}
+        style="flex: 1;">`;
+                html += `<button type="button" class="all-btn" data-target="${field.id}" data-max="${field.max}">全部</button>`;
+                html += `</div>`;
+            } else {
+                // 原有的输入框生成代码（保持不变）
+                html += `<input type="${field.type || 'text'}" id="modal_field_${field.id}" 
+        placeholder="${field.placeholder || ''}" 
+        value="${field.value !== undefined && field.value !== null ? field.value : ''}"
+        ${field.min !== undefined ? `min="${field.min}"` : ''} 
+        ${field.step !== undefined ? `step="${field.step}"` : ''}>`;
+            }
+            html += `</div>`;
+        });
+        html += '</div>';
+        elements.modalMsg.innerHTML = html; // 使用 innerHTML 注入表单
+        elements.modalInput.style.display = 'none'; // 隐藏默认的单输入框
+        // 2. 设置底部按钮
+        _setFooter([
+            { text: '取消', cls: 'modal-btn-cancel', onClick: () => { _closeModal(); resolve(null); } },
+            {
+                text: actionText,
+                cls: 'modal-btn-ok',
+                onClick: () => {
+                    // 收集数据
+                    const formData = {};
+                    fields.forEach(field => {
+                        const el = document.getElementById(`modal_field_${field.id}`);
+                        let val = el.value;
+                        // 数字类型转换
+                        if (field.type === 'number' || field.type === 'hidden') {
+                            val = parseFloat(val) || 0;
+                        }
+                        formData[field.id] = val;
+                    });
+                    _closeModal();
+                    resolve(formData);
+                }
+            }
+        ]);
+        elements.modalOverlay.classList.add('visible');
+        setTimeout(() => {
+            document.querySelectorAll('.all-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const targetId = btn.dataset.target;
+                    const max = btn.dataset.max;
+                    const input = document.getElementById(`modal_field_${targetId}`);
+                    if (input) {
+                        input.value = max;
+                        // 触发 change 事件（可选）
+                        input.dispatchEvent(new Event('change'));
+                    }
+                });
+            });
+        }, 50);
+    });
+}
+
+// ==================== 2. 重写：加仓/减仓逻辑 ====================
+async function adjustPosition(code, type) {
+    try {
+        // 获取基础数据
+        const funds = await new Promise(r => chrome.storage.local.get(['myFunds'], res => r(res.myFunds || {})));
+        const fundItem = funds[code];
+        if (!fundItem) {
+            await showAlert('未找到该标的数据！');
+            return;
+        }
+        const live = await fetchLiveInfo(code);
+        const defaultNav = live?.prevPrice || 1.0000;
+        // 1. 构建表单配置
+        const isAdd = type === 'add';
+        const title = isAdd ? '加仓设置' : '减仓设置';
+        // 计算确认日期并生成提示文字
+        const confirmDate = getConfirmDate();
+        const _now = new Date();
+        const _isWeekend = _now.getDay() === 0 || _now.getDay() === 6;
+        const _isAfterCutoff = !_isWeekend && (_now.getHours() > 15 || (_now.getHours() === 15 && _now.getMinutes() > 0));
+        const timingHint = _isWeekend ? '📅 周末下单，顺延至下一交易日T+1确认'
+            : _isAfterCutoff ? '⏰ 15:00后下单，按T+2确认'
+                : '✅ 15:00前下单，按T+1确认';
+        const subTitle = `${live?.name || code} (#${code})　${timingHint}`;
+        let fields = [];
+        if (isAdd) {
+            // --- 加仓逻辑：输入金额 ---
+            fields = [
+                { id: 'amount', label: '买入金额 (元)', type: 'number', placeholder: '请输入金额', value: '', min: 0 },
+                { id: 'feeRate', label: '交易费率 (%)', type: 'number', placeholder: '0.15', value: '0', step: '0.01' },
+                { id: 'confirmDate', label: '确认日期（可手动调整）', type: 'date', value: confirmDate },
+                { id: 'estNav', type: 'hidden', value: defaultNav }
+            ];
+        } else {
+            // --- 减仓逻辑：输入份额 ---
+            const maxShares = fundItem.shares || 0;
+            fields = [
+                {
+                    id: 'shares',
+                    label: '卖出份额',
+                    type: 'number',
+                    placeholder: `最多可卖 ${maxShares.toFixed(2)} 份`,
+                    value: '',
+                    min: 0,
+                    step: '0.01',
+                    showAll: true,
+                    max: maxShares
+                },
+                { id: 'feeRate', label: '交易费率 (%)', type: 'number', placeholder: '0', value: '0', step: '0.01' },
+                { id: 'confirmDate', label: '确认日期（可手动调整）', type: 'date', value: confirmDate }
+            ];
+        }
+        // 2. 唤起表单，并在渲染后注入「下单时间」切换器
+        const formModalPromise = showFormModal({
+            title,
+            subTitle,
+            fields,
+            actionText: '确认' + (isAdd ? '加仓' : '减仓')
+        });
+
+        // 表单渲染后插入切换器
+        setTimeout(() => {
+            const confirmDateInput = document.getElementById('modal_field_confirmDate');
+            if (!confirmDateInput) return;
+
+            // 在确认日期字段的 form-group 前插入切换器
+            const dateGroup = confirmDateInput.closest('.form-group');
+            if (!dateGroup) return;
+
+            const switcher = document.createElement('div');
+            switcher.className = 'timing-switcher';
+            switcher.innerHTML = `
+                <span>下单时间：</span>
+                <label id="timingBefore" class="timing-btn">15:00前</label>
+                <label id="timingAfter"  class="timing-btn">15:00后</label>
+            `;
+            dateGroup.parentNode.insertBefore(switcher, dateGroup);
+
+            const btnBefore = document.getElementById('timingBefore');
+            const btnAfter = document.getElementById('timingAfter');
+            let useAfterCutoff = _isAfterCutoff;
+
+            function applyStyle() {
+                btnBefore.className = 'timing-btn' + (!useAfterCutoff ? ' active-before' : '');
+                btnAfter.className = 'timing-btn' + (useAfterCutoff ? ' active-after' : '');
+            }
+
+            function recalcDate() {
+                const d = new Date();
+                const isWknd = d.getDay() === 0 || d.getDay() === 6;
+                let base = new Date(d);
+                let result;
+                if (isWknd) {
+                    while (base.getDay() === 0 || base.getDay() === 6) base.setDate(base.getDate() + 1);
+                    result = formatDate(nextTradingDay(base));
+                } else if (useAfterCutoff) {
+                    result = formatDate(nextTradingDay(nextTradingDay(base)));
+                } else {
+                    result = formatDate(nextTradingDay(base));
+                }
+                confirmDateInput.value = result;
+            }
+
+            applyStyle();
+
+            btnBefore.addEventListener('click', () => {
+                useAfterCutoff = false;
+                applyStyle();
+                recalcDate();
+            });
+
+            btnAfter.addEventListener('click', () => {
+                useAfterCutoff = true;
+                applyStyle();
+                recalcDate();
+            });
+        }, 80);
+
+        const result = await formModalPromise;
+        if (!result) return; // 用户取消
+        if (isAdd) {
+            const { amount, feeRate, confirmDate } = result;
+            if (!fundItem.pendingAdjustments) fundItem.pendingAdjustments = [];
+            fundItem.pendingAdjustments.push({
+                type: 'add',
+                amount: amount,
+                feeRate: feeRate,
+                targetDate: confirmDate,
+                orderNav: defaultNav,        // 下单时净值
+                orderDate: new Date().toLocaleDateString(),
+                status: 'pending'
+            });
+        } else {
+            const { shares: inputShares, feeRate, confirmDate } = result;
+            if (!fundItem.pendingAdjustments) fundItem.pendingAdjustments = [];
+            fundItem.pendingAdjustments.push({
+                type: 'remove',
+                shares: inputShares,
+                feeRate: feeRate,
+                targetDate: confirmDate,
+                orderNav: defaultNav,        // 下单时净值
+                orderDate: new Date().toLocaleDateString(),
+                status: 'pending'
+            });
+        }
+        // 保存
+        await new Promise(r => chrome.storage.local.set({ myFunds: funds }, r));
+        showToast(`✅ 操作成功！将在 ${result.confirmDate} 确认`, 'success');
+        loadData();
+    } catch (e) {
+        console.error(`${type}仓操作失败:`, e);
+        showAlert(`操作失败: ${e.message}`);
+    }
+}
+// ==================== 统一的：添加资产 / 编辑持仓 ====================
+async function openFundEditor(existingCode = null) {
+    let fund = null, live = null;
+    let currentNav = 1.0000; // 默认净值
+
+    if (existingCode) {
+        const funds = await new Promise(r => chrome.storage.local.get(['myFunds'], res => r(res.myFunds || {})));
+        fund = funds[existingCode];
+        live = await fetchLiveInfo(existingCode);
+        currentNav = live?.prevPrice || 1.0000;
+    }
+
+    const fields = [
+        { id: 'code', label: '资产代码 (必填)', type: 'text', value: existingCode || '', placeholder: '如: 005827' },
+        { id: 'amount', label: '持有金额 (元)', type: 'number', value: fund?.amount || '', min: 0, step: '0.01' },
+        { id: 'shares', label: '持有份额', type: 'number', value: fund?.shares || '', step: '0.0001' },
+        { id: 'holdProfit', label: '累计盈亏 (元)', type: 'number', value: fund?.holdProfit || 0 },
+        { id: 'yesterdayProfit', label: '昨日收益 (元)', type: 'number', value: fund?.yesterdayProfit || 0 },
+        { id: 'group', label: '分组名称', type: 'text', value: fund?.group || '默认' }
+    ];
+
+    // 弹窗出现后，注入联动计算逻辑
+    setTimeout(() => {
+        const codeInput = document.getElementById('modal_field_code');
+        const amtInput = document.getElementById('modal_field_amount');
+        const shareInput = document.getElementById('modal_field_shares');
+
+        if (existingCode) {
+            codeInput.disabled = true; // 编辑时禁止修改代码
+        } else {
+            // 新增时，输入代码后失去焦点，自动拉取净值
+            codeInput.addEventListener('blur', async () => {
+                const c = codeInput.value.trim();
+                if (c.length >= 5) {
+                    const l = await fetchLiveInfo(c);
+                    if (l && l.prevPrice > 0) {
+                        currentNav = l.prevPrice;
+                        showToast(`已获取最新净值: ${currentNav}`, 'info', 2000);
+                        // 如果此时有金额没份额，顺手算一下
+                        if (amtInput.value && !shareInput.value) {
+                            shareInput.value = (parseFloat(amtInput.value) / currentNav).toFixed(4);
+                        }
+                    }
+                }
+            });
+        }
+
+        // 相辅相成 1：金额变动 -> 算份额
+        amtInput.addEventListener('input', () => {
+            const amt = parseFloat(amtInput.value) || 0;
+            if (currentNav > 0) shareInput.value = (amt / currentNav).toFixed(4);
+        });
+
+        // 相辅相成 2：份额变动 -> 算金额
+        shareInput.addEventListener('input', () => {
+            const sh = parseFloat(shareInput.value) || 0;
+            if (currentNav > 0) amtInput.value = (sh * currentNav).toFixed(2);
+        });
+    }, 100);
+
+    const result = await showFormModal({
+        title: existingCode ? '编辑持仓' : '添加资产',
+        subTitle: existingCode ? `${live?.name || existingCode}` : '输入代码后点击空白处，获取净值进行联动计算',
+        fields: fields,
+        actionText: '保存'
+    });
+
+    if (!result) return;
+
+    const code = (existingCode || result.code).trim().toUpperCase();
+    if (!code) { await showAlert('资产代码不能为空！'); return; }
+
+    elements.status.innerText = '正在保存...';
+
+    // 如果是新增，且没获取过行情，再确认一次
+    if (!existingCode && !live) {
+        live = await fetchLiveInfo(code);
+        if (!live || live.name.includes('[未知]')) {
+            const ok = await showConfirm(`未检索到代码 ${code} 的数据，是否强制保存？`, '提示', true);
+            if (!ok) { elements.status.innerText = '准备就绪'; return; }
+        }
+    }
+
+    chrome.storage.local.get(['myFunds'], async (res) => {
+        const funds = res.myFunds || {};
+        funds[code] = {
+            ...(funds[code] || {}), // 保留可能存在的历史调整数据
+            amount: parseFloat(result.amount) || 0,
+            shares: parseFloat(result.shares) || 0,
+            holdProfit: parseFloat(result.holdProfit) || 0,
+            yesterdayProfit: parseFloat(result.yesterdayProfit) || 0,
+            group: result.group || '默认',
+            savedPrevPrice: funds[code]?.savedPrevPrice || live?.prevPrice || 1,
+            savedPrevDate: funds[code]?.savedPrevDate || live?.prevPriceDate || getToday()
+        };
+
+        chrome.storage.local.set({ myFunds: funds }, () => {
+            showToast(`✅ ${code} 保存成功！`, 'success');
+            elements.status.innerText = '准备就绪';
+            loadData();
+        });
+    });
+}
+
+// 绑定添加按钮
+elements.addBtn.onclick = () => openFundEditor(null);
+
+
+// ==================== 居中弹窗逻辑 ====================
+let centerModalOverlay = null;
+/**
+ * 初始化居中弹窗容器
+ */
+function initCenterModal() {
+    centerModalOverlay = document.createElement('div');
+    centerModalOverlay.className = 'center-modal-overlay';
+    // 点击背景关闭
+    centerModalOverlay.onclick = (e) => {
+        if (e.target === centerModalOverlay) {
+            hideCenterModal();
+        }
+    };
+    document.body.appendChild(centerModalOverlay);
+}
+/**
+ * 显示居中弹窗
+ */
+function showCenterMenu(code) {
+    if (!centerModalOverlay) initCenterModal();
+    const fund = currentFundsData.find(f => f.code === code);
+    if (!fund) return;
+
+    // 构建HTML，去掉内联 onclick
+    const html = `
         <div class="center-modal-box">
             <div class="center-modal-header">
-                <span class="modal-title">\u6301\u4ED3\u64CD\u4F5C</span>
-                <span class="modal-link" id="transactionLink">\u4EA4\u6613\u8BB0\u5F55 ></span>
+                <span class="modal-title">持仓操作</span>
+                <span class="modal-link" id="transactionLink">交易记录 ></span>
             </div>
             <div class="center-modal-info">
-                <span class="info-name">${o.name}</span>
-                <span class="info-code">#${o.code}</span>
+                <span class="info-name">${fund.name}</span>
+                <span class="info-code">#${fund.code}</span>
             </div>
             <div class="center-modal-actions">
                 <div class="action-row-double">
-                    <button class="btn-op add" data-action="add" data-code="${e}">+ \u52A0\u4ED3</button>
-                    <button class="btn-op remove" data-action="remove" data-code="${e}">\u2212 \u51CF\u4ED3</button>
+                    <button class="btn-op add" data-action="add" data-code="${code}">+ 加仓</button>
+                    <button class="btn-op remove" data-action="remove" data-code="${code}">− 减仓</button>
                 </div>
-                <button class="btn-op edit" data-action="edit" data-code="${e}">\u270F\uFE0F \u7F16\u8F91\u6301\u4ED3</button>
-                <button class="btn-op calc" data-action="calc_shares" data-code="${e}">\u{1F504} \u6839\u636E\u91D1\u989D\u91CD\u7B97\u4EFD\u989D</button>
-                <button class="btn-op clear" data-action="clear" data-code="${e}">\u{1F9F9} \u6E05\u7A7A\u91D1\u989D</button>
-                <button class="btn-op delete" data-action="delete" data-code="${e}">\u{1F5D1} \u5F7B\u5E95\u5220\u9664\u8D44\u4EA7</button>
+                <button class="btn-op edit" data-action="edit" data-code="${code}">✏️ 编辑持仓</button>
+                <button class="btn-op calc" data-action="calc_shares" data-code="${code}">🔄 根据金额重算份额</button>
+                <button class="btn-op clear" data-action="clear" data-code="${code}">🧹 清空金额</button>
+                <button class="btn-op delete" data-action="delete" data-code="${code}">🗑 彻底删除资产</button>
             </div>
         </div>
-    `;j.innerHTML=n;let a=document.getElementById("transactionLink");a&&a.addEventListener("click",()=>{ce(),s(e)});async function s(r){let c=await new Promise(i=>chrome.storage.local.get(["myFunds"],d=>i(d.myFunds||{}))),u=c[r]?.pendingAdjustments||[];if(u.length===0){await H("\u6682\u65E0\u4EA4\u6613\u8BB0\u5F55");return}let l=()=>{let i='<div class="tx-list">';return u.forEach((d,b)=>{let g=d.status!=="confirmed",$=d.type==="add"?"\u52A0\u4ED3":"\u51CF\u4ED3",y=d.type==="add"?"add":"remove",C=`<span class="tx-badge ${g?"pending":"confirmed"}">${g?"\u5F85\u786E\u8BA4":"\u5DF2\u786E\u8BA4"}</span>`,P=d.type==="add"?`\u4E70\u5165 <b class="${y}">\xA5${d.amount}</b>`:`\u5356\u51FA <b class="${y}">${d.shares} \u4EFD</b>`,D=d.feeRate>0?` &nbsp;\u8D39\u7387${d.feeRate}%`:"",T="";d.orderNav&&(T+=`\u4E0B\u5355\u51C0\u503C ${d.orderNav}`),d.confirmedPrice&&(T+=`\u3000\u786E\u8BA4\u51C0\u503C ${d.confirmedPrice}`),d.confirmedShares&&d.type==="add"&&(T+=`\u3000\u5230\u8D26 ${d.confirmedShares} \u4EFD`);let M=`\u9884\u8BA1\u786E\u8BA4\u65E5 ${d.targetDate}`;d.confirmedDate&&(M=`\u786E\u8BA4\u65E5 ${d.confirmedDate}`),d.orderDate&&(M=`\u4E0B\u5355 ${d.orderDate} \xB7 `+M);let f=g?`<button data-revoke="${b}" class="tx-revoke-btn">\u64A4\u9500</button>`:'<span class="tx-no-revoke">\u4E0D\u53EF\u64A4\u9500</span>';i+=`
+    `;
+    centerModalOverlay.innerHTML = html;
+
+    // 绑定交易记录链接
+    const transactionLink = document.getElementById('transactionLink');
+    // 在 showCenterMenu 中，为“交易记录”链接绑定新函数
+    if (transactionLink) {
+        transactionLink.addEventListener('click', () => {
+            hideCenterModal();  // 关键：先关闭操作弹窗
+            showPendingTransactions(code);
+        });
+    }
+
+    async function showPendingTransactions(code) {
+        const funds = await new Promise(r => chrome.storage.local.get(['myFunds'], res => r(res.myFunds || {})));
+        const fund = funds[code];
+        const txList = fund?.pendingAdjustments || [];
+
+        if (txList.length === 0) {
+            await showAlert('暂无交易记录');
+            return;
+        }
+
+        const renderList = () => {
+            let html = `<div class="tx-list">`;
+            txList.forEach((adj, idx) => {
+                const isPending = adj.status !== 'confirmed';
+                const typeLabel = adj.type === 'add' ? '加仓' : '减仓';
+                const typeCls = adj.type === 'add' ? 'add' : 'remove';
+
+                const statusBadge = `<span class="tx-badge ${isPending ? 'pending' : 'confirmed'}">${isPending ? '待确认' : '已确认'}</span>`;
+
+                const amountText = adj.type === 'add'
+                    ? `买入 <b class="${typeCls}">¥${adj.amount}</b>`
+                    : `卖出 <b class="${typeCls}">${adj.shares} 份</b>`;
+                const feeText = adj.feeRate > 0 ? ` &nbsp;费率${adj.feeRate}%` : '';
+
+                let navInfo = '';
+                if (adj.orderNav) navInfo += `下单净值 ${adj.orderNav}`;
+                if (adj.confirmedPrice) navInfo += `　确认净值 ${adj.confirmedPrice}`;
+                if (adj.confirmedShares && adj.type === 'add') navInfo += `　到账 ${adj.confirmedShares} 份`;
+
+                let dateInfo = `预计确认日 ${adj.targetDate}`;
+                if (adj.confirmedDate) dateInfo = `确认日 ${adj.confirmedDate}`;
+                if (adj.orderDate) dateInfo = `下单 ${adj.orderDate} · ` + dateInfo;
+
+                const revokeBtn = isPending
+                    ? `<button data-revoke="${idx}" class="tx-revoke-btn">撤销</button>`
+                    : `<span class="tx-no-revoke">不可撤销</span>`;
+
+                html += `
                     <div class="tx-item">
                         <div class="tx-row-main">
                             <div class="tx-row-left">
-                                <span class="tx-type ${y}">${$}</span>
-                                ${C}
-                                <span class="tx-amount">${P}${D}</span>
+                                <span class="tx-type ${typeCls}">${typeLabel}</span>
+                                ${statusBadge}
+                                <span class="tx-amount">${amountText}${feeText}</span>
                             </div>
-                            ${f}
+                            ${revokeBtn}
                         </div>
-                        ${T?`<div class="tx-nav">${T}</div>`:""}
-                        <div class="tx-date">${M}</div>
-                    </div>`}),i+="</div>",i};p.modalTitle.textContent="\u4EA4\u6613\u8BB0\u5F55",p.modalMsg.innerHTML=l(),p.modalInput.style.display="none",Q([{text:"\u5173\u95ED",cls:"modal-btn-cancel",onClick:q}]),p.modalOverlay.classList.add("visible"),p.modalMsg.addEventListener("click",async i=>{let d=i.target.closest("[data-revoke]");if(!d)return;let b=parseInt(d.dataset.revoke),g=u[b];if(!g||g.status==="confirmed")return;let $=g.type==="add"?`\u52A0\u4ED3 \xA5${g.amount}`:`\u51CF\u4ED3 ${g.shares}\u4EFD`;await O(`\u786E\u8BA4\u64A4\u9500\uFF1A${$}\uFF08${g.targetDate}\uFF09\uFF1F`,"\u64A4\u9500\u786E\u8BA4",!0)&&(u.splice(b,1),await new Promise(C=>chrome.storage.local.set({myFunds:c},C)),F("\u5DF2\u64A4\u9500\u8BE5\u7B14\u4EA4\u6613","success"),u.length===0?(q(),B()):p.modalMsg.innerHTML=l(),B())})}j.querySelectorAll(".btn-op").forEach(r=>{r.addEventListener("click",()=>{let c=r.dataset.action,t=r.dataset.code;ce(),c==="add"?fe(t,"add"):c==="remove"?fe(t,"remove"):c==="edit"?ae(t):c==="clear"?Me(t):c==="calc_shares"?Ie(t):c==="delete"&&xe(t)})}),requestAnimationFrame(()=>{j.classList.add("visible")})}function ce(){j&&j.classList.remove("visible")}async function Ie(e){p.status.innerText="\u6B63\u5728\u91CD\u65B0\u8BA1\u7B97\u4EFD\u989D...";let o=await G(e);if(!o||o.prevPrice<=0){await H(`\u65E0\u6CD5\u83B7\u53D6 ${e} \u7684\u6709\u6548\u51C0\u503C\uFF0C\u8BA1\u7B97\u5931\u8D25\u3002`),p.status.innerText="\u51C6\u5907\u5C31\u7EEA";return}chrome.storage.local.get(["myFunds"],n=>{let a=n.myFunds||{};if(a[e]){let s=parseFloat((a[e].amount/o.prevPrice).toFixed(6));a[e].shares=s,chrome.storage.local.set({myFunds:a},()=>{F(`\u2705 \u5DF2\u6309\u7167\u51C0\u503C ${o.prevPrice} \u4FEE\u6B63\u4EFD\u989D\u4E3A: ${s}`,"success"),p.status.innerText="\u51C6\u5907\u5C31\u7EEA",B()})}})}function V(){let e=p.groupFilter.value,o=Y.filter(t=>e==="all"||t.group===e);o.sort((t,u)=>{let l=t[Z]??0,i=u[Z]??0;return(l-i)*te}),document.querySelectorAll(".sortable").forEach(t=>{t.textContent=t.textContent.replace(/[↑↓]/g,""),t.dataset.sort===Z&&(t.textContent+=te===1?"\u2191":"\u2193")});let n=0,a=0,s=0,r=0,c=document.createDocumentFragment();o.forEach((t,u)=>{n+=t.amount||0,a+=t.yesterdayProfit||0,s+=t.todayProfit||0,r+=t.holdProfit||0;let l=t.todayProfit===null?"\u2014":`${t.todayProfit>=0?"+":""}${t.todayProfit.toFixed(2)}`,i=document.createElement("tr");i.dataset.code=t.code,he(i,String(u+1)),he(i,t.code);let d=document.createElement("td"),b=document.createElement("span");b.className="fund-name",b.title=t.name,b.textContent=t.name;let g=document.createElement("span");g.className="group-tag",g.dataset.code=t.code,g.textContent=t.group,d.appendChild(b),d.appendChild(g),i.appendChild(d);let $=document.createElement("td");$.className="editable-cell",$.dataset.field="amount",$.dataset.code=t.code;let y=document.createElement("div");y.className="cell-with-icon";let C=document.createElement("span");C.textContent=t.amount.toFixed(2);let P=document.createElement("span");P.className="settings-icon",P.textContent="\u2699\uFE0F",P.dataset.code=t.code,P.onclick=k=>{k.stopPropagation(),Ae(t.code)},y.appendChild(C),y.appendChild(P),$.appendChild(y),i.appendChild($);let D=document.createElement("td");D.className="col-hide";let T=document.createElement("div");T.className="cell-with-icon";let M=document.createElement("span");M.className="editable-cell",M.dataset.field="shares",M.dataset.code=t.code,M.textContent=t.shares?t.shares.toFixed(4):"\u2014",T.appendChild(M),D.appendChild(T),i.appendChild(D);let f=document.createElement("td");f.className="col-hide";let v=W(),h=document.createElement("div");h.style.cssText="display:flex; align-items:baseline; gap:4px;";let m=document.createElement("span");if(m.textContent=t.prevPrice>0?t.prevPrice.toFixed(4):"\u2014",m.style.fontWeight="500",h.appendChild(m),t.prevPriceDate){let k=document.createElement("span");k.style.cssText=`font-size:10px; color:${t.prevPriceDate===v?"#8c8c8c":"#fa8c16"};`,k.textContent=t.prevPriceDate.slice(5),h.appendChild(k)}f.appendChild(h);let E=document.createElement("div");E.style.cssText="display:flex; align-items:baseline; gap:4px; margin-top:2px; flex-wrap:wrap;";let S=document.createElement("span");if(t.price>0){S.textContent=t.price.toFixed(4),S.style.cssText="font-weight:500; color:#ffc069;";let k=document.createElement("span");k.style.cssText="font-size:10px; color:#8c8c8c;",k.textContent=(t.priceTime||v).slice(5),E.appendChild(S),E.appendChild(k)}else S.textContent="\u2014",S.style.color="#8c8c8c",E.appendChild(S);if(t.rate!==null&&t.rate!==void 0){let k=document.createElement("span");k.style.cssText=`font-size:11px; font-weight:bold; color:${t.rate>=0?"#f5222d":"#389e0d"};`,k.textContent=`${t.rate>=0?"+":""}${t.rate.toFixed(2)}%`,E.appendChild(k)}f.appendChild(E),i.appendChild(f),ze(i,t.yesterdayProfit,t.yesterdayProfit>=0);let x=document.createElement("td");t.todayProfit!==null&&(x.className=t.todayProfit>=0?"up":"down");let I=document.createElement("div");if(I.textContent=l,x.appendChild(I),t.rate!==null&&t.rate!==void 0){let k=document.createElement("div");k.style.cssText="font-size:10px; margin-top:1px; opacity:0.85;",k.textContent=`${t.rate>=0?"+":""}${t.rate.toFixed(2)}%`,x.appendChild(k)}i.appendChild(x);let L=document.createElement("td");L.className=`editable-cell ${t.holdProfit>=0?"up":"down"}`,L.dataset.field="holdProfit",L.dataset.code=t.code,L.textContent=`${t.holdProfit>=0?"+":""}${t.holdProfit.toFixed(2)}`,i.appendChild(L);let w=document.createElement("td");w.className="col-hide";let z=document.createElement("button");z.className="del-btn",z.dataset.code=t.code,z.title="\u5220\u9664",z.textContent="\u2715",w.appendChild(z),i.appendChild(w),c.appendChild(i)}),p.tableBody.innerHTML="",p.tableBody.appendChild(c),p.totalAmount.textContent=n.toLocaleString(void 0,{minimumFractionDigits:2}),p.totalYesterdayProfit.textContent=(a>=0?"+":"")+a.toFixed(2),p.totalYesterdayProfit.className=a>=0?"up":"down",p.totalTodayProfit.textContent=(s>=0?"+":"")+s.toFixed(2),p.totalTodayProfit.className=s>=0?"up":"down",p.totalTotalProfit.textContent=(r>=0?"+":"")+r.toFixed(2),p.totalTotalProfit.className=r>=0?"up":"down",p.tableBody.onclick=t=>{let u=t.target,l=u.dataset.code;u.classList.contains("del-btn")?xe(l):u.classList.contains("group-tag")&&ae(l)},p.tableBody.querySelectorAll(".editable-cell").forEach(t=>{t.onblur=()=>{let u=t.dataset.code,l=t.dataset.field,i=t.textContent.trim(),d=parseFloat(i);if(i===""||isNaN(d)){F("\u8BF7\u8F93\u5165\u6709\u6548\u7684\u6570\u5B57","warning"),B();return}chrome.storage.local.get(["myFunds"],b=>{let g=b.myFunds||{};if(g[u]){if(g[u][l]===d)return;g[u][l]=d;let $=Y.find(y=>y.code===u);$&&($[l]=d),chrome.storage.local.set({myFunds:g},()=>{F("\u5DF2\u4FDD\u5B58","success",1500),V()})}})},t.onkeydown=u=>{u.key==="Enter"&&(u.preventDefault(),t.blur())}}),p.tableBody.querySelectorAll("tr").forEach((t,u)=>{t.dataset.code&&_.has(t.dataset.code)&&t.classList.add("selected-row"),t.addEventListener("click",l=>{if(l.target.closest(".settings-icon, .group-tag, .del-btn, button"))return;let i=t.dataset.code;if(i){if(l.shiftKey&&K>=0){l.preventDefault();let d=Math.min(K,u),b=Math.max(K,u);p.tableBody.querySelectorAll("tr").forEach((g,$)=>{$>=d&&$<=b&&g.dataset.code&&(_.add(g.dataset.code),g.classList.add("selected-row"))})}else _.has(i)?(_.delete(i),t.classList.remove("selected-row")):(_.add(i),t.classList.add("selected-row")),K=u;me()}})}),me()}function me(){let e=_.size,o=document.getElementById("fabMain");e>0?(p.status.innerHTML=`\u5DF2\u9009\u4E2D <b style="color:#69b1ff">${e}</b> \u9879 &nbsp;<span id="clearSelectionBtn" style="color:#ff7875;cursor:pointer;font-size:11px;border:1px solid #ff7875;border-radius:10px;padding:1px 7px;">\u2715 \u53D6\u6D88\u9009\u62E9</span>`,document.getElementById("clearSelectionBtn").onclick=()=>{le(),V()},o&&(o.style.background="#fa8c16")):(p.status.innerText=`\u6700\u540E\u66F4\u65B0: ${new Date().toLocaleTimeString()}`,o&&(o.style.background=""))}async function Me(e){await O(`\u786E\u5B9A\u8981\u6E05\u7A7A\u57FA\u91D1 [${e}] \u7684\u6301\u4ED3\u5417\uFF1F
+                        ${navInfo ? `<div class="tx-nav">${navInfo}</div>` : ''}
+                        <div class="tx-date">${dateInfo}</div>
+                    </div>`;
+            });
+            html += `</div>`;
+            return html;
+        };
 
-\u6B64\u64CD\u4F5C\u5C06\u6E05\u7A7A\u6301\u4ED3\u91D1\u989D\u548C\u4EFD\u989D\uFF0C\u4F46\u4F1A\u4FDD\u7559\u8BE5\u57FA\u91D1\u7684\u201C\u7D2F\u8BA1\u6536\u76CA\u201D\u3002`,"\u6E05\u7A7A\u6301\u4ED3\u786E\u8BA4",!0)&&chrome.storage.local.get(["myFunds"],n=>{let a=n.myFunds||{};a[e]&&(Ne(a[e]),chrome.storage.local.set({myFunds:a},()=>{F(`\u2705 \u57FA\u91D1 ${e} \u6301\u4ED3\u5DF2\u6E05\u7A7A`,"success"),B()}))})}p.batchGroupBtn&&(p.batchGroupBtn.onclick=()=>ye());p.batchClearBtn&&(p.batchClearBtn.onclick=()=>ve());function he(e,o){let n=document.createElement("td");n.textContent=o,e.appendChild(n)}function ze(e,o,n){let a=document.createElement("td");a.className=n?"up":"down",a.textContent=`${n?"+":""}${o.toFixed(2)}`,e.appendChild(a)}function Ne(e){e.amount=0,e.shares=0,e.lastClosedAmount=0,e.group="\u5DF2\u64A4\u56DE",e.cost!==void 0&&(e.cost=0)}async function xe(e){await O(`\u786E\u5B9A\u5220\u9664 ${e}\uFF1F`,"\u5220\u9664\u786E\u8BA4",!0)&&chrome.storage.local.get(["myFunds"],n=>{let a=n.myFunds||{};delete a[e],chrome.storage.local.set({myFunds:a},B)})}function Pe(){chrome.storage.local.get(["myFunds","lastUpdateDate","lastDayProfits"],e=>{let o=e.myFunds||{};if(Object.keys(o).length===0){F("\u6682\u65E0\u53EF\u5BFC\u51FA\u7684\u57FA\u91D1\u6570\u636E\uFF01","warning");return}let n={exportTime:new Date().toLocaleString(),lastUpdateDate:e.lastUpdateDate||"",lastDayProfits:e.lastDayProfits||{},myFunds:o},a=JSON.stringify(n,null,2),s=new Blob([a],{type:"application/json"}),r=URL.createObjectURL(s),c=document.createElement("a");c.href=r;let t=new Date,u=`\u57FA\u91D1\u6570\u636E_${t.getFullYear()}${String(t.getMonth()+1).padStart(2,"0")}${String(t.getDate()).padStart(2,"0")}_${String(t.getHours()).padStart(2,"0")}${String(t.getMinutes()).padStart(2,"0")}.json`;c.download=u,document.body.appendChild(c),c.click(),setTimeout(()=>{document.body.removeChild(c),URL.revokeObjectURL(r)},100),F(`\u2705 \u6570\u636E\u5BFC\u51FA\u6210\u529F\uFF01\u6587\u4EF6\u540D: ${u}`,"success")})}p.exportBtn.onclick=Pe;function Re(e){return{...e,amount:parseFloat(e.amount)||0,holdProfit:parseFloat(e.holdProfit)||0,shares:parseFloat(e.shares)||0,yesterdayProfit:parseFloat(e.yesterdayProfit)||0,group:typeof e.group=="string"?e.group:"\u9ED8\u8BA4",savedPrevPrice:e.savedPrevPrice?parseFloat(e.savedPrevPrice):void 0,pendingAdjustments:Array.isArray(e.pendingAdjustments)?e.pendingAdjustments:[]}}function je(e){let o=e.target,n=o.files[0];if(!n)return;if(n.type!=="application/json"&&!n.name.endsWith(".json")){F("\u8BF7\u9009\u62E9 JSON \u683C\u5F0F\u7684\u5BFC\u51FA\u6587\u4EF6\uFF01","error"),o.value="";return}let a=new FileReader;a.onload=async function(s){try{let r=JSON.parse(s.target.result);if(!r.myFunds||typeof r.myFunds!="object"){await H("\u5BFC\u5165\u6587\u4EF6\u683C\u5F0F\u9519\u8BEF\uFF1A\u672A\u627E\u5230\u6709\u6548\u57FA\u91D1\u6570\u636E\uFF01"),o.value="";return}if(!await O(`\u786E\u8BA4\u5BFC\u5165\u3010${r.exportTime||"\u672A\u77E5\u65F6\u95F4"}\u3011\u7684\u57FA\u91D1\u6570\u636E\uFF1F
-\u6CE8\u610F\uFF1A\u5F53\u524D\u6570\u636E\u5C06\u88AB\u8986\u76D6\uFF01`,"\u5BFC\u5165\u786E\u8BA4",!0)){o.value="";return}let t={};for(let[l,i]of Object.entries(r.myFunds))t[l]=Re(i);let u={myFunds:t};r.lastUpdateDate&&(u.lastUpdateDate=r.lastUpdateDate),r.lastDayProfits&&(u.lastDayProfits=r.lastDayProfits),chrome.storage.local.set(u,()=>{F("\u2705 \u6570\u636E\u5BFC\u5165\u6210\u529F\uFF01","success"),o.value="",B()})}catch(r){await H(`\u5BFC\u5165\u5931\u8D25: ${r.message}`),o.value=""}},a.readAsText(n)}p.importBtn.onclick=()=>p.importFile.click();var R=null,A=[];function re(e,o){return new Promise((n,a)=>{let s="job_"+Math.random().toString(36).slice(2);__TesseractDispatch({workerId:"main_thread",jobId:s,action:e,payload:o},c=>{c.status==="resolve"?n(c.data):c.status==="reject"&&a(new Error(c.data))})})}async function Oe(e){if(window._tWorker)return window._tWorker;let o=chrome.runtime.getURL("").replace(/\/$/,"");if(typeof __TesseractDispatch>"u")throw new Error("__TesseractDispatch \u672A\u5B9A\u4E49\uFF0C\u8BF7\u786E\u8BA4 popup.html \u5DF2\u52A0\u8F7D worker.min.js");await re("load",{options:{corePath:chrome.runtime.getURL("tesseract-core.wasm.js"),langPath:o,logging:!1}}),await re("loadLanguage",{langs:"chi_sim",options:{langPath:o,dataPath:null,cachePath:null,cacheMethod:"none",gzip:!1}}),await re("initialize",{langs:"chi_sim",options:{}});let n={recognize:async a=>{let s=a;return(a instanceof Blob||a instanceof File)&&(s=new Uint8Array(await a.arrayBuffer())),{data:await new Promise((c,t)=>{let u="job_"+Math.random().toString(36).slice(2);__TesseractDispatch({workerId:"main_thread",jobId:u,action:"recognize",payload:{image:s,options:{},output:{text:!0,blocks:!1,hocr:!1,tsv:!1}}},l=>{e&&e(l),l.status==="resolve"?c(l.data):l.status==="reject"&&t(new Error(String(l.data)))})})}},terminate:()=>{window._tWorker=null}};return window._tWorker=n,n}async function qe(e){if(!e||e.length<2)return null;function o(n){let a=n.replace(/\s+/g,""),s=[a],r=a.replace(/发起联接[A-E]?$/,"").replace(/联接[A-E]?$/,"").replace(/指数[A-E]?$/,"").replace(/[（(]LOF[)）]/,"").replace(/ETF/,"").replace(/[A-E]$/,"");r!==a&&r.length>=4&&s.push(r);let c=n.replace(/[A-Za-z\(\)\（\）\s]+/g,"").replace(/发起联接$|联接$|指数$/,"");return c!==a&&c!==r&&c.length>=4&&s.push(c),[...new Set(s)]}for(let n of o(e))try{let a=`https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=10&key=${encodeURIComponent(n)}`,r=await(await fetch(a)).json();if(r.Datas&&r.Datas.length>0)for(let c of r.Datas){let t=String(c.CODE||"");if(/^\d{6}$/.test(t))return t}}catch(a){console.warn("[OCR] \u4EE3\u7801\u53CD\u67E5\u5931\u8D25:",n,a)}return null}function Ue(e){return e.split(`
-`).map(o=>{let n=null,a=o;for(;n!==a;)n=a,a=a.replace(/([一-龥])\s+([一-龥])/g,"$1$2"),a=a.replace(/([一-龥])\s+([（）\(\)])/g,"$1$2"),a=a.replace(/([（）\(\)])\s+([一-龥])/g,"$1$2");return a}).join(`
-`)}function He(e){console.log(`[OCR RAW TEXT]
-`,e);let n=Ue(e).split(`
-`).map(f=>f.trim()).filter(Boolean),a=n.join(`
-`),s=[];if(!n.length)return s;let r=/\b(\d{6})\b/,c=()=>/[+-]?\d[\d,\.]*\.\d{1,2}(?!\d)(?!\s*%)/g,t=()=>/[+-]?\d[\d,\.]*\.\d{2}(?!\d)(?!\s*%)/g,u=/收益|金额|赎回|购买|申购|到账|手续费|销售|暂停|T\+\d|万内/,l=["\u6301\u6709\u91D1\u989D","\u6628\u65E5\u6536\u76CA","\u6301\u6709\u6536\u76CA\u7387","\u6301\u6709\u6536\u76CA","\u6301\u6709\u4EFD\u989D"];function i(f){let v=f.replace(/[^\d\.\+-]/g,"");if(!v)return 0;let h=v.replace(/^[+-]/,"").split(".");return h.length>2?(v[0]==="-"?-1:1)*parseFloat(h.slice(0,-1).join("")+"."+h[h.length-1]):parseFloat(v)||0}function d(f){return!f||f.length<2||!/[\u4e00-\u9fa5]/.test(f)||u.test(f)||r.test(f)||/^\d+(\.\d+)?$/.test(f)?!1:(f.match(/[\u4e00-\u9fa5]/g)||[]).length/f.replace(/\s/g,"").length>=.3}function b(f,v){let h=f.replace(/[^\u4e00-\u9fa5]/g,""),m=v.replace(/[^\u4e00-\u9fa5]/g,"");if(!h||!m||h.length<4||m.length<4)return!1;let[E,S]=h.length<=m.length?[h,m]:[m,h];return S.includes(E)}function g(f,v){if(f!=="\u6301\u6709\u6536\u76CA"){let m=a.indexOf(f,v);return m!==-1?m:void 0}let h=v;for(;;){let m=a.indexOf(f,h);if(m===-1)return;if(a[m+f.length]!=="\u7387")return m;h=m+1}}function $(f,v){let h=g(f,v);if(h===void 0)return"";let m=h+f.length,E=m+200;return l.forEach(S=>{if(S===f)return;let x=g(S,v);x!==void 0&&x>m&&x<E&&(E=x)}),a.slice(m,E)}function y(f){let v=0;for(let h of f.match(c())||[]){let m=i(h);m>v&&(v=m)}return v}function C(f,v=!1){for(let h of f.match(c())||[]){let m=i(h);if(!(v&&m<0))return m}return 0}let P=/昨日收|总金额/,D=[],T=new Set;for(let f=0;f<n.length;f++){if(!P.test(n[f]))continue;let v=/昨日收/.test(n[f]),h="";for(let w=f+1;w<=Math.min(f+3,n.length-1);w++){let z=n[w].match(t());if(z&&z.length>=2){h=n[w];break}}if(!h)continue;let m=(h.match(t())||[]).map(i),E=0,S=0,x=0;v&&m.length>=3?[E,S,x]=[m[0],m[1],m[2]]:m.length>=3?[E,S,x]=[m[0],m[1],m[2]]:m.length===2?[S,x]=[m[0],m[1]]:m.length===1&&(x=m[0]);let I=m.filter(w=>w>0);I.length&&Math.max(...I)>x&&(x=Math.max(...I));let L="";for(let w=f-1;w>=Math.max(0,f-6);w--)if(d(n[w])){L=n[w];break}!L||T.has(L)||(T.add(L),D.push({code:"",name:L,amount:x,holdProfit:S,yesterdayProfit:E,shares:0,group:"\u9ED8\u8BA4",selected:!0,_needLookup:!0,_claimed:!1}))}let M=new Set;for(let f=0;f<n.length;f++){let v=n[f].match(r);if(!v)continue;let h=v[1];if(M.has(h))continue;M.add(h);let m="";for(let w=f-1;w>=Math.max(0,f-4);w--)if(/[\u4e00-\u9fa5]/.test(n[w])){m=n[w];break}let E=a.indexOf(h),S=Math.max(0,E-10),x=y($("\u6301\u6709\u91D1\u989D",S)),I=C($("\u6628\u65E5\u6536\u76CA",S)),L=C($("\u6301\u6709\u6536\u76CA",S));if(!x){let w=/(\d+\.?\d*)\s*%/g,z=n.slice(f);for(let k=0;k<z.length;k++){let we=z[k];if(/昨日收益|持有收益/.test(we)){for(let oe=k+1;oe<=Math.min(k+3,z.length-1);oe++){let de=z[oe],X=(de.match(c())||[]).map(se=>i(se)),ee=[],ue;for(w.lastIndex=0;(ue=w.exec(de))!==null;)ee.push(parseFloat(ue[1]));if(X.length){if(!I&&X[0]!==void 0&&(I=X[0]),!L&&X[1]!==void 0&&(L=X[1]),ee.length&&Math.abs(ee[0])>.01&&L!==0){let se=ee[0]/100;x=Math.round((L/se+L)*100)/100}break}}if(x)break}}}for(let w of D)b(m,w.name)&&(w._claimed=!0,!x&&w.amount&&(x=w.amount,L||(L=w.holdProfit),I||(I=w.yesterdayProfit)));s.push({code:h,name:m,amount:x,holdProfit:L,yesterdayProfit:I,shares:0,group:"\u9ED8\u8BA4",selected:!0,_needLookup:!1})}for(let f of D)f._claimed||(delete f._claimed,s.push(f));return s}function We(){let e=R.querySelector("#_ocrResults");if(!A.length){e.innerHTML='<p style="text-align:center;color:#6a8aaa;font-size:12px;padding:20px;">\u672A\u8BC6\u522B\u5230\u6709\u6548\u8D44\u4EA7\u4FE1\u606F\uFF0C\u8BF7\u786E\u8BA4\u56FE\u7247\u662F\u5426\u6E05\u6670</p>';return}let o="padding:4px 3px;",n="background:#0d1b2e;border:1px solid #2a4a72;border-radius:4px;color:#c8d8f0;padding:2px 4px;font-size:11px;width:100%;box-sizing:border-box;",a=`
+        // 打开 Modal 显示列表
+        elements.modalTitle.textContent = '交易记录';
+        elements.modalMsg.innerHTML = renderList();
+        elements.modalInput.style.display = 'none';
+        _setFooter([
+            { text: '关闭', cls: 'modal-btn-cancel', onClick: _closeModal }
+        ]);
+        elements.modalOverlay.classList.add('visible');
+
+        // 绑定撤销按钮
+        elements.modalMsg.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-revoke]');
+            if (!btn) return;
+            const idx = parseInt(btn.dataset.revoke);
+            const adj = txList[idx];
+            if (!adj || adj.status === 'confirmed') return;
+
+            const typeLabel = adj.type === 'add' ? `加仓 ¥${adj.amount}` : `减仓 ${adj.shares}份`;
+            const ok = await showConfirm(`确认撤销：${typeLabel}（${adj.targetDate}）？`, '撤销确认', true);
+            if (!ok) return;
+
+            txList.splice(idx, 1);
+            await new Promise(r => chrome.storage.local.set({ myFunds: funds }, r));
+            showToast('已撤销该笔交易', 'success');
+
+            // 刷新列表
+            if (txList.length === 0) {
+                _closeModal();
+                loadData();
+            } else {
+                elements.modalMsg.innerHTML = renderList();
+                // 重新绑定（递归监听已在外层，无需重复）
+            }
+            loadData();
+        });
+    }
+
+    // 绑定其他按钮（原有代码已正确绑定）
+    centerModalOverlay.querySelectorAll('.btn-op').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const action = btn.dataset.action;
+            const c = btn.dataset.code;
+            hideCenterModal();
+
+            if (action === 'add') adjustPosition(c, 'add');
+            else if (action === 'remove') adjustPosition(c, 'remove');
+            else if (action === 'edit') openFundEditor(c); // 注意这里换成了新函数
+            else if (action === 'clear') clearPosition(c);
+            // ======= 下面是新增的两个动作 =======
+            else if (action === 'calc_shares') forceRecalculateShares(c);
+            else if (action === 'delete') removeFund(c); // 直接复用你已有的 removeFund 函数
+        });
+    });
+
+    // 显示弹窗
+    requestAnimationFrame(() => {
+        centerModalOverlay.classList.add('visible');
+    });
+}
+/**
+ * 隐藏弹窗
+ */
+function hideCenterModal() {
+    if (centerModalOverlay) {
+        centerModalOverlay.classList.remove('visible');
+    }
+}
+
+// ==================== 强制根据金额重新计算份额 ====================
+async function forceRecalculateShares(code) {
+    elements.status.innerText = '正在重新计算份额...';
+    const live = await fetchLiveInfo(code);
+    if (!live || live.prevPrice <= 0) {
+        await showAlert(`无法获取 ${code} 的有效净值，计算失败。`);
+        elements.status.innerText = '准备就绪';
+        return;
+    }
+
+    chrome.storage.local.get(['myFunds'], (res) => {
+        const funds = res.myFunds || {};
+        if (funds[code]) {
+            // 用当前金额 除以 当前净值
+            const newShares = parseFloat((funds[code].amount / live.prevPrice).toFixed(6));
+            funds[code].shares = newShares;
+
+            chrome.storage.local.set({ myFunds: funds }, () => {
+                showToast(`✅ 已按照净值 ${live.prevPrice} 修正份额为: ${newShares}`, 'success');
+                elements.status.innerText = '准备就绪';
+                loadData();
+            });
+        }
+    });
+}
+
+// ==================== 修改：渲染表格 ====================
+function renderTable() {
+    const filter = elements.groupFilter.value;
+    let displayData = currentFundsData.filter(item => filter === 'all' || item.group === filter);
+    displayData.sort((a, b) => {
+        const valA = a[sortField] ?? 0;
+        const valB = b[sortField] ?? 0;
+        return (valA - valB) * sortDirection;
+    });
+    document.querySelectorAll('.sortable').forEach(th => {
+        th.textContent = th.textContent.replace(/[↑↓]/g, '');
+        if (th.dataset.sort === sortField) {
+            th.textContent += (sortDirection === 1 ? '↑' : '↓');
+        }
+    });
+    let sumAmount = 0, sumYesterdayProfit = 0, sumTodayProfit = 0, sumTotalProfit = 0;
+    const fragment = document.createDocumentFragment();
+    displayData.forEach((item, index) => {
+        sumAmount += item.amount || 0;
+        sumYesterdayProfit += item.yesterdayProfit || 0;
+        sumTodayProfit += item.todayProfit || 0;
+        sumTotalProfit += item.holdProfit || 0;
+        const todayProfitText = item.todayProfit === null
+            ? '—'
+            : `${item.todayProfit >= 0 ? '+' : ''}${item.todayProfit.toFixed(2)}`;
+        const tr = document.createElement('tr');
+        tr.dataset.code = item.code;
+        _td(tr, String(index + 1));
+        // -- 代码 --
+        _td(tr, item.code);
+        // -- 名称/分组 --
+        const tdName = document.createElement('td');
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'fund-name';
+        nameSpan.title = item.name;
+        nameSpan.textContent = item.name;
+        const groupSpan = document.createElement('span');
+        groupSpan.className = 'group-tag';
+        groupSpan.dataset.code = item.code;
+        groupSpan.textContent = item.group;
+        tdName.appendChild(nameSpan);
+        tdName.appendChild(groupSpan);
+        tr.appendChild(tdName);
+        // -- 持仓金额 (全屏和小屏都显示) --
+        const tdAmount = document.createElement('td');
+        tdAmount.className = 'editable-cell';
+        tdAmount.dataset.field = 'amount';
+        tdAmount.dataset.code = item.code;
+        // 【修改】在金额后也添加设置图标 (解决小窗口看不到份额列的问题)
+        const amountWrapper = document.createElement('div');
+        amountWrapper.className = 'cell-with-icon';
+        const amountText = document.createElement('span');
+        amountText.textContent = item.amount.toFixed(2);
+        const gearIcon1 = document.createElement('span');
+        gearIcon1.className = 'settings-icon';
+        gearIcon1.textContent = '⚙️';
+        gearIcon1.dataset.code = item.code;
+        // 绑定点击事件
+        gearIcon1.onclick = (e) => {
+            e.stopPropagation();
+            showCenterMenu(item.code);
+        };
+        amountWrapper.appendChild(amountText);
+        amountWrapper.appendChild(gearIcon1);
+        tdAmount.appendChild(amountWrapper);
+        tr.appendChild(tdAmount);
+        // -- 份额 (全屏显示) --
+        const tdShares = document.createElement('td');
+        tdShares.className = 'col-hide'; // 小屏隐藏
+        const sharesWrapper = document.createElement('div');
+        sharesWrapper.className = 'cell-with-icon';
+        const sharesText = document.createElement('span');
+        sharesText.className = 'editable-cell'; // 保留可编辑
+        sharesText.dataset.field = 'shares';
+        sharesText.dataset.code = item.code;
+        sharesText.textContent = item.shares ? item.shares.toFixed(4) : '—';
+        sharesWrapper.appendChild(sharesText);
+        tdShares.appendChild(sharesWrapper);
+        tr.appendChild(tdShares);
+        // ... [净值列、昨日收益列、估值收益列代码保持不变] ...
+        const tdNav = document.createElement('td');
+        tdNav.className = 'col-hide';
+        const todayStr2 = getToday();
+        const prevNavLine = document.createElement('div');
+        prevNavLine.style.cssText = 'display:flex; align-items:baseline; gap:4px;';
+        const navVal = document.createElement('span');
+        navVal.textContent = item.prevPrice > 0 ? item.prevPrice.toFixed(4) : '—';
+        navVal.style.fontWeight = '500';
+        prevNavLine.appendChild(navVal);
+        if (item.prevPriceDate) {
+            const prevDateSpan = document.createElement('span');
+            prevDateSpan.style.cssText = `font-size:10px; color:${item.prevPriceDate === todayStr2 ? '#8c8c8c' : '#fa8c16'};`;
+            prevDateSpan.textContent = item.prevPriceDate.slice(5);
+            prevNavLine.appendChild(prevDateSpan);
+        }
+        tdNav.appendChild(prevNavLine);
+        const liveNavLine = document.createElement('div');
+        liveNavLine.style.cssText = 'display:flex; align-items:baseline; gap:4px; margin-top:2px; flex-wrap:wrap;';
+        const priceSpan = document.createElement('span');
+        if (item.price > 0) {
+            priceSpan.textContent = item.price.toFixed(4);
+            priceSpan.style.cssText = 'font-weight:500; color:#ffc069;';
+            const liveDateSpan = document.createElement('span');
+            liveDateSpan.style.cssText = 'font-size:10px; color:#8c8c8c;';
+            liveDateSpan.textContent = (item.priceTime || todayStr2).slice(5);
+            liveNavLine.appendChild(priceSpan);
+            liveNavLine.appendChild(liveDateSpan);
+        } else {
+            priceSpan.textContent = '—';
+            priceSpan.style.color = '#8c8c8c';
+            liveNavLine.appendChild(priceSpan);
+        }
+        if (item.rate !== null && item.rate !== undefined) {
+            const rateSpan = document.createElement('span');
+            rateSpan.style.cssText = `font-size:11px; font-weight:bold; color:${item.rate >= 0 ? '#f5222d' : '#389e0d'};`;
+            rateSpan.textContent = `${item.rate >= 0 ? '+' : ''}${item.rate.toFixed(2)}%`;
+            liveNavLine.appendChild(rateSpan);
+        }
+        tdNav.appendChild(liveNavLine);
+        tr.appendChild(tdNav);
+        _tdProfit(tr, item.yesterdayProfit, item.yesterdayProfit >= 0);
+        const tdToday = document.createElement('td');
+        if (item.todayProfit !== null) {
+            tdToday.className = item.todayProfit >= 0 ? 'up' : 'down';
+        }
+        const todayAmtLine = document.createElement('div');
+        todayAmtLine.textContent = todayProfitText;
+        tdToday.appendChild(todayAmtLine);
+        if (item.rate !== null && item.rate !== undefined) {
+            const todayRateLine = document.createElement('div');
+            todayRateLine.style.cssText = 'font-size:10px; margin-top:1px; opacity:0.85;';
+            todayRateLine.textContent = `${item.rate >= 0 ? '+' : ''}${item.rate.toFixed(2)}%`;
+            tdToday.appendChild(todayRateLine);
+        }
+        tr.appendChild(tdToday);
+        // 累计收益
+        const tdHoldProfit = document.createElement('td');
+        tdHoldProfit.className = `editable-cell ${item.holdProfit >= 0 ? 'up' : 'down'}`;
+        tdHoldProfit.dataset.field = 'holdProfit';
+        tdHoldProfit.dataset.code = item.code;
+        tdHoldProfit.textContent = `${item.holdProfit >= 0 ? '+' : ''}${item.holdProfit.toFixed(2)}`;
+        tr.appendChild(tdHoldProfit);
+        // -- 操作列 (只保留删除) --
+        const tdOp = document.createElement('td');
+        tdOp.className = 'col-hide';
+        const btnDel = document.createElement('button');
+        btnDel.className = 'del-btn';
+        btnDel.dataset.code = item.code;
+        btnDel.title = '删除';
+        btnDel.textContent = '✕';
+        tdOp.appendChild(btnDel);
+        tr.appendChild(tdOp);
+        fragment.appendChild(tr);
+    });
+    elements.tableBody.innerHTML = '';
+    elements.tableBody.appendChild(fragment);
+    // ... [汇总统计代码保持不变] ...
+    elements.totalAmount.textContent = sumAmount.toLocaleString(undefined, { minimumFractionDigits: 2 });
+    elements.totalYesterdayProfit.textContent = (sumYesterdayProfit >= 0 ? '+' : '') + sumYesterdayProfit.toFixed(2);
+    elements.totalYesterdayProfit.className = sumYesterdayProfit >= 0 ? 'up' : 'down';
+    elements.totalTodayProfit.textContent = (sumTodayProfit >= 0 ? '+' : '') + sumTodayProfit.toFixed(2);
+    elements.totalTodayProfit.className = sumTodayProfit >= 0 ? 'up' : 'down';
+    elements.totalTotalProfit.textContent = (sumTotalProfit >= 0 ? '+' : '') + sumTotalProfit.toFixed(2);
+    elements.totalTotalProfit.className = sumTotalProfit >= 0 ? 'up' : 'down';
+    // 绑定删除按钮和分组标签事件
+    elements.tableBody.onclick = (e) => {
+        const target = e.target;
+        const code = target.dataset.code;
+        if (target.classList.contains('del-btn')) {
+            removeFund(code);
+        } else if (target.classList.contains('group-tag')) {
+            openFundEditor(code);
+        }
+    };
+    // 绑定可编辑单元格事件
+    elements.tableBody.querySelectorAll('.editable-cell').forEach(cell => {
+        cell.onblur = () => {
+            const code = cell.dataset.code;
+            const field = cell.dataset.field;
+            const valStr = cell.textContent.trim();
+            const val = parseFloat(valStr);
+            if (valStr === '' || isNaN(val)) {
+                showToast('请输入有效的数字', 'warning');
+                loadData();
+                return;
+            }
+            chrome.storage.local.get(['myFunds'], (res) => {
+                const funds = res.myFunds || {};
+                if (funds[code]) {
+                    if (funds[code][field] === val) return;
+                    funds[code][field] = val;
+                    const localItem = currentFundsData.find(f => f.code === code);
+                    if (localItem) localItem[field] = val;
+                    chrome.storage.local.set({ myFunds: funds }, () => {
+                        showToast('已保存', 'success', 1500);
+                        renderTable();
+                    });
+                }
+            });
+        };
+        cell.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); cell.blur(); } };
+    });
+    // ---- 行点击选择（文件管理器风格）----
+    elements.tableBody.querySelectorAll('tr').forEach((tr, idx) => {
+        // 渲染时恢复选中高亮
+        if (tr.dataset.code && selectedCodes.has(tr.dataset.code)) {
+            tr.classList.add('selected-row');
+        }
+
+        tr.addEventListener('click', (e) => {
+            // 点击操作按钮/齿轮/group-tag/del-btn 时不触发选择
+            if (e.target.closest('.settings-icon, .group-tag, .del-btn, button')) return;
+
+            const code = tr.dataset.code;
+            if (!code) return;
+
+            if (e.shiftKey && lastClickedIndex >= 0) {
+                // 阻止 Shift 点击时浏览器默认的文字选中行为
+                e.preventDefault();
+                // Shift 点击：范围选（只加，不减）
+                const start = Math.min(lastClickedIndex, idx);
+                const end = Math.max(lastClickedIndex, idx);
+                elements.tableBody.querySelectorAll('tr').forEach((r, i) => {
+                    if (i >= start && i <= end && r.dataset.code) {
+                        selectedCodes.add(r.dataset.code);
+                        r.classList.add('selected-row');
+                    }
+                });
+            } else {
+                // 普通点击：切换选中状态
+                if (selectedCodes.has(code)) {
+                    selectedCodes.delete(code);
+                    tr.classList.remove('selected-row');
+                } else {
+                    selectedCodes.add(code);
+                    tr.classList.add('selected-row');
+                }
+                lastClickedIndex = idx;
+            }
+
+            updateSelectionStatus();
+        });
+    });
+
+    updateSelectionStatus();
+}
+
+// ==================== 选中状态反馈 ====================
+function updateSelectionStatus() {
+    const count = selectedCodes.size;
+    const fabMain = document.getElementById('fabMain');
+
+    if (count > 0) {
+        elements.status.innerHTML =
+            `已选中 <b style="color:#69b1ff">${count}</b> 项 &nbsp;` +
+            `<span id="clearSelectionBtn" style="color:#ff7875;cursor:pointer;font-size:11px;` +
+            `border:1px solid #ff7875;border-radius:10px;padding:1px 7px;">✕ 取消选择</span>`;
+        document.getElementById('clearSelectionBtn').onclick = () => {
+            clearSelection();
+            renderTable();
+        };
+        if (fabMain) fabMain.style.background = '#fa8c16';
+    } else {
+        elements.status.innerText = `最后更新: ${new Date().toLocaleTimeString()}`;
+        if (fabMain) fabMain.style.background = '';
+    }
+}
+
+async function clearPosition(code) {
+    const ok = await showConfirm(
+        `确定要清空基金 [${code}] 的持仓吗？\n\n此操作将清空持仓金额和份额，但会保留该基金的“累计收益”。`,
+        '清空持仓确认',
+        true
+    );
+    if (!ok) return;
+    chrome.storage.local.get(['myFunds'], (res) => {
+        const funds = res.myFunds || {};
+        if (funds[code]) {
+            resetFundPosition(funds[code]);
+            chrome.storage.local.set({ myFunds: funds }, () => {
+                showToast(`✅ 基金 ${code} 持仓已清空`, 'success');
+                loadData();
+            });
+        }
+    });
+}
+
+if (elements.batchGroupBtn) elements.batchGroupBtn.onclick = () => batchChangeGroup();
+if (elements.batchClearBtn) elements.batchClearBtn.onclick = () => batchClearPositions();
+
+
+
+function _td(tr, text) {
+    const td = document.createElement('td');
+    td.textContent = text;
+    tr.appendChild(td);
+}
+
+function _tdProfit(tr, value, isUp) {
+    const td = document.createElement('td');
+    td.className = isUp ? 'up' : 'down';
+    td.textContent = `${isUp ? '+' : ''}${value.toFixed(2)}`;
+    tr.appendChild(td);
+}
+// 辅助函数：重置单个基金的持仓数据
+function resetFundPosition(fund) {
+    fund.amount = 0;
+    fund.shares = 0;
+    fund.lastClosedAmount = 0;
+    //fund.yesterdayProfit = 0;
+    fund.group = "已撤回";
+    if (fund.cost !== undefined) fund.cost = 0;
+    // 注意：保留 holdProfit (累计收益)
+}
+
+
+
+
+
+async function removeFund(code) {
+    const ok = await showConfirm(`确定删除 ${code}？`, '删除确认', true);
+    if (ok) {
+        chrome.storage.local.get(['myFunds'], (res) => {
+            const f = res.myFunds || {};
+            delete f[code];
+            chrome.storage.local.set({ myFunds: f }, loadData);
+        });
+    }
+}
+
+function exportFundsData() {
+    chrome.storage.local.get(['myFunds', 'lastUpdateDate', 'lastDayProfits'], (res) => {
+        const fundsData = res.myFunds || {};
+        if (Object.keys(fundsData).length === 0) {
+            showToast('暂无可导出的基金数据！', 'warning');
+            return;
+        }
+
+        const exportData = {
+            exportTime: new Date().toLocaleString(),
+            lastUpdateDate: res.lastUpdateDate || '',
+            lastDayProfits: res.lastDayProfits || {},
+            myFunds: fundsData
+        };
+
+        const jsonStr = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const now = new Date();
+        const fileName = `基金数据_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}.json`;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+
+        showToast(`✅ 数据导出成功！文件名: ${fileName}`, 'success');
+    });
+}
+
+elements.exportBtn.onclick = exportFundsData;
+
+function migrateFund(fund) {
+    // 保留所有原始字段，只对数值类型做安全转换，防止旧格式数据类型错误
+    return {
+        ...fund,
+        amount: parseFloat(fund.amount) || 0,
+        holdProfit: parseFloat(fund.holdProfit) || 0,
+        shares: parseFloat(fund.shares) || 0,
+        yesterdayProfit: parseFloat(fund.yesterdayProfit) || 0,
+        group: typeof fund.group === 'string' ? fund.group : '默认',
+        savedPrevPrice: fund.savedPrevPrice ? parseFloat(fund.savedPrevPrice) : undefined,
+        // pendingAdjustments（交易记录）原样保留，不做转换
+        pendingAdjustments: Array.isArray(fund.pendingAdjustments) ? fund.pendingAdjustments : [],
+    };
+}
+
+function importFundsData(event) {
+    const fileInput = event.target;
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
+        showToast('请选择 JSON 格式的导出文件！', 'error');
+        fileInput.value = '';
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async function (e) {
+        try {
+            const importData = JSON.parse(e.target.result);
+            if (!importData.myFunds || typeof importData.myFunds !== 'object') {
+                await showAlert('导入文件格式错误：未找到有效基金数据！');
+                fileInput.value = '';
+                return;
+            }
+
+            const ok = await showConfirm(
+                `确认导入【${importData.exportTime || '未知时间'}】的基金数据？\n注意：当前数据将被覆盖！`,
+                '导入确认',
+                true
+            );
+            if (!ok) { fileInput.value = ''; return; }
+
+            const migratedFunds = {};
+            for (const [code, fund] of Object.entries(importData.myFunds)) {
+                migratedFunds[code] = migrateFund(fund);
+            }
+
+            const dataToSave = { myFunds: migratedFunds };
+            if (importData.lastUpdateDate) dataToSave.lastUpdateDate = importData.lastUpdateDate;
+            if (importData.lastDayProfits) dataToSave.lastDayProfits = importData.lastDayProfits;
+
+            chrome.storage.local.set(dataToSave, () => {
+                showToast('✅ 数据导入成功！', 'success');
+                fileInput.value = '';
+                loadData();
+            });
+        } catch (err) {
+            await showAlert(`导入失败: ${err.message}`);
+            fileInput.value = '';
+        }
+    };
+    reader.readAsText(file);
+}
+
+elements.importBtn.onclick = () => elements.importFile.click();
+
+// ==================== OCR 图片识别批量添加资产 ====================
+let _ocrModalEl = null;
+let _ocrItems = [];
+
+/**
+ * 懒加载并缓存 Tesseract Worker（v4 API）
+ * @param {Function} onLog - 日志/进度回调
+ */
+// ── 主线程 OCR（完全绕过 Web Worker，避开 MV3 CSP 限制） ──
+// worker.min.js 已改造：暴露 window.__TesseractDispatch，可在主线程直接调用
+function _sendToTesseract(action, payload) {
+    return new Promise((resolve, reject) => {
+        const jobId = 'job_' + Math.random().toString(36).slice(2);
+        const workerId = 'main_thread';
+        __TesseractDispatch(
+            { workerId, jobId, action, payload },
+            (msg) => {
+                if (msg.status === 'resolve') resolve(msg.data);
+                else if (msg.status === 'reject') reject(new Error(msg.data));
+                // progress 消息忽略或转发给 onLog
+            }
+        );
+    });
+}
+
+async function _getOCRWorker(onLog) {
+    if (window._tWorker) return window._tWorker;
+    const extRoot = chrome.runtime.getURL('').replace(/\/$/, '');
+
+    // 等待 worker.min.js 在主线程初始化（script 标签已在 popup.html 里加载）
+    if (typeof __TesseractDispatch === 'undefined') {
+        throw new Error('__TesseractDispatch 未定义，请确认 popup.html 已加载 worker.min.js');
+    }
+
+    // 初始化：load -> loadLanguage -> initialize
+    await _sendToTesseract('load', {
+        options: {
+            corePath: chrome.runtime.getURL('tesseract-core.wasm.js'),
+            langPath: extRoot,
+            logging: false,
+        }
+    });
+    await _sendToTesseract('loadLanguage', {
+        langs: 'chi_sim',
+        options: { langPath: extRoot, dataPath: null, cachePath: null, cacheMethod: 'none', gzip: false }
+    });
+    await _sendToTesseract('initialize', {
+        langs: 'chi_sim',
+        options: {}
+    });
+
+    // fake worker 对象，实现 recognize 接口
+    const fakeWorker = {
+        recognize: async (imageData) => {
+            // 把 File/Blob 转成 Uint8Array，dispatchHandlers 需要 typed array
+            let imgBuffer = imageData;
+            if (imageData instanceof Blob || imageData instanceof File) {
+                imgBuffer = new Uint8Array(await imageData.arrayBuffer());
+            }
+            const result = await new Promise((resolve, reject) => {
+                const jobId = 'job_' + Math.random().toString(36).slice(2);
+                __TesseractDispatch(
+                    {
+                        workerId: 'main_thread', jobId, action: 'recognize',
+                        payload: {
+                            image: imgBuffer, options: {},
+                            output: { text: true, blocks: false, hocr: false, tsv: false }
+                        }
+                    },
+                    (msg) => {
+                        if (onLog) onLog(msg);
+                        if (msg.status === 'resolve') resolve(msg.data);
+                        else if (msg.status === 'reject') reject(new Error(String(msg.data)));
+                    }
+                );
+            });
+            return { data: result };  // 兼容 Tesseract 标准返回格式
+        },
+        terminate: () => { window._tWorker = null; }
+    };
+
+    window._tWorker = fakeWorker;
+    return fakeWorker;
+}
+
+/**
+ * 通过基金名称反推 6 位基金代码（调用东方财富搜索接口）
+ * @param {string} name - 基金名称（部分匹配即可）
+ * @returns {Promise<string|null>}
+ */
+async function getCodeByName(name) {
+    if (!name || name.length < 2) return null;
+
+    // 生成渐进缩短的查询变体：全名 → 去联接/ETF后缀 → 纯中文核心词
+    function nameVariants(raw) {
+        const clean = raw.replace(/\s+/g, '');
+        const variants = [clean];
+        // 去掉尾部份额标识和联接/LOF/ETF修饰
+        let core = clean
+            .replace(/发起联接[A-E]?$/, '')
+            .replace(/联接[A-E]?$/, '')
+            .replace(/指数[A-E]?$/, '')
+            .replace(/[（(]LOF[)）]/, '')
+            .replace(/ETF/, '')
+            .replace(/[A-E]$/, '');
+        if (core !== clean && core.length >= 4) variants.push(core);
+        // 纯中文核心（去掉所有字母和括号）
+        const cjk = raw.replace(/[A-Za-z\(\)\（\）\s]+/g, '')
+            .replace(/发起联接$|联接$|指数$/, '');
+        if (cjk !== clean && cjk !== core && cjk.length >= 4) variants.push(cjk);
+        return [...new Set(variants)];
+    }
+
+    for (const query of nameVariants(name)) {
+        try {
+            const url = `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=10&key=${encodeURIComponent(query)}`;
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data.Datas && data.Datas.length > 0) {
+                // 只接受纯6位数字代码，跳过 F0T001/C4F002 等内部编码
+                for (const item of data.Datas) {
+                    const code = String(item.CODE || '');
+                    if (/^\d{6}$/.test(code)) return code;
+                }
+            }
+        } catch (e) {
+            console.warn('[OCR] 代码反查失败:', query, e);
+        }
+    }
+    return null;
+}
+
+/**
+ * 去除 Tesseract OCR 在中文字符之间插入的多余空格
+ * 逐行处理，避免跨行合并
+ */
+function _normalizeOCR(text) {
+    return text.split('\n').map(line => {
+        let prev = null, l = line;
+        while (prev !== l) {
+            prev = l;
+            l = l.replace(/([一-龥])\s+([一-龥])/g, '$1$2');
+            l = l.replace(/([一-龥])\s+([（）\(\)])/g, '$1$2');
+            l = l.replace(/([（）\(\)])\s+([一-龥])/g, '$1$2');
+        }
+        return l;
+    }).join('\n');
+}
+
+/**
+ * 从 OCR 文本中提取资产信息（支持列表页和详情页）
+ *
+ * 流程：
+ *   1. normalize：去除中文字符间空格（Tesseract chi_sim 常见问题）
+ *   2. Mode B：解析列表页（无代码，按"昨日收益/持有收益/总金额"列头定位）
+ *   3. Mode A：解析详情页（含6位基金代码），通过标签定位各字段
+ *              若持有金额=0，与 Mode B 结果按名称相似度交叉引用
+ *   4. 合并：Mode A 结果（带代码）+ 未被引用的 Mode B 结果（需反查代码）
+ */
+function _parseOCRText(text) {
+    console.log('[OCR RAW TEXT]\n', text);
+
+    const normalized = _normalizeOCR(text);
+    const lines = normalized.split('\n').map(l => l.trim()).filter(Boolean);
+    const fullText = lines.join('\n');
+    const result = [];
+    if (!lines.length) return result;
+
+    const CODE_RE = /\b(\d{6})\b/;
+    // 工厂函数：每次调用返回新实例，避免 /g 正则 lastIndex 状态污染
+    const MONEY_RE = () => /[+-]?\d[\d,\.]*\.\d{1,2}(?!\d)(?!\s*%)/g;
+    const VAL_RE = () => /[+-]?\d[\d,\.]*\.\d{2}(?!\d)(?!\s*%)/g;
+    const NAME_EXCL = /收益|金额|赎回|购买|申购|到账|手续费|销售|暂停|T\+\d|万内/;
+    const ALL_LABELS = ['持有金额', '昨日收益', '持有收益率', '持有收益', '持有份额'];
+
+    function parseAmt(str) {
+        const s = str.replace(/[^\d\.\+-]/g, '');
+        if (!s) return 0;
+        const parts = s.replace(/^[+-]/, '').split('.');
+        if (parts.length > 2) {
+            const sign = s[0] === '-' ? -1 : 1;
+            return sign * parseFloat(parts.slice(0, -1).join('') + '.' + parts[parts.length - 1]);
+        }
+        return parseFloat(s) || 0;
+    }
+
+    function isNameLine(s) {
+        if (!s || s.length < 2) return false;
+        if (!/[\u4e00-\u9fa5]/.test(s)) return false;
+        if (NAME_EXCL.test(s)) return false;
+        if (CODE_RE.test(s)) return false;
+        if (/^\d+(\.\d+)?$/.test(s)) return false;
+        const cjk = (s.match(/[\u4e00-\u9fa5]/g) || []).length;
+        return cjk / s.replace(/\s/g, '').length >= 0.3;
+    }
+
+    function nameSimilar(a, b) {
+        const ca = a.replace(/[^\u4e00-\u9fa5]/g, '');
+        const cb = b.replace(/[^\u4e00-\u9fa5]/g, '');
+        if (!ca || !cb || ca.length < 4 || cb.length < 4) return false;
+        const [shorter, longer] = ca.length <= cb.length ? [ca, cb] : [cb, ca];
+        return longer.includes(shorter);
+    }
+
+    // 从 startFrom 位置开始找标签（持有收益 需跳过 持有收益率）
+    function getLabelPosFrom(lbl, startFrom) {
+        if (lbl !== '持有收益') {
+            const idx = fullText.indexOf(lbl, startFrom);
+            return idx !== -1 ? idx : undefined;
+        }
+        let s = startFrom;
+        while (true) {
+            const idx = fullText.indexOf(lbl, s);
+            if (idx === -1) return undefined;
+            if (fullText[idx + lbl.length] !== '率') return idx;
+            s = idx + 1;
+        }
+    }
+
+    // 提取标签后到下一个标签前的文本片段（从 startFrom 开始搜索标签）
+    function segAfterLabel(lbl, startFrom) {
+        const pos = getLabelPosFrom(lbl, startFrom);
+        if (pos === undefined) return '';
+        const segStart = pos + lbl.length;
+        let segEnd = segStart + 200;
+        ALL_LABELS.forEach(other => {
+            if (other === lbl) return;
+            const op = getLabelPosFrom(other, startFrom);
+            if (op !== undefined && op > segStart && op < segEnd) segEnd = op;
+        });
+        return fullText.slice(segStart, segEnd);
+    }
+
+    function maxPosNum(seg) {
+        let best = 0;
+        for (const m of (seg.match(MONEY_RE()) || [])) {
+            const v = parseAmt(m);
+            if (v > best) best = v;
+        }
+        return best;
+    }
+
+    function firstNum(seg, mustPos = false) {
+        for (const m of (seg.match(MONEY_RE()) || [])) {
+            const v = parseAmt(m);
+            if (mustPos && v < 0) continue;
+            return v;
+        }
+        return 0;
+    }
+
+    // ══════════════════════════════════════════════
+    // STEP 1: Mode B — 列表页解析
+    // ══════════════════════════════════════════════
+    const COL_HEAD_RE = /昨日收|总金额/;
+    const modeB = [];
+    const seenNames = new Set();
+
+    for (let i = 0; i < lines.length; i++) {
+        if (!COL_HEAD_RE.test(lines[i])) continue;
+        const hasYesterday = /昨日收/.test(lines[i]);
+
+        let dataLine = '';
+        for (let j = i + 1; j <= Math.min(i + 3, lines.length - 1); j++) {
+            const ms = lines[j].match(VAL_RE());
+            if (ms && ms.length >= 2) { dataLine = lines[j]; break; }
+        }
+        if (!dataLine) continue;
+
+        const nums = (dataLine.match(VAL_RE()) || []).map(parseAmt);
+        let yp = 0, hp = 0, amt = 0;
+        if (hasYesterday && nums.length >= 3) {
+            [yp, hp, amt] = [nums[0], nums[1], nums[2]];
+        } else if (nums.length >= 3) {
+            [yp, hp, amt] = [nums[0], nums[1], nums[2]];
+        } else if (nums.length === 2) {
+            [hp, amt] = [nums[0], nums[1]];
+        } else if (nums.length === 1) {
+            amt = nums[0];
+        }
+        // 安全兜底：amt 取最大正数
+        const posNums = nums.filter(v => v > 0);
+        if (posNums.length && Math.max(...posNums) > amt) amt = Math.max(...posNums);
+
+        let fundName = '';
+        for (let k = i - 1; k >= Math.max(0, i - 6); k--) {
+            if (isNameLine(lines[k])) { fundName = lines[k]; break; }
+        }
+        if (!fundName || seenNames.has(fundName)) continue;
+        seenNames.add(fundName);
+
+        modeB.push({
+            code: '', name: fundName, amount: amt, holdProfit: hp, yesterdayProfit: yp,
+            shares: 0, group: '默认', selected: true, _needLookup: true, _claimed: false
+        });
+    }
+
+    // ══════════════════════════════════════════════
+    // STEP 2: Mode A — 详情页（含6位基金代码）
+    // ══════════════════════════════════════════════
+    const seenCodes = new Set();
+
+    for (let i = 0; i < lines.length; i++) {
+        const codeMatch = lines[i].match(CODE_RE);
+        if (!codeMatch) continue;
+        const code = codeMatch[1];
+        if (seenCodes.has(code)) continue;
+        seenCodes.add(code);
+
+        let fundName = '';
+        for (let k = i - 1; k >= Math.max(0, i - 4); k--) {
+            if (/[\u4e00-\u9fa5]/.test(lines[k])) { fundName = lines[k]; break; }
+        }
+
+        const codePos = fullText.indexOf(code);
+        const startFrom = Math.max(0, codePos - 10);
+
+        let amount = maxPosNum(segAfterLabel('持有金额', startFrom));
+        let yesterday = firstNum(segAfterLabel('昨日收益', startFrom));
+        let hold = firstNum(segAfterLabel('持有收益', startFrom));
+
+        // ── 详情页金额重建：持有金额大字体常被OCR漏识别
+        //    若 amount=0，在代码附近寻找"昨日收益/持有收益/持有收益率"三标签合并行，
+        //    然后从下一个数值行提取 [yesterday, holdProfit] 和 持有收益率%，
+        //    用公式 amount = holdProfit / rate% + holdProfit 反推持仓金额 ──
+        if (!amount) {
+            const RATE_RE = /(\d+\.?\d*)\s*%/g;
+            // 在 startFrom 之后的行里找含"昨日收益"或"持有收益率"的行
+            const linesAfterCode = lines.slice(i);
+            for (let li = 0; li < linesAfterCode.length; li++) {
+                const lbl = linesAfterCode[li];
+                if (!/昨日收益|持有收益/.test(lbl)) continue;
+                // 找下一个有数字的行
+                for (let vi = li + 1; vi <= Math.min(li + 3, linesAfterCode.length - 1); vi++) {
+                    const valLine = linesAfterCode[vi];
+                    const nums = (valLine.match(MONEY_RE()) || []).map(m => parseAmt(m));
+                    const rates = [];
+                    let rm;
+                    RATE_RE.lastIndex = 0;
+                    while ((rm = RATE_RE.exec(valLine)) !== null) rates.push(parseFloat(rm[1]));
+                    if (!nums.length) continue;
+                    // 更新 yesterday / hold（若之前标签解析失败）
+                    if (!yesterday && nums[0] !== undefined) yesterday = nums[0];
+                    if (!hold && nums[1] !== undefined) hold = nums[1];
+                    // 反推金额
+                    if (rates.length && Math.abs(rates[0]) > 0.01 && hold !== 0) {
+                        const rateDec = rates[0] / 100;
+                        amount = Math.round((hold / rateDec + hold) * 100) / 100;
+                    }
+                    break;
+                }
+                if (amount) break;
+            }
+        }
+
+        // 与 Mode B 交叉引用：找所有名称相似的条目，全部标记为已引用
+        for (const b of modeB) {
+            if (nameSimilar(fundName, b.name)) {
+                b._claimed = true;
+                // 若 amount 仍为 0，从 Mode B 补充
+                if (!amount && b.amount) {
+                    amount = b.amount;
+                    if (!hold) hold = b.holdProfit;
+                    if (!yesterday) yesterday = b.yesterdayProfit;
+                }
+            }
+        }
+
+        result.push({
+            code, name: fundName, amount, holdProfit: hold, yesterdayProfit: yesterday,
+            shares: 0, group: '默认', selected: true, _needLookup: false
+        });
+    }
+
+    // ══════════════════════════════════════════════
+    // STEP 3: 合并未被引用的 Mode B 条目
+    // ══════════════════════════════════════════════
+    for (const b of modeB) {
+        if (!b._claimed) {
+            delete b._claimed;
+            result.push(b);
+        }
+    }
+
+    return result;
+}
+
+/**
+ * 渲染识别结果为可编辑表格（含昨日收益、持有收益列）
+ */
+function _renderOCRTable() {
+    const container = _ocrModalEl.querySelector('#_ocrResults');
+    if (!_ocrItems.length) {
+        container.innerHTML = '<p style="text-align:center;color:#6a8aaa;font-size:12px;padding:20px;">未识别到有效资产信息，请确认图片是否清晰</p>';
+        return;
+    }
+    const C = 'padding:4px 3px;';
+    const I = 'background:#0d1b2e;border:1px solid #2a4a72;border-radius:4px;color:#c8d8f0;padding:2px 4px;font-size:11px;width:100%;box-sizing:border-box;';
+
+    let html = `
         <table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;">
             <colgroup>
                 <col style="width:24px">
@@ -70,44 +2220,243 @@
                 <col style="width:48px">
             </colgroup>
             <thead><tr style="color:#4a6a90;border-bottom:1px solid #1e3a5f;white-space:nowrap;">
-                <th style="${o}"><input type="checkbox" id="_ocrChkAll" checked></th>
-                <th style="${o}">\u4EE3\u7801</th>
-                <th style="${o}">\u57FA\u91D1\u540D\u79F0</th>
-                <th style="${o}">\u6301\u4ED3\u91D1\u989D(\u5143)</th>
-                <th style="${o}">\u6301\u6709\u6536\u76CA(\u5143)</th>
-                <th style="${o}">\u6628\u65E5\u6536\u76CA(\u5143)</th>
-                <th style="${o}">\u5206\u7EC4</th>
+                <th style="${C}"><input type="checkbox" id="_ocrChkAll" checked></th>
+                <th style="${C}">代码</th>
+                <th style="${C}">基金名称</th>
+                <th style="${C}">持仓金额(元)</th>
+                <th style="${C}">持有收益(元)</th>
+                <th style="${C}">昨日收益(元)</th>
+                <th style="${C}">分组</th>
             </tr></thead>
-            <tbody>`;A.forEach((s,r)=>{let c=s.code?"":"border-color:#f5222d;",t=s.holdProfit!==void 0&&s.holdProfit!==0?s.holdProfit:"",u=s.yesterdayProfit!==void 0&&s.yesterdayProfit!==0?s.yesterdayProfit:"",l=(s.name||"").replace(/"/g,"&quot;");a+=`<tr style="border-bottom:1px solid #141f30;">
-            <td style="${o}"><input type="checkbox" class="_oc" data-i="${r}" ${s.selected?"checked":""}></td>
-            <td style="${o}"><input type="text" style="${n}${c}" value="${s.code||""}" class="_oe" data-i="${r}" data-f="code" placeholder="\u5F85\u586B"></td>
-            <td style="${o}" title="${l}"><span style="color:#8aacce;font-size:10px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.name||"\u2014"}</span></td>
-            <td style="${o}"><input type="number" style="${n}" value="${s.amount||""}" class="_oe" data-i="${r}" data-f="amount" step="0.01" placeholder="0"></td>
-            <td style="${o}"><input type="number" style="${n}" value="${t}" class="_oe" data-i="${r}" data-f="holdProfit" step="0.01" placeholder="0"></td>
-            <td style="${o}"><input type="number" style="${n}" value="${u}" class="_oe" data-i="${r}" data-f="yesterdayProfit" step="0.01" placeholder="0"></td>
-            <td style="${o}"><input type="text" style="${n}" value="${s.group}" class="_oe" data-i="${r}" data-f="group"></td>
-        </tr>`}),a+="</tbody></table>",e.innerHTML=a,e.querySelector("#_ocrChkAll").onchange=function(){A.forEach(s=>s.selected=this.checked),e.querySelectorAll("._oc").forEach(s=>s.checked=this.checked)},e.querySelectorAll("._oc").forEach(s=>{s.onchange=()=>{A[+s.dataset.i].selected=s.checked}}),e.querySelectorAll("._oe").forEach(s=>{s.oninput=()=>{let r=+s.dataset.i,c=s.dataset.f,t=["amount","holdProfit","yesterdayProfit","shares"];A[r][c]=t.includes(c)?parseFloat(s.value)||0:s.value}})}function Ge(){if(R)return;let e=document.createElement("div");e.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);z-index:20000;display:flex;align-items:center;justify-content:center;",e.innerHTML=`
+            <tbody>`;
+
+    _ocrItems.forEach((a, idx) => {
+        // 代码缺失时用红色边框提示
+        const codeStyle = a.code ? '' : 'border-color:#f5222d;';
+        const hpVal = (a.holdProfit !== undefined && a.holdProfit !== 0) ? a.holdProfit : '';
+        const ypVal = (a.yesterdayProfit !== undefined && a.yesterdayProfit !== 0) ? a.yesterdayProfit : '';
+        const nameStr = (a.name || '').replace(/"/g, '&quot;');
+        html += `<tr style="border-bottom:1px solid #141f30;">
+            <td style="${C}"><input type="checkbox" class="_oc" data-i="${idx}" ${a.selected ? 'checked' : ''}></td>
+            <td style="${C}"><input type="text" style="${I}${codeStyle}" value="${a.code || ''}" class="_oe" data-i="${idx}" data-f="code" placeholder="待填"></td>
+            <td style="${C}" title="${nameStr}"><span style="color:#8aacce;font-size:10px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.name || '—'}</span></td>
+            <td style="${C}"><input type="number" style="${I}" value="${a.amount || ''}" class="_oe" data-i="${idx}" data-f="amount" step="0.01" placeholder="0"></td>
+            <td style="${C}"><input type="number" style="${I}" value="${hpVal}" class="_oe" data-i="${idx}" data-f="holdProfit" step="0.01" placeholder="0"></td>
+            <td style="${C}"><input type="number" style="${I}" value="${ypVal}" class="_oe" data-i="${idx}" data-f="yesterdayProfit" step="0.01" placeholder="0"></td>
+            <td style="${C}"><input type="text" style="${I}" value="${a.group}" class="_oe" data-i="${idx}" data-f="group"></td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+
+    // 全选/取消全选
+    container.querySelector('#_ocrChkAll').onchange = function () {
+        _ocrItems.forEach(a => a.selected = this.checked);
+        container.querySelectorAll('._oc').forEach(cb => cb.checked = this.checked);
+    };
+    // 单行勾选
+    container.querySelectorAll('._oc').forEach(cb => {
+        cb.onchange = () => { _ocrItems[+cb.dataset.i].selected = cb.checked; };
+    });
+    // 字段编辑（数字字段允许负值）
+    container.querySelectorAll('._oe').forEach(inp => {
+        inp.oninput = () => {
+            const idx = +inp.dataset.i, f = inp.dataset.f;
+            const numFields = ['amount', 'holdProfit', 'yesterdayProfit', 'shares'];
+            _ocrItems[idx][f] = numFields.includes(f)
+                ? (parseFloat(inp.value) || 0) : inp.value;
+        };
+    });
+}
+
+/**
+ * 打开 OCR 批量添加弹窗
+ */
+function openOCRBatchAdd() {
+    if (_ocrModalEl) return;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);z-index:20000;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `
         <div style="background:#111f35;border:1px solid #2a4a72;border-radius:12px;width:510px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.6);overflow:hidden;">
-            <!-- \u6807\u9898\u680F -->
+            <!-- 标题栏 -->
             <div style="padding:13px 18px;border-bottom:1px solid #1e3a5f;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-                <span style="font-size:14px;font-weight:700;color:#e8f0ff;">\u{1F4F7} \u56FE\u7247\u8BC6\u522B\u6279\u91CF\u6DFB\u52A0\u8D44\u4EA7</span>
-                <span id="_ocrClose" style="cursor:pointer;color:#6a8aaa;font-size:20px;line-height:1;padding:0 2px;">\u2715</span>
+                <span style="font-size:14px;font-weight:700;color:#e8f0ff;">📷 图片识别批量添加资产</span>
+                <span id="_ocrClose" style="cursor:pointer;color:#6a8aaa;font-size:20px;line-height:1;padding:0 2px;">✕</span>
             </div>
-            <!-- \u4E0A\u4F20\u533A -->
+            <!-- 上传区 -->
             <div id="_ocrDrop" style="margin:14px;border:2px dashed #2a4a72;border-radius:8px;padding:22px 16px;text-align:center;cursor:pointer;color:#6a8aaa;font-size:13px;flex-shrink:0;transition:border-color .15s,background .15s;">
-                <div style="font-size:30px;margin-bottom:8px;">\u{1F5BC}\uFE0F</div>
-                <div style="margin-bottom:4px;">\u62D6\u62FD\u622A\u56FE\u5230\u6B64\u5904\uFF0C\u6216\u70B9\u51FB\u9009\u62E9\u56FE\u7247</div>
-                <div style="font-size:11px;color:#4a6a90;margin-bottom:12px;">\u652F\u6301 JPG / PNG\uFF0C\u53EF\u4E00\u6B21\u9009\u591A\u5F20</div>
-                <button id="_ocrPickBtn" style="background:#1a2f50;border:1px solid #2a4a72;color:#8aacce;border-radius:6px;padding:6px 18px;font-size:12px;cursor:pointer;">\u{1F4C2} \u9009\u62E9\u56FE\u7247</button>
+                <div style="font-size:30px;margin-bottom:8px;">🖼️</div>
+                <div style="margin-bottom:4px;">拖拽截图到此处，或点击选择图片</div>
+                <div style="font-size:11px;color:#4a6a90;margin-bottom:12px;">支持 JPG / PNG，可一次选多张</div>
+                <button id="_ocrPickBtn" style="background:#1a2f50;border:1px solid #2a4a72;color:#8aacce;border-radius:6px;padding:6px 18px;font-size:12px;cursor:pointer;">📂 选择图片</button>
             </div>
             <input type="file" id="_ocrFile" accept="image/*" multiple style="display:none;">
-            <!-- \u8FDB\u5EA6\u63D0\u793A -->
+            <!-- 进度提示 -->
             <div id="_ocrProg" style="display:none;padding:0 16px 10px;font-size:12px;color:#6a8aaa;flex-shrink:0;"></div>
-            <!-- \u7ED3\u679C\u533A\uFF08\u53EF\u6EDA\u52A8\uFF09 -->
+            <!-- 结果区（可滚动） -->
             <div id="_ocrResults" style="flex:1;overflow-y:auto;padding:0 14px 4px;min-height:0;"></div>
-            <!-- \u5E95\u90E8\u64CD\u4F5C\u680F -->
+            <!-- 底部操作栏 -->
             <div id="_ocrFoot" style="display:none;padding:10px 16px;border-top:1px solid #1e3a5f;justify-content:space-between;align-items:center;flex-shrink:0;">
-                <span id="_ocrReupload" style="font-size:12px;color:#69b1ff;cursor:pointer;user-select:none;">\u21A9 \u91CD\u65B0\u4E0A\u4F20</span>
-                <button id="_ocrSave" style="background:#1890ff;color:#fff;border:none;border-radius:6px;padding:7px 22px;font-size:13px;font-weight:600;cursor:pointer;">\u6279\u91CF\u4FDD\u5B58\u9009\u4E2D</button>
+                <span id="_ocrReupload" style="font-size:12px;color:#69b1ff;cursor:pointer;user-select:none;">↩ 重新上传</span>
+                <button id="_ocrSave" style="background:#1890ff;color:#fff;border:none;border-radius:6px;padding:7px 22px;font-size:13px;font-weight:600;cursor:pointer;">批量保存选中</button>
             </div>
-        </div>`,document.body.appendChild(e),R=e;let o=()=>{e.remove(),R=null,A=[]};e.querySelector("#_ocrClose").onclick=o;let n=e.querySelector("#_ocrFile"),a=e.querySelector("#_ocrDrop");e.querySelector("#_ocrPickBtn").onclick=s=>{s.stopPropagation(),n.click()},a.onclick=()=>n.click(),a.ondragover=s=>{s.preventDefault(),a.style.borderColor="#1890ff",a.style.background="rgba(24,144,255,0.05)"},a.ondragleave=()=>{a.style.borderColor="#2a4a72",a.style.background=""},a.ondrop=s=>{s.preventDefault(),a.style.borderColor="#2a4a72",a.style.background="",ge(Array.from(s.dataTransfer.files))},n.onchange=()=>ge(Array.from(n.files)),e.querySelector("#_ocrSave").onclick=Ye,e.querySelector("#_ocrReupload").onclick=()=>{a.style.display="",e.querySelector("#_ocrProg").style.display="none",e.querySelector("#_ocrResults").innerHTML="",e.querySelector("#_ocrFoot").style.display="none",A=[],n.value=""}}async function ge(e){let o=e.filter(r=>r.type.startsWith("image/"));if(!o.length){F("\u8BF7\u9009\u62E9\u56FE\u7247\u6587\u4EF6","warning");return}let n=R.querySelector("#_ocrDrop"),a=R.querySelector("#_ocrProg"),s=R.querySelector("#_ocrFoot");n.style.display="none",a.style.display="block",a.textContent="\u23F3 \u6B63\u5728\u521D\u59CB\u5316OCR\u5F15\u64CE\uFF0C\u9996\u6B21\u52A0\u8F7D\u9700\u8981\u51E0\u79D2...",A=[];try{let r=await Oe(l=>{l.status==="recognizing text"&&R&&(a.textContent=`\u23F3 \u8BC6\u522B\u4E2D... ${Math.round((l.progress||0)*100)}%`)});for(let l=0;l<o.length;l++){if(!R)return;a.textContent=`\u23F3 \u6B63\u5728\u8BC6\u522B\u7B2C ${l+1} / ${o.length} \u5F20\u56FE\u7247...`;let{data:{text:i}}=await r.recognize(o[l]);A.push(...He(i))}let c=new Set,t=new Set;A=A.filter(l=>l.code?c.has(l.code)?!1:(c.add(l.code),!0):l.name?t.has(l.name)?!1:(t.add(l.name),!0):!1);let u=A.filter(l=>l._needLookup&&l.name);if(u.length>0&&(a.textContent=`\u23F3 \u8BC6\u522B\u5B8C\u6210\uFF0C\u6B63\u5728\u53CD\u67E5\u57FA\u91D1\u4EE3\u7801\uFF08${u.length} \u6761\uFF09...`,await Promise.all(u.map(async l=>{let i=await qe(l.name);l.code=i||"",l._needLookup=!1}))),A.length){let l=A.filter(b=>b.code).length,i=A.length-l,d=`\u2705 \u8BC6\u522B\u5B8C\u6210\uFF0C\u5171 ${A.length} \u6761\uFF08${l} \u4E2A\u627E\u5230\u4EE3\u7801`;i>0&&(d+=`\uFF0C${i} \u4E2A\u4EE3\u7801\u5F85\u624B\u586B`),a.textContent=d+"\uFF09\uFF0C\u8BF7\u6838\u5BF9\u540E\u6279\u91CF\u4FDD\u5B58"}else a.textContent="\u26A0\uFE0F \u672A\u8BC6\u522B\u5230\u6709\u6548\u57FA\u91D1\u4FE1\u606F\uFF0C\u8BF7\u68C0\u67E5\u56FE\u7247\u662F\u5426\u6E05\u6670\u6216\u5C1D\u8BD5\u88C1\u526A\u540E\u4E0A\u4F20";We(),s.style.display="flex"}catch(r){a.textContent="\u274C \u8BC6\u522B\u5931\u8D25\uFF1A"+r.message,console.error("[OCR]",r)}}async function Ye(){let e=A.filter(n=>n.selected&&String(n.code||"").trim());if(!e.length){F("\u8BF7\u81F3\u5C11\u52FE\u9009\u4E00\u4E2A\u6709\u6548\u4EE3\u7801\u7684\u8D44\u4EA7","warning");return}let o=R.querySelector("#_ocrSave");o.disabled=!0,o.textContent="\u4FDD\u5B58\u4E2D...";try{let n=await new Promise(a=>chrome.storage.local.get(["myFunds"],s=>a(s.myFunds||{})));for(let a of e){let s=String(a.code).trim().toUpperCase();if(!s)continue;let r=n[s]||{};n[s]={...r,name:a.name||r.name||"",amount:a.amount??0,holdProfit:a.holdProfit??0,yesterdayProfit:a.yesterdayProfit??0,group:a.group||"\u9ED8\u8BA4",savedPrevPrice:r.savedPrevPrice||1,savedPrevDate:r.savedPrevDate||W()},a.shares&&a.shares>0&&(n[s].shares=a.shares)}await new Promise(a=>chrome.storage.local.set({myFunds:n},a)),F(`\u2705 \u6210\u529F\u4FDD\u5B58 ${e.length} \u4E2A\u8D44\u4EA7\uFF01`,"success"),R.remove(),R=null,A=[],B()}catch(n){o.disabled=!1,o.textContent="\u6279\u91CF\u4FDD\u5B58\u9009\u4E2D",F("\u4FDD\u5B58\u5931\u8D25\uFF1A"+n.message,"error")}}})();
+        </div>`;
+
+    document.body.appendChild(overlay);
+    _ocrModalEl = overlay;
+
+    const close = () => { overlay.remove(); _ocrModalEl = null; _ocrItems = []; };
+    overlay.querySelector('#_ocrClose').onclick = close;
+
+    const fileInput = overlay.querySelector('#_ocrFile');
+    const drop = overlay.querySelector('#_ocrDrop');
+
+    // 选择/拖拽图片
+    overlay.querySelector('#_ocrPickBtn').onclick = e => { e.stopPropagation(); fileInput.click(); };
+    drop.onclick = () => fileInput.click();
+    drop.ondragover = e => { e.preventDefault(); drop.style.borderColor = '#1890ff'; drop.style.background = 'rgba(24,144,255,0.05)'; };
+    drop.ondragleave = () => { drop.style.borderColor = '#2a4a72'; drop.style.background = ''; };
+    drop.ondrop = e => {
+        e.preventDefault();
+        drop.style.borderColor = '#2a4a72'; drop.style.background = '';
+        _runOCR(Array.from(e.dataTransfer.files));
+    };
+    fileInput.onchange = () => _runOCR(Array.from(fileInput.files));
+
+    overlay.querySelector('#_ocrSave').onclick = _saveOCRItems;
+    overlay.querySelector('#_ocrReupload').onclick = () => {
+        drop.style.display = '';
+        overlay.querySelector('#_ocrProg').style.display = 'none';
+        overlay.querySelector('#_ocrResults').innerHTML = '';
+        overlay.querySelector('#_ocrFoot').style.display = 'none';
+        _ocrItems = [];
+        fileInput.value = '';
+    };
+}
+
+/**
+ * 执行 OCR 识别流程（支持详情页/列表页双模式）
+ */
+async function _runOCR(files) {
+    const imgs = files.filter(f => f.type.startsWith('image/'));
+    if (!imgs.length) { showToast('请选择图片文件', 'warning'); return; }
+
+    const drop = _ocrModalEl.querySelector('#_ocrDrop');
+    const prog = _ocrModalEl.querySelector('#_ocrProg');
+    const foot = _ocrModalEl.querySelector('#_ocrFoot');
+
+    drop.style.display = 'none';
+    prog.style.display = 'block';
+    prog.textContent = '⏳ 正在初始化OCR引擎，首次加载需要几秒...';
+    _ocrItems = [];
+
+    try {
+        const worker = await _getOCRWorker(m => {
+            if (m.status === 'recognizing text' && _ocrModalEl) {
+                prog.textContent = `⏳ 识别中... ${Math.round((m.progress || 0) * 100)}%`;
+            }
+        });
+
+        // ── 第一步：OCR 识别所有图片 ──
+        for (let i = 0; i < imgs.length; i++) {
+            if (!_ocrModalEl) return;
+            prog.textContent = `⏳ 正在识别第 ${i + 1} / ${imgs.length} 张图片...`;
+            const { data: { text } } = await worker.recognize(imgs[i]);
+            _ocrItems.push(..._parseOCRText(text));
+        }
+
+        // ── 第二步：跨图片去重（有代码按代码，无代码按名称）──
+        const seenCodes = new Set();
+        const seenNames = new Set();
+        _ocrItems = _ocrItems.filter(a => {
+            if (a.code) {
+                if (seenCodes.has(a.code)) return false;
+                seenCodes.add(a.code);
+                return true;
+            }
+            if (a.name) {
+                if (seenNames.has(a.name)) return false;
+                seenNames.add(a.name);
+                return true;
+            }
+            return false;
+        });
+
+        // ── 第三步：对列表页识别结果通过 API 反查基金代码 ──
+        const needLookup = _ocrItems.filter(a => a._needLookup && a.name);
+        if (needLookup.length > 0) {
+            prog.textContent = `⏳ 识别完成，正在反查基金代码（${needLookup.length} 条）...`;
+            await Promise.all(needLookup.map(async (a) => {
+                const code = await getCodeByName(a.name);
+                a.code = code || '';
+                a._needLookup = false;
+            }));
+        }
+
+        // ── 第四步：展示结果 ──
+        if (_ocrItems.length) {
+            const found = _ocrItems.filter(a => a.code).length;
+            const missing = _ocrItems.length - found;
+            let msg = `✅ 识别完成，共 ${_ocrItems.length} 条（${found} 个找到代码`;
+            if (missing > 0) msg += `，${missing} 个代码待手填`;
+            prog.textContent = msg + `），请核对后批量保存`;
+        } else {
+            prog.textContent = '⚠️ 未识别到有效基金信息，请检查图片是否清晰或尝试裁剪后上传';
+        }
+
+        _renderOCRTable();
+        foot.style.display = 'flex';
+    } catch (e) {
+        prog.textContent = '❌ 识别失败：' + e.message;
+        console.error('[OCR]', e);
+    }
+}
+
+/**
+ * 批量保存已选中的 OCR 识别结果
+ */
+async function _saveOCRItems() {
+    const toSave = _ocrItems.filter(a => a.selected && String(a.code || '').trim());
+    if (!toSave.length) { showToast('请至少勾选一个有效代码的资产', 'warning'); return; }
+
+    const btn = _ocrModalEl.querySelector('#_ocrSave');
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+
+    try {
+        const funds = await new Promise(r => chrome.storage.local.get(['myFunds'], res => r(res.myFunds || {})));
+        for (const a of toSave) {
+            const code = String(a.code).trim().toUpperCase();
+            if (!code) continue;
+            const existing = funds[code] || {};
+            funds[code] = {
+                ...existing,
+                name: a.name || existing.name || '',
+                amount: a.amount ?? 0,
+                holdProfit: a.holdProfit ?? 0,           // 持有收益（累计）
+                yesterdayProfit: a.yesterdayProfit ?? 0, // 昨日收益
+                group: a.group || '默认',
+                // 净值相关：优先保留已有记录，若无则用默认值
+                savedPrevPrice: existing.savedPrevPrice || 1,
+                savedPrevDate: existing.savedPrevDate || getToday(),
+            };
+            // 份额仅当有值时才覆盖（默认不采集）
+            if (a.shares && a.shares > 0) {
+                funds[code].shares = a.shares;
+            }
+        }
+
+        await new Promise(r => chrome.storage.local.set({ myFunds: funds }, r));
+        showToast(`✅ 成功保存 ${toSave.length} 个资产！`, 'success');
+        _ocrModalEl.remove();
+        _ocrModalEl = null;
+        _ocrItems = [];
+        loadData();
+    } catch (e) {
+        btn.disabled = false;
+        btn.textContent = '批量保存选中';
+        showToast('保存失败：' + e.message, 'error');
+    }
+}
+// getCodeByName 和 OCR 双模式解析已整合至上方 _parseOCRText / _runOCR 函数
