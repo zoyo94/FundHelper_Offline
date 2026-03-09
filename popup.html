@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>资产收益助手 (基金/期货)</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+    <div class="header">
+        <span>资产收益助手</span>
+        <div class="header-actions">
+            <button id="refreshBtn" title="刷新行情">🔄</button>
+            <span id="fullscreenBtn" title="全屏查看">⛶</span>
+        </div>
+    </div>
+
+    <div class="fab-container">
+        <div class="fab-menu" id="fabMenu">
+            <button class="fab-item" id="fabSelectAll">☑️ 全选 / 取消全选</button>
+            <button class="fab-item" id="fabAdd">➕ 添加资产</button>
+            <button class="fab-item" id="fabOCRBatch">📷 图片识别批量添加</button>
+            <button class="fab-item" id="fabBatchCalc">🔄 批量重算份额</button>
+            <button class="fab-item" id="fabBatchDel">🗑 批量删除</button>
+            <button class="fab-item" id="fabSettlement">📅 触发日结算</button>
+            <button class="fab-item" id="fabRollback" style="display:none;">↩ 撤销日结算</button>
+            <button class="fab-item" id="fabBatchGroup">📁 批量修改分组</button>
+            <button class="fab-item" id="fabBatchClear">🧹 批量清空持仓</button> <button class="fab-item" id="fabExport">📤
+                导出数据</button>
+            <button class="fab-item" id="fabImport">📥 导入数据</button>
+        </div>
+        <div class="fab-main" id="fabMain">
+            <span>⚡</span>
+        </div>
+    </div>
+
+    <!-- 统计栏 -->
+    <div class="summary-bar">
+        <div class="summary-item">总资产: <b id="totalAmount">0.00</b></div>
+        <div class="summary-item">昨日总收益: <b id="totalYesterdayProfit">0.00</b></div>
+        <div class="summary-item">当日估计总收益: <b id="totalTodayProfit">0.00</b></div>
+        <div class="summary-item">总累计收益: <b id="totalTotalProfit">0.00</b></div>
+    </div>
+
+    <div class="filter-bar">
+        <label style="font-size: 12px; color: #666;">筛选分组:</label>
+        <select id="groupFilter">
+            <option value="all">全部显示</option>
+        </select>
+        <datalist id="groupList"></datalist>
+    </div>
+
+    <!-- 所有操作按钮通过悬浮球 FAB 访问，以下为隐藏的功能性元素 -->
+    <input type="file" id="importFile" accept=".json" style="display:none;">
+    <!-- 以下按钮隐藏，仅作 JS 绑定用（逻辑由 FAB 触发） -->
+    <button id="addBtn" style="display:none;"></button>
+    <button id="exportBtn" style="display:none;"></button>
+    <button id="importBtn" style="display:none;"></button>
+    <button id="settlementBtn" style="display:none;"></button>
+    <button id="rollbackBtn" style="display:none;"></button>
+    <button id="batchGroupBtn" style="display:none;"></button>
+    <button id="batchClearBtn" style="display:none;"></button>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>序号</th>
+                    <th class="sortable" data-sort="code">代码</th>
+                    <th>名称/分组</th>
+                    <th class="sortable" data-sort="amount">持仓</th>
+                    <th class="sortable col-hide" data-sort="shares">份额</th>
+                    <th class="sortable col-hide" data-sort="prevPrice">净值</th>
+                    <th class="sortable" data-sort="yesterdayProfit">昨日收益</th>
+                    <th class="sortable" data-sort="todayProfit">估值收益</th>
+                    <th class="sortable" data-sort="holdProfit">累计收益</th>
+                    <th class="col-hide">操作</th>
+                </tr>
+            </thead>
+            <tbody id="fundTableBody"></tbody>
+        </table>
+    </div>
+
+    <div id="status">准备就绪</div>
+
+    <!-- Toast 容器 -->
+    <div id="toastContainer"></div>
+
+    <!-- 通用 Modal 弹窗 -->
+    <div id="modalOverlay">
+        <div class="modal-box">
+            <div class="modal-title" id="modalTitle">提示</div>
+            <div class="modal-msg" id="modalMsg"></div>
+            <input class="modal-input" id="modalInput" type="text" style="display:none;">
+            <div class="modal-footer" id="modalFooter"></div>
+        </div>
+    </div>
+
+    <!-- OCR 主线程模式：先加载 core，再加载改造后的 worker（暴露 __TesseractDispatch） -->
+    <script src="tesseract-core.wasm.js"></script>
+    <script src="worker.min.js"></script>
+    <script src="tesseract.min.js"></script>
+    <script src="popup.js"></script>
+</body>
+
+</html>

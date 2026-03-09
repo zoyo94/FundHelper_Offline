@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "支付宝基金收益助手",
+  "version": "1.4",
+  "description": "实时计算基金今日收益，支持OCR识别与手动录入",
+  "permissions": [
+    "storage"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "https://fundgz.eastmoney.com/*",
+    "https://fundgz.1234567.com.cn/*",
+    "https://hq.sinajs.cn/*",
+    "https://fund.eastmoney.com/*",
+    "https://fundsuggest.eastmoney.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

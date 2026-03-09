@@ -1,0 +1,17 @@
+{
+  "name": "fundhelper_offline",
+  "version": "1.0.0",
+  "description": "",
+  "main": "background.js",
+  "scripts": {
+    "build": "esbuild src/main.js --bundle --outfile=popup.js --minify",
+    "dev": "esbuild src/main.js --bundle --outfile=popup.js --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "terser": "^5.46.0"
+  }
+}
