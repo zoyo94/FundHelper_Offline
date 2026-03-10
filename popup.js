@@ -35,31 +35,7 @@ const apiLogger = {
 };
 
 // ==================== DOM 元素引用 ====================
-const elements = {
-    addBtn: document.getElementById('addBtn'),
-    groupList: document.getElementById('groupList'),
-    groupFilter: document.getElementById('groupFilter'),
-    tableBody: document.getElementById('fundTableBody'),
-    status: document.getElementById('status'),
-    fullscreenBtn: document.getElementById('fullscreenBtn'),
-    refreshBtn: document.getElementById('refreshBtn'),
-    totalAmount: document.getElementById('totalAmount'),
-    totalTodayProfit: document.getElementById('totalTodayProfit'),
-    totalTotalProfit: document.getElementById('totalTotalProfit'),
-    totalYesterdayProfit: document.getElementById('totalYesterdayProfit'),
-    exportBtn: document.getElementById('exportBtn'),
-    importBtn: document.getElementById('importBtn'),
-    importFile: document.getElementById('importFile'),
-    // Modal 相关
-    modalOverlay: document.getElementById('modalOverlay'),
-    modalTitle: document.getElementById('modalTitle'),
-    modalMsg: document.getElementById('modalMsg'),
-    modalInput: document.getElementById('modalInput'),
-    modalFooter: document.getElementById('modalFooter'),
-    toastContainer: document.getElementById('toastContainer'),
-    batchGroupBtn: document.getElementById('batchGroupBtn'),
-    batchClearBtn: document.getElementById('batchClearBtn'),
-};
+let elements = {};  // populated in DOMContentLoaded
 
 // ==================== Toast / Modal 工具函数 ====================
 
@@ -130,6 +106,7 @@ function _openModal(title, msg, showInput, defaultVal = '') {
 function _closeModal() {
     elements.modalOverlay.classList.remove('visible');
     elements.modalInput.onkeydown = null;
+    elements.modalMsg.onclick = null; // 清空撤销等临时绑定，防止泄漏到下一个弹窗
 }
 
 function _setFooter(btns) {
@@ -186,6 +163,32 @@ function backupFundsData() {
         });
     });
 }
+/**
+ * 结算核心逻辑（手动/自动共用）
+ * @param {Object} funds        - myFunds 对象（直接修改）
+ * @param {Array}  settlements  - [{code, price, prevPriceDate}]
+ * @param {string} todayStr     - YYYY-MM-DD
+ * @param {boolean} skipUnchanged - 是否跳过未变化项（自动结算传 true）
+ * @returns {number} updatedCount
+ */
+function _applySettlementLoop(funds, settlements, todayStr, skipUnchanged = false) {
+    let updatedCount = 0;
+    for (const { code, price, prevPriceDate } of settlements) {
+        const item = funds[code];
+        if (!item || price <= 0) continue;
+        const basePrice = item.savedPrevPrice || (item.shares > 0 ? (item.amount / item.shares) : price);
+        if (skipUnchanged && Math.abs(price - basePrice) < 0.00001) continue;
+        const actualProfit = parseFloat((item.shares * (price - basePrice)).toFixed(2));
+        funds[code].holdProfit = parseFloat(((item.holdProfit || 0) + actualProfit).toFixed(2));
+        funds[code].yesterdayProfit = actualProfit;
+        funds[code].amount = parseFloat((item.shares * price).toFixed(2));
+        funds[code].savedPrevPrice = price;
+        funds[code].savedPrevDate = prevPriceDate || todayStr;
+        updatedCount++;
+    }
+    return updatedCount;
+}
+
 // ==================== 2. 修改：手动日结算（增加备份步骤）====================
 async function manualSettlement() {
     const ok = await showConfirm('确认进行日结算吗？\n系统将对比最新公布的净值与上次结算的净值，计算并记录收益。', '日结算确认');
@@ -194,29 +197,20 @@ async function manualSettlement() {
     // 【关键修改】结算前先备份！
     await backupFundsData();
     elements.status.innerText = '正在执行日结算...';
-    chrome.storage.local.get(['myFunds'], async (res) => {
+    chrome.storage.local.get(['myFunds'], (res) => {
         const funds = res.myFunds || {};
-        let updatedCount = 0;
-        for (const code in funds) {
-            const item = funds[code];
+        const settlements = Object.keys(funds).map(code => {
             const live = currentFundsData.find(f => f.code === code);
-            if (!live || !live.prevPrice) continue;
-            const basePrice = item.savedPrevPrice || (item.shares > 0 ? (item.amount / item.shares) : live.prevPrice);
-            const actualProfit = parseFloat((item.shares * (live.prevPrice - basePrice)).toFixed(2));
-            funds[code].holdProfit = parseFloat(((item.holdProfit || 0) + actualProfit).toFixed(2));
-            funds[code].yesterdayProfit = actualProfit;
-            funds[code].amount = parseFloat((item.shares * live.prevPrice).toFixed(2));
-            funds[code].savedPrevPrice = live.prevPrice;
-            funds[code].savedPrevDate = live.prevPriceDate || getToday();
-            updatedCount++;
-        }
+            return (live && live.prevPrice) ? { code, price: live.prevPrice, prevPriceDate: live.prevPriceDate } : null;
+        }).filter(Boolean);
+        const updatedCount = _applySettlementLoop(funds, settlements, getToday(), false);
         chrome.storage.local.set({
             myFunds: funds,
-            lastSettlementDate: getToday(), // 记录今天已结算
+            lastSettlementDate: getToday(),
             lastUpdateDate: new Date().toLocaleDateString()
         }, () => {
             showToast(`✅ 结算完成！已更新 ${updatedCount} 条`, 'success');
-            checkBackup(); // 刷新撤销按钮状态
+            checkBackup();
             loadData();
         });
     });
@@ -265,38 +259,26 @@ async function autoSettlement(funds, fetchedData, todayStr) {
         myFunds: JSON.parse(JSON.stringify(funds)) // 深拷贝当前数据
     };
     await new Promise(r => chrome.storage.local.set({ backupFunds: backupData }, r));
-    let updatedCount = 0;
-    for (const { code, live } of fetchedData) {
-        const item = funds[code];
-        if (!item || !live || live.prevPrice <= 0) continue;
-        const settlementPrice = live.prevPrice;
-        const basePrice = item.savedPrevPrice || (item.shares > 0 ? (item.amount / item.shares) : settlementPrice);
-        if (Math.abs(settlementPrice - basePrice) < 0.00001) continue;
-        const actualProfit = parseFloat((item.shares * (settlementPrice - basePrice)).toFixed(2));
-        funds[code].holdProfit = parseFloat(((item.holdProfit || 0) + actualProfit).toFixed(2));
-        funds[code].yesterdayProfit = actualProfit;
-        funds[code].amount = parseFloat((item.shares * settlementPrice).toFixed(2));
-        funds[code].savedPrevPrice = settlementPrice;
-        funds[code].savedPrevDate = live.prevPriceDate || todayStr;
-        updatedCount++;
-    }
+    // 将 fetchedData 转换为 _applySettlementLoop 所需格式
+    const settlements = fetchedData
+        .filter(({ live }) => live && live.prevPrice > 0)
+        .map(({ code, live }) => ({ code, price: live.prevPrice, prevPriceDate: live.prevPriceDate }));
+    const updatedCount = _applySettlementLoop(funds, settlements, todayStr, true);
     if (updatedCount === 0) {
         console.log('[autoSettlement] 净值无变化，跳过');
         return;
     }
-    chrome.storage.local.set({
+    // 写入结算结果，await 确保外层 loadData 读到最新数据
+    await new Promise(r => chrome.storage.local.set({
         myFunds: funds,
         lastSettlementDate: todayStr,
         lastUpdateDate: new Date().toLocaleDateString()
-    }, () => {
-        console.log(`[autoSettlement] ✅ 完成，共更新 ${updatedCount} 条`);
-        showToast(`✅ 已自动完成日结算（${updatedCount} 条）`, 'success', 4000);
-        checkBackup();
-        loadData();
-    });
+    }, r));
+    console.log('[autoSettlement] ✅ 完成，共更新 ' + updatedCount + ' 条');
+    showToast('✅ 已自动完成日结算（' + updatedCount + ' 条）', 'success', 4000);
+    checkBackup();
+    // 不调用 loadData()，由外层 loadData 继续执行，避免重复读取引发竞态
 }
-
-
 
 
 function getToday() {
@@ -306,6 +288,38 @@ function getToday() {
 
 // ==================== 初始化 ====================
 document.addEventListener('DOMContentLoaded', async () => {
+    // DOM 元素引用（在 DOM 准备就绪后往 elements 对象嵌入）
+    Object.assign(elements, {
+        addBtn: document.getElementById('addBtn'),
+        groupList: document.getElementById('groupList'),
+        groupFilter: document.getElementById('groupFilter'),
+        tableBody: document.getElementById('fundTableBody'),
+        status: document.getElementById('status'),
+        fullscreenBtn: document.getElementById('fullscreenBtn'),
+        refreshBtn: document.getElementById('refreshBtn'),
+        totalAmount: document.getElementById('totalAmount'),
+        totalTodayProfit: document.getElementById('totalTodayProfit'),
+        totalTotalProfit: document.getElementById('totalTotalProfit'),
+        totalYesterdayProfit: document.getElementById('totalYesterdayProfit'),
+        exportBtn: document.getElementById('exportBtn'),
+        importBtn: document.getElementById('importBtn'),
+        importFile: document.getElementById('importFile'),
+        modalOverlay: document.getElementById('modalOverlay'),
+        modalTitle: document.getElementById('modalTitle'),
+        modalMsg: document.getElementById('modalMsg'),
+        modalInput: document.getElementById('modalInput'),
+        modalFooter: document.getElementById('modalFooter'),
+        toastContainer: document.getElementById('toastContainer'),
+        batchGroupBtn: document.getElementById('batchGroupBtn'),
+        batchClearBtn: document.getElementById('batchClearBtn'),
+    });
+
+    elements.addBtn.onclick = () => openFundEditor(null);
+    if (elements.batchGroupBtn) elements.batchGroupBtn.onclick = () => batchChangeGroup();
+    if (elements.batchClearBtn) elements.batchClearBtn.onclick = () => batchClearPositions();
+    elements.exportBtn.onclick = exportFundsData;
+    elements.importBtn.onclick = () => elements.importFile.click();
+
     const isPopup = chrome.extension.getViews({ type: 'popup' }).includes(window);
     if (!isPopup) document.body.classList.add('is-fullscreen');
 
@@ -314,35 +328,36 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     elements.importFile.addEventListener('change', importFundsData);
     initFabMenu();
-});
 
-elements.fullscreenBtn.onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') });
+    elements.fullscreenBtn.onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') });
 
-elements.refreshBtn.onclick = () => {
-    elements.refreshBtn.classList.add('spinning');
-    loadData().finally(() => {
-        setTimeout(() => elements.refreshBtn.classList.remove('spinning'), 500);
-    });
-};
+    elements.refreshBtn.onclick = () => {
+        elements.refreshBtn.classList.add('spinning');
+        loadData().finally(() => {
+            setTimeout(() => elements.refreshBtn.classList.remove('spinning'), 500);
+        });
+    };
 
-elements.groupFilter.onchange = () => {
-    clearSelection();
+    elements.groupFilter.onchange = () => {
+        clearSelection();
 
-    renderTable();
-};
-
-document.querySelectorAll('.sortable').forEach(th => {
-    th.addEventListener('click', () => {
-        const field = th.dataset.sort;
-        if (sortField === field) {
-            sortDirection *= -1;
-        } else {
-            sortField = field;
-            sortDirection = -1;
-        }
         renderTable();
+    };
+
+    document.querySelectorAll('.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const field = th.dataset.sort;
+            if (sortField === field) {
+                sortDirection *= -1;
+            } else {
+                sortField = field;
+                sortDirection = -1;
+            }
+            renderTable();
+        });
     });
 });
+
 
 // ==================== 新浪行情代理请求 ====================
 function proxyFetchSina(url) {
@@ -487,6 +502,12 @@ async function fetchLiveInfo(code) {
     };
 }
 
+// 请求超时包装：超过 ms 仍无响应则返回 fallback
+function withTimeout(promise, ms, fallback) {
+    const timer = new Promise(r => setTimeout(() => r(fallback), ms));
+    return Promise.race([promise, timer]);
+}
+
 // ==================== 加载数据 ====================
 async function loadData() {
     clearSelection();
@@ -502,7 +523,7 @@ async function loadData() {
             const fetchedData = await Promise.all(
                 codes.map(async (code, index) => {
                     await new Promise(r => setTimeout(r, index * 50));
-                    const live = await fetchLiveInfo(code);
+                    const live = await withTimeout(fetchLiveInfo(code), 8000, { name: '[超时]' + code, rate: 0, price: 0, prevPrice: 0 });
                     return { code, live };
                 })
             );
@@ -667,27 +688,59 @@ async function batchChangeGroup() {
     });
 }
 
-// 3. 批量清空持仓 (金额和份额归零)
-async function batchClearPositions() {
-    if (selectedCodes.size === 0) return showToast('❌ 请先勾选基金', 'error');
-    const ok = await showConfirm(`确认要清空选中 ${selectedCodes.size} 支基金的持仓金额和份额吗？(盈亏数据保留)`, '清空确认');
+// 3. 清空持仓（单个或批量统一入口，codes 传字符串或数组）
+async function clearPositions(codes) {
+    const codeList = Array.isArray(codes) ? codes : [codes];
+    if (codeList.length === 0) return showToast('❌ 请先勾选基金', 'error');
+
+    const isBatch = codeList.length > 1;
+    const title = isBatch ? '批量清空确认' : '清空持仓确认';
+    const desc = isBatch
+        ? `确认要清空选中 ${codeList.length} 支基金的持仓和份额吗？`
+        : `确定要清空基金 [${codeList[0]}] 的持仓吗？`;
+
+    _openModal(title, '', false);
+    elements.modalMsg.innerHTML = `
+        <p style="margin-bottom:10px;">${desc}</p>
+        ${!isBatch ? '<p style="font-size:12px;color:#8aacce;margin-bottom:15px;">此操作将清空持仓金额和份额，但会保留“累计收益”。</p>' : ''}
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" id="clearGroupChk" checked>
+            同时将分组变更为“已撤回”
+        </label>
+    `;
+
+    const ok = await new Promise(resolve => {
+        _setFooter([
+            { text: '取消', cls: 'modal-btn-cancel', onClick: () => { _closeModal(); resolve(false); } },
+            {
+                text: '确定', cls: 'modal-btn-danger', onClick: () => {
+                    const isChecked = document.getElementById('clearGroupChk').checked;
+                    _closeModal();
+                    resolve(isChecked ? 'yes' : 'no');
+                }
+            }
+        ]);
+    });
+
     if (!ok) return;
 
     chrome.storage.local.get(['myFunds'], (res) => {
         const funds = res.myFunds || {};
-        selectedCodes.forEach(code => {
-            if (funds[code]) {
-                funds[code].amount = 0;
-                funds[code].shares = 0;
-            }
+        codeList.forEach(code => {
+            if (funds[code]) resetFundPosition(funds[code], ok === 'yes');
         });
         chrome.storage.local.set({ myFunds: funds }, () => {
-            showToast('🧹 选中持仓已清空', 'success');
+            showToast(isBatch ? '🧹 选中持仓已清空' : `✅ 基金 ${codeList[0]} 持仓已清空`, 'success');
             loadData();
         });
     });
 }
 
+// 批量清空入口（fabMenu 绑定保持不变）
+async function batchClearPositions() {
+    if (selectedCodes.size === 0) return showToast('❌ 请先勾选基金', 'error');
+    await clearPositions([...selectedCodes]);
+}
 // 4. 批量删除
 async function batchDeleteFunds() {
     if (selectedCodes.size === 0) return;
@@ -858,10 +911,11 @@ function showFormModal(config) {
             } else {
                 // 原有的输入框生成代码（保持不变）
                 html += `<input type="${field.type || 'text'}" id="modal_field_${field.id}" 
-        placeholder="${field.placeholder || ''}" 
-        value="${field.value !== undefined && field.value !== null ? field.value : ''}"
-        ${field.min !== undefined ? `min="${field.min}"` : ''} 
-        ${field.step !== undefined ? `step="${field.step}"` : ''}>`;
+    placeholder="${field.placeholder || ''}" 
+    value="${field.value !== undefined && field.value !== null ? field.value : ''}"
+    ${field.list ? `list="${field.list}"` : ''} 
+    ${field.min !== undefined ? `min="${field.min}"` : ''} 
+    ${field.step !== undefined ? `step="${field.step}"` : ''}>`;
             }
             html += `</div>`;
         });
@@ -932,7 +986,7 @@ async function adjustPosition(code, type) {
         const timingHint = _isWeekend ? '📅 周末下单，顺延至下一交易日T+1确认'
             : _isAfterCutoff ? '⏰ 15:00后下单，按T+2确认'
                 : '✅ 15:00前下单，按T+1确认';
-        const subTitle = `${live?.name || code} (#${code})　${timingHint}`;
+        const subTitle = `${live?.name || code} (#${code})　${timingHint} `;
         let fields = [];
         if (isAdd) {
             // --- 加仓逻辑：输入金额 ---
@@ -981,10 +1035,10 @@ async function adjustPosition(code, type) {
             const switcher = document.createElement('div');
             switcher.className = 'timing-switcher';
             switcher.innerHTML = `
-                <span>下单时间：</span>
+            <span>下单时间：</span>
                 <label id="timingBefore" class="timing-btn">15:00前</label>
                 <label id="timingAfter"  class="timing-btn">15:00后</label>
-            `;
+        `;
             dateGroup.parentNode.insertBefore(switcher, dateGroup);
 
             const btnBefore = document.getElementById('timingBefore');
@@ -1059,8 +1113,8 @@ async function adjustPosition(code, type) {
         showToast(`✅ 操作成功！将在 ${result.confirmDate} 确认`, 'success');
         loadData();
     } catch (e) {
-        console.error(`${type}仓操作失败:`, e);
-        showAlert(`操作失败: ${e.message}`);
+        console.error(`${type} 仓操作失败: `, e);
+        showAlert(`操作失败: ${e.message} `);
     }
 }
 // ==================== 统一的：添加资产 / 编辑持仓 ====================
@@ -1081,7 +1135,7 @@ async function openFundEditor(existingCode = null) {
         { id: 'shares', label: '持有份额', type: 'number', value: fund?.shares || '', step: '0.0001' },
         { id: 'holdProfit', label: '累计盈亏 (元)', type: 'number', value: fund?.holdProfit || 0 },
         { id: 'yesterdayProfit', label: '昨日收益 (元)', type: 'number', value: fund?.yesterdayProfit || 0 },
-        { id: 'group', label: '分组名称', type: 'text', value: fund?.group || '默认' }
+        { id: 'group', label: '分组名称', type: 'text', value: fund?.group || '默认', list: 'groupList' }
     ];
 
     // 弹窗出现后，注入联动计算逻辑
@@ -1100,7 +1154,7 @@ async function openFundEditor(existingCode = null) {
                     const l = await fetchLiveInfo(c);
                     if (l && l.prevPrice > 0) {
                         currentNav = l.prevPrice;
-                        showToast(`已获取最新净值: ${currentNav}`, 'info', 2000);
+                        showToast(`已获取最新净值: ${currentNav} `, 'info', 2000);
                         // 如果此时有金额没份额，顺手算一下
                         if (amtInput.value && !shareInput.value) {
                             shareInput.value = (parseFloat(amtInput.value) / currentNav).toFixed(4);
@@ -1125,7 +1179,7 @@ async function openFundEditor(existingCode = null) {
 
     const result = await showFormModal({
         title: existingCode ? '编辑持仓' : '添加资产',
-        subTitle: existingCode ? `${live?.name || existingCode}` : '输入代码后点击空白处，获取净值进行联动计算',
+        subTitle: existingCode ? `${live?.name || existingCode} ` : '输入代码后点击空白处，获取净值进行联动计算',
         fields: fields,
         actionText: '保存'
     });
@@ -1168,11 +1222,11 @@ async function openFundEditor(existingCode = null) {
 }
 
 // 绑定添加按钮
-elements.addBtn.onclick = () => openFundEditor(null);
+
 
 
 // ==================== 居中弹窗逻辑 ====================
-let centerModalOverlay = null;
+var centerModalOverlay = null;
 /**
  * 初始化居中弹窗容器
  */
@@ -1217,7 +1271,7 @@ function showCenterMenu(code) {
                 <button class="btn-op delete" data-action="delete" data-code="${code}">🗑 彻底删除资产</button>
             </div>
         </div>
-    `;
+            `;
     centerModalOverlay.innerHTML = html;
 
     // 绑定交易记录链接
@@ -1252,15 +1306,15 @@ function showCenterMenu(code) {
                 const amountText = adj.type === 'add'
                     ? `买入 <b class="${typeCls}">¥${adj.amount}</b>`
                     : `卖出 <b class="${typeCls}">${adj.shares} 份</b>`;
-                const feeText = adj.feeRate > 0 ? ` &nbsp;费率${adj.feeRate}%` : '';
+                const feeText = adj.feeRate > 0 ? `&nbsp;费率${adj.feeRate}%` : '';
 
                 let navInfo = '';
-                if (adj.orderNav) navInfo += `下单净值 ${adj.orderNav}`;
-                if (adj.confirmedPrice) navInfo += `　确认净值 ${adj.confirmedPrice}`;
+                if (adj.orderNav) navInfo += `下单净值 ${adj.orderNav} `;
+                if (adj.confirmedPrice) navInfo += `　确认净值 ${adj.confirmedPrice} `;
                 if (adj.confirmedShares && adj.type === 'add') navInfo += `　到账 ${adj.confirmedShares} 份`;
 
-                let dateInfo = `预计确认日 ${adj.targetDate}`;
-                if (adj.confirmedDate) dateInfo = `确认日 ${adj.confirmedDate}`;
+                let dateInfo = `预计确认日 ${adj.targetDate} `;
+                if (adj.confirmedDate) dateInfo = `确认日 ${adj.confirmedDate} `;
                 if (adj.orderDate) dateInfo = `下单 ${adj.orderDate} · ` + dateInfo;
 
                 const revokeBtn = isPending
@@ -1268,17 +1322,17 @@ function showCenterMenu(code) {
                     : `<span class="tx-no-revoke">不可撤销</span>`;
 
                 html += `
-                    <div class="tx-item">
-                        <div class="tx-row-main">
-                            <div class="tx-row-left">
-                                <span class="tx-type ${typeCls}">${typeLabel}</span>
-                                ${statusBadge}
-                                <span class="tx-amount">${amountText}${feeText}</span>
-                            </div>
-                            ${revokeBtn}
-                        </div>
+            <div class="tx-item">
+                <div class="tx-row-main">
+                    <div class="tx-row-left">
+                        <span class="tx-type ${typeCls}">${typeLabel}</span>
+                        ${statusBadge}
+                        <span class="tx-amount">${amountText}${feeText}</span>
+                    </div>
+                    ${revokeBtn}
+                </div>
                         ${navInfo ? `<div class="tx-nav">${navInfo}</div>` : ''}
-                        <div class="tx-date">${dateInfo}</div>
+        <div class="tx-date">${dateInfo}</div>
                     </div>`;
             });
             html += `</div>`;
@@ -1294,15 +1348,15 @@ function showCenterMenu(code) {
         ]);
         elements.modalOverlay.classList.add('visible');
 
-        // 绑定撤销按钮
-        elements.modalMsg.addEventListener('click', async (e) => {
+        // 绑定撤销按钮（用 onclick 替代 addEventListener，防止每次打开叠加监听器）
+        elements.modalMsg.onclick = async (e) => {
             const btn = e.target.closest('[data-revoke]');
             if (!btn) return;
             const idx = parseInt(btn.dataset.revoke);
             const adj = txList[idx];
             if (!adj || adj.status === 'confirmed') return;
 
-            const typeLabel = adj.type === 'add' ? `加仓 ¥${adj.amount}` : `减仓 ${adj.shares}份`;
+            const typeLabel = adj.type === 'add' ? `加仓 ¥${adj.amount} ` : `减仓 ${adj.shares} 份`;
             const ok = await showConfirm(`确认撤销：${typeLabel}（${adj.targetDate}）？`, '撤销确认', true);
             if (!ok) return;
 
@@ -1310,16 +1364,13 @@ function showCenterMenu(code) {
             await new Promise(r => chrome.storage.local.set({ myFunds: funds }, r));
             showToast('已撤销该笔交易', 'success');
 
-            // 刷新列表
             if (txList.length === 0) {
                 _closeModal();
-                loadData();
             } else {
                 elements.modalMsg.innerHTML = renderList();
-                // 重新绑定（递归监听已在外层，无需重复）
             }
-            loadData();
-        });
+            loadData(); // 只调用一次
+        };
     }
 
     // 绑定其他按钮（原有代码已正确绑定）
@@ -1371,7 +1422,7 @@ async function forceRecalculateShares(code) {
             funds[code].shares = newShares;
 
             chrome.storage.local.set({ myFunds: funds }, () => {
-                showToast(`✅ 已按照净值 ${live.prevPrice} 修正份额为: ${newShares}`, 'success');
+                showToast(`✅ 已按照净值 ${live.prevPrice} 修正份额为: ${newShares} `, 'success');
                 elements.status.innerText = '准备就绪';
                 loadData();
             });
@@ -1389,10 +1440,10 @@ function renderTable() {
         return (valA - valB) * sortDirection;
     });
     document.querySelectorAll('.sortable').forEach(th => {
-        th.textContent = th.textContent.replace(/[↑↓]/g, '');
-        if (th.dataset.sort === sortField) {
-            th.textContent += (sortDirection === 1 ? '↑' : '↓');
-        }
+        // 用 data-label 保存原始文字，避免 textContent 替换破坏子元素
+        if (!th.dataset.label) th.dataset.label = th.textContent.trim();
+        const arrow = th.dataset.sort === sortField ? (sortDirection === 1 ? ' ↑' : ' ↓') : '';
+        th.textContent = th.dataset.label + arrow;
     });
     let sumAmount = 0, sumYesterdayProfit = 0, sumTodayProfit = 0, sumTotalProfit = 0;
     const fragment = document.createDocumentFragment();
@@ -1403,7 +1454,7 @@ function renderTable() {
         sumTotalProfit += item.holdProfit || 0;
         const todayProfitText = item.todayProfit === null
             ? '—'
-            : `${item.todayProfit >= 0 ? '+' : ''}${item.todayProfit.toFixed(2)}`;
+            : `${item.todayProfit >= 0 ? '+' : ''}${item.todayProfit.toFixed(2)} `;
         const tr = document.createElement('tr');
         tr.dataset.code = item.code;
         _td(tr, String(index + 1));
@@ -1425,6 +1476,7 @@ function renderTable() {
         // -- 持仓金额 (全屏和小屏都显示) --
         const tdAmount = document.createElement('td');
         tdAmount.className = 'editable-cell';
+        tdAmount.contentEditable = 'true';
         tdAmount.dataset.field = 'amount';
         tdAmount.dataset.code = item.code;
         // 【修改】在金额后也添加设置图标 (解决小窗口看不到份额列的问题)
@@ -1452,6 +1504,7 @@ function renderTable() {
         sharesWrapper.className = 'cell-with-icon';
         const sharesText = document.createElement('span');
         sharesText.className = 'editable-cell'; // 保留可编辑
+        sharesText.contentEditable = 'true';
         sharesText.dataset.field = 'shares';
         sharesText.dataset.code = item.code;
         sharesText.textContent = item.shares ? item.shares.toFixed(4) : '—';
@@ -1494,7 +1547,7 @@ function renderTable() {
         if (item.rate !== null && item.rate !== undefined) {
             const rateSpan = document.createElement('span');
             rateSpan.style.cssText = `font-size:11px; font-weight:bold; color:${item.rate >= 0 ? '#f5222d' : '#389e0d'};`;
-            rateSpan.textContent = `${item.rate >= 0 ? '+' : ''}${item.rate.toFixed(2)}%`;
+            rateSpan.textContent = `${item.rate >= 0 ? '+' : ''}${item.rate.toFixed(2)}% `;
             liveNavLine.appendChild(rateSpan);
         }
         tdNav.appendChild(liveNavLine);
@@ -1510,16 +1563,17 @@ function renderTable() {
         if (item.rate !== null && item.rate !== undefined) {
             const todayRateLine = document.createElement('div');
             todayRateLine.style.cssText = 'font-size:10px; margin-top:1px; opacity:0.85;';
-            todayRateLine.textContent = `${item.rate >= 0 ? '+' : ''}${item.rate.toFixed(2)}%`;
+            todayRateLine.textContent = `${item.rate >= 0 ? '+' : ''}${item.rate.toFixed(2)}% `;
             tdToday.appendChild(todayRateLine);
         }
         tr.appendChild(tdToday);
         // 累计收益
         const tdHoldProfit = document.createElement('td');
         tdHoldProfit.className = `editable-cell ${item.holdProfit >= 0 ? 'up' : 'down'}`;
+        tdHoldProfit.contentEditable = 'true';
         tdHoldProfit.dataset.field = 'holdProfit';
         tdHoldProfit.dataset.code = item.code;
-        tdHoldProfit.textContent = `${item.holdProfit >= 0 ? '+' : ''}${item.holdProfit.toFixed(2)}`;
+        tdHoldProfit.textContent = `${item.holdProfit >= 0 ? '+' : ''}${item.holdProfit.toFixed(2)} `;
         tr.appendChild(tdHoldProfit);
         // -- 操作列 (只保留删除) --
         const tdOp = document.createElement('td');
@@ -1632,10 +1686,11 @@ function updateSelectionStatus() {
     const fabMain = document.getElementById('fabMain');
 
     if (count > 0) {
+        // 修复：去掉了 id="clearSelectionBtn" 两边的空格，保证 DOM 能精准获取
         elements.status.innerHTML =
-            `已选中 <b style="color:#69b1ff">${count}</b> 项 &nbsp;` +
-            `<span id="clearSelectionBtn" style="color:#ff7875;cursor:pointer;font-size:11px;` +
-            `border:1px solid #ff7875;border-radius:10px;padding:1px 7px;">✕ 取消选择</span>`;
+            `已选中 <b style="color:#69b1ff">${count}</b> 项 &nbsp; ` +
+            `<span id="clearSelectionBtn" style="color:#ff7875;cursor:pointer;font-size:11px;border:1px solid #ff7875;border-radius:10px;padding:1px 7px;">✕ 取消选择</span>`;
+
         document.getElementById('clearSelectionBtn').onclick = () => {
             clearSelection();
             renderTable();
@@ -1647,27 +1702,10 @@ function updateSelectionStatus() {
     }
 }
 
-async function clearPosition(code) {
-    const ok = await showConfirm(
-        `确定要清空基金 [${code}] 的持仓吗？\n\n此操作将清空持仓金额和份额，但会保留该基金的“累计收益”。`,
-        '清空持仓确认',
-        true
-    );
-    if (!ok) return;
-    chrome.storage.local.get(['myFunds'], (res) => {
-        const funds = res.myFunds || {};
-        if (funds[code]) {
-            resetFundPosition(funds[code]);
-            chrome.storage.local.set({ myFunds: funds }, () => {
-                showToast(`✅ 基金 ${code} 持仓已清空`, 'success');
-                loadData();
-            });
-        }
-    });
-}
+// --- 单点清空（委托给统一函数）---
+function clearPosition(code) { return clearPositions(code); }
 
-if (elements.batchGroupBtn) elements.batchGroupBtn.onclick = () => batchChangeGroup();
-if (elements.batchClearBtn) elements.batchClearBtn.onclick = () => batchClearPositions();
+
 
 
 
@@ -1684,12 +1722,12 @@ function _tdProfit(tr, value, isUp) {
     tr.appendChild(td);
 }
 // 辅助函数：重置单个基金的持仓数据
-function resetFundPosition(fund) {
+function resetFundPosition(fund, shouldResetGroup = true) {
     fund.amount = 0;
     fund.shares = 0;
     fund.lastClosedAmount = 0;
     //fund.yesterdayProfit = 0;
-    fund.group = "已撤回";
+    if (shouldResetGroup) fund.group = "已撤回"; // 核心：根据参数决定是否改分组
     if (fund.cost !== undefined) fund.cost = 0;
     // 注意：保留 holdProfit (累计收益)
 }
@@ -1740,7 +1778,7 @@ function exportFundsData() {
     });
 }
 
-elements.exportBtn.onclick = exportFundsData;
+
 
 function migrateFund(fund) {
     // 保留所有原始字段，只对数值类型做安全转换，防止旧格式数据类型错误
@@ -1807,7 +1845,7 @@ function importFundsData(event) {
     reader.readAsText(file);
 }
 
-elements.importBtn.onclick = () => elements.importFile.click();
+
 
 // ==================== OCR 图片识别批量添加资产 ====================
 let _ocrModalEl = null;
@@ -2275,64 +2313,80 @@ function _renderOCRTable() {
 function openOCRBatchAdd() {
     if (_ocrModalEl) return;
 
+    // 打开时就给 3 个空行，这样界面一出来就有表格可以手动填
+    _ocrItems = [
+        { code: '', name: '', amount: '', holdProfit: '', yesterdayProfit: '', group: '默认', selected: true },
+        { code: '', name: '', amount: '', holdProfit: '', yesterdayProfit: '', group: '默认', selected: true },
+        { code: '', name: '', amount: '', holdProfit: '', yesterdayProfit: '', group: '默认', selected: true }
+    ];
+
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);z-index:20000;display:flex;align-items:center;justify-content:center;';
+
+    // HTML 结构彻底清理，去掉了不存在的 ID，顶部直接展示混合输入区
     overlay.innerHTML = `
-        <div style="background:#111f35;border:1px solid #2a4a72;border-radius:12px;width:510px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.6);overflow:hidden;">
-            <!-- 标题栏 -->
+        <div style="background:#111f35;border:1px solid #2a4a72;border-radius:12px;width:600px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.6);overflow:hidden;">
             <div style="padding:13px 18px;border-bottom:1px solid #1e3a5f;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-                <span style="font-size:14px;font-weight:700;color:#e8f0ff;">📷 图片识别批量添加资产</span>
+                <span style="font-size:14px;font-weight:700;color:#e8f0ff;">⚡ 批量添加数据</span>
                 <span id="_ocrClose" style="cursor:pointer;color:#6a8aaa;font-size:20px;line-height:1;padding:0 2px;">✕</span>
             </div>
-            <!-- 上传区 -->
-            <div id="_ocrDrop" style="margin:14px;border:2px dashed #2a4a72;border-radius:8px;padding:22px 16px;text-align:center;cursor:pointer;color:#6a8aaa;font-size:13px;flex-shrink:0;transition:border-color .15s,background .15s;">
-                <div style="font-size:30px;margin-bottom:8px;">🖼️</div>
-                <div style="margin-bottom:4px;">拖拽截图到此处，或点击选择图片</div>
-                <div style="font-size:11px;color:#4a6a90;margin-bottom:12px;">支持 JPG / PNG，可一次选多张</div>
-                <button id="_ocrPickBtn" style="background:#1a2f50;border:1px solid #2a4a72;color:#8aacce;border-radius:6px;padding:6px 18px;font-size:12px;cursor:pointer;">📂 选择图片</button>
+            
+            <div style="padding:14px; display:flex; gap:10px; border-bottom:1px solid #1e3a5f; flex-shrink:0; background:#0a1525;">
+                <textarea id="_batchText" placeholder="在此粘贴纯文本 (如: 000001 1000)\n或者直接在下方表格手动录入..." style="flex:1; height:60px; background:#0d1b2e; border:1px solid #2a4a72; border-radius:6px; color:#c8d8f0; padding:8px; font-size:12px; resize:none;"></textarea>
+                <div style="display:flex; flex-direction:column; gap:8px; width:100px;">
+                    <button id="_btnParseText" style="flex:1; background:#1a2f50; color:#8aacce; border:1px solid #2a4a72; border-radius:6px; cursor:pointer; font-size:12px;">解析文本</button>
+                    <button id="_ocrPickBtn" style="flex:1; background:#1890ff; border:none; color:#fff; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold;">📷 传图识别</button>
+                </div>
             </div>
             <input type="file" id="_ocrFile" accept="image/*" multiple style="display:none;">
-            <!-- 进度提示 -->
-            <div id="_ocrProg" style="display:none;padding:0 16px 10px;font-size:12px;color:#6a8aaa;flex-shrink:0;"></div>
-            <!-- 结果区（可滚动） -->
-            <div id="_ocrResults" style="flex:1;overflow-y:auto;padding:0 14px 4px;min-height:0;"></div>
-            <!-- 底部操作栏 -->
-            <div id="_ocrFoot" style="display:none;padding:10px 16px;border-top:1px solid #1e3a5f;justify-content:space-between;align-items:center;flex-shrink:0;">
-                <span id="_ocrReupload" style="font-size:12px;color:#69b1ff;cursor:pointer;user-select:none;">↩ 重新上传</span>
-                <button id="_ocrSave" style="background:#1890ff;color:#fff;border:none;border-radius:6px;padding:7px 22px;font-size:13px;font-weight:600;cursor:pointer;">批量保存选中</button>
+            
+            <div id="_ocrProg" style="display:none;padding:8px 16px;font-size:12px;color:#fa8c16;background:rgba(250,140,22,0.1);flex-shrink:0;"></div>
+            
+            <div id="_ocrResults" style="flex:1;overflow-y:auto;padding:10px 14px;min-height:240px;"></div>
+            
+            <div id="_ocrFoot" style="padding:10px 16px;border-top:1px solid #1e3a5f;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+                <button id="_ocrAddRow" style="background:transparent; border:1px dashed #2a4a72; color:#69b1ff; border-radius:6px; padding:6px 14px; font-size:12px; cursor:pointer;">+ 增加一行</button>
+                <button id="_ocrSave" style="background:#1890ff;color:#fff;border:none;border-radius:6px;padding:7px 22px;font-size:13px;font-weight:600;cursor:pointer;">批量保存</button>
             </div>
         </div>`;
 
     document.body.appendChild(overlay);
     _ocrModalEl = overlay;
 
-    const close = () => { overlay.remove(); _ocrModalEl = null; _ocrItems = []; };
-    overlay.querySelector('#_ocrClose').onclick = close;
+    // 直接渲染表格
+    _renderOCRTable();
+
+    // 绑定事件
+    overlay.querySelector('#_ocrClose').onclick = () => { overlay.remove(); _ocrModalEl = null; _ocrItems = []; };
 
     const fileInput = overlay.querySelector('#_ocrFile');
-    const drop = overlay.querySelector('#_ocrDrop');
-
-    // 选择/拖拽图片
-    overlay.querySelector('#_ocrPickBtn').onclick = e => { e.stopPropagation(); fileInput.click(); };
-    drop.onclick = () => fileInput.click();
-    drop.ondragover = e => { e.preventDefault(); drop.style.borderColor = '#1890ff'; drop.style.background = 'rgba(24,144,255,0.05)'; };
-    drop.ondragleave = () => { drop.style.borderColor = '#2a4a72'; drop.style.background = ''; };
-    drop.ondrop = e => {
-        e.preventDefault();
-        drop.style.borderColor = '#2a4a72'; drop.style.background = '';
-        _runOCR(Array.from(e.dataTransfer.files));
-    };
+    overlay.querySelector('#_ocrPickBtn').onclick = () => fileInput.click();
     fileInput.onchange = () => _runOCR(Array.from(fileInput.files));
 
-    overlay.querySelector('#_ocrSave').onclick = _saveOCRItems;
-    overlay.querySelector('#_ocrReupload').onclick = () => {
-        drop.style.display = '';
-        overlay.querySelector('#_ocrProg').style.display = 'none';
-        overlay.querySelector('#_ocrResults').innerHTML = '';
-        overlay.querySelector('#_ocrFoot').style.display = 'none';
-        _ocrItems = [];
-        fileInput.value = '';
+    overlay.querySelector('#_ocrAddRow').onclick = () => {
+        _ocrItems.push({ code: '', name: '', amount: '', holdProfit: '', yesterdayProfit: '', group: '默认', selected: true });
+        _renderOCRTable();
     };
+
+    overlay.querySelector('#_btnParseText').onclick = () => {
+        const text = overlay.querySelector('#_batchText').value;
+        const lines = text.split('\n');
+        // 过滤掉当前完全空白的行，腾出位置
+        _ocrItems = _ocrItems.filter(item => item.code || item.amount);
+        lines.forEach(line => {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length >= 2 && /^\d{6}$/.test(parts[0])) {
+                _ocrItems.push({
+                    code: parts[0], name: '', amount: parseFloat(parts[1]) || 0,
+                    holdProfit: 0, yesterdayProfit: 0, group: '默认', selected: true
+                });
+            }
+        });
+        overlay.querySelector('#_batchText').value = '';
+        _renderOCRTable();
+    };
+
+    overlay.querySelector('#_ocrSave').onclick = _saveOCRItems;
 }
 
 /**
@@ -2342,14 +2396,12 @@ async function _runOCR(files) {
     const imgs = files.filter(f => f.type.startsWith('image/'));
     if (!imgs.length) { showToast('请选择图片文件', 'warning'); return; }
 
-    const drop = _ocrModalEl.querySelector('#_ocrDrop');
     const prog = _ocrModalEl.querySelector('#_ocrProg');
-    const foot = _ocrModalEl.querySelector('#_ocrFoot');
-
-    drop.style.display = 'none';
     prog.style.display = 'block';
     prog.textContent = '⏳ 正在初始化OCR引擎，首次加载需要几秒...';
-    _ocrItems = [];
+
+    // 清空现有的空行，准备装入图片识别数据
+    _ocrItems = _ocrItems.filter(item => item.code || item.amount);
 
     try {
         const worker = await _getOCRWorker(m => {
@@ -2358,7 +2410,6 @@ async function _runOCR(files) {
             }
         });
 
-        // ── 第一步：OCR 识别所有图片 ──
         for (let i = 0; i < imgs.length; i++) {
             if (!_ocrModalEl) return;
             prog.textContent = `⏳ 正在识别第 ${i + 1} / ${imgs.length} 张图片...`;
@@ -2366,27 +2417,25 @@ async function _runOCR(files) {
             _ocrItems.push(..._parseOCRText(text));
         }
 
-        // ── 第二步：跨图片去重（有代码按代码，无代码按名称）──
+        if (!_ocrModalEl) return; // 去重前检查弹窗是否已关闭
         const seenCodes = new Set();
         const seenNames = new Set();
         _ocrItems = _ocrItems.filter(a => {
             if (a.code) {
                 if (seenCodes.has(a.code)) return false;
-                seenCodes.add(a.code);
-                return true;
+                seenCodes.add(a.code); return true;
             }
             if (a.name) {
                 if (seenNames.has(a.name)) return false;
-                seenNames.add(a.name);
-                return true;
+                seenNames.add(a.name); return true;
             }
-            return false;
+            return true; // 允许手动填写的无代码无名称行保留
         });
 
-        // ── 第三步：对列表页识别结果通过 API 反查基金代码 ──
         const needLookup = _ocrItems.filter(a => a._needLookup && a.name);
+        if (!_ocrModalEl) return; // 反查代码前检查弹窗是否已关闭
         if (needLookup.length > 0) {
-            prog.textContent = `⏳ 识别完成，正在反查基金代码（${needLookup.length} 条）...`;
+            prog.textContent = `⏳ 正在反查基金代码（${needLookup.length} 条）...`;
             await Promise.all(needLookup.map(async (a) => {
                 const code = await getCodeByName(a.name);
                 a.code = code || '';
@@ -2394,22 +2443,17 @@ async function _runOCR(files) {
             }));
         }
 
-        // ── 第四步：展示结果 ──
         if (_ocrItems.length) {
             const found = _ocrItems.filter(a => a.code).length;
-            const missing = _ocrItems.length - found;
-            let msg = `✅ 识别完成，共 ${_ocrItems.length} 条（${found} 个找到代码`;
-            if (missing > 0) msg += `，${missing} 个代码待手填`;
-            prog.textContent = msg + `），请核对后批量保存`;
+            prog.textContent = `✅ 识别完成（${found} 个找到代码），请核对后批量保存`;
         } else {
-            prog.textContent = '⚠️ 未识别到有效基金信息，请检查图片是否清晰或尝试裁剪后上传';
+            prog.textContent = '⚠️ 未识别到有效基金信息，请手动补充';
         }
 
+        if (!_ocrModalEl) return; // 渲染前检查弹窗是否已关闭
         _renderOCRTable();
-        foot.style.display = 'flex';
     } catch (e) {
         prog.textContent = '❌ 识别失败：' + e.message;
-        console.error('[OCR]', e);
     }
 }
 
