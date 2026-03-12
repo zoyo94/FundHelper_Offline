@@ -929,6 +929,264 @@
             border-color: rgba(207, 68, 68, 0.2);
         }
 
+        /* ===== 基金详情弹窗（深色主题） ===== */
+        .fund-detail-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(6px);
+            z-index: 10002;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .fund-detail-overlay.visible {
+            display: flex;
+        }
+
+        .fund-detail-box {
+            width: 90%;
+            max-width: 480px;
+            max-height: 90vh;
+            background: #0a1525;
+            border: 1px solid #1e3a5f;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .fund-detail-header {
+            padding: 16px 20px;
+            background: #111f35;
+            border-bottom: 1px solid #1e3a5f;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .fund-detail-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e8f0ff;
+        }
+
+        .fund-detail-close {
+            cursor: pointer;
+            font-size: 20px;
+            color: #6a8aaa;
+            transition: color 0.2s;
+            line-height: 1;
+        }
+
+        .fund-detail-close:hover {
+            color: #c8d8f0;
+        }
+
+        .fund-detail-content {
+            flex: 1;
+            overflow-y: auto;
+            background: #0d1b2e;
+        }
+
+        .fund-detail-content::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .fund-detail-content::-webkit-scrollbar-track {
+            background: #0d1b2e;
+        }
+
+        .fund-detail-content::-webkit-scrollbar-thumb {
+            background: #2a4a72;
+            border-radius: 3px;
+        }
+
+        /* 顶部信息网格：三列结构 */
+        .detail-info-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            padding: 20px;
+            background: #0a1525;
+        }
+
+        .detail-info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .detail-info-label {
+            font-size: 11px;
+            color: #4a6a90;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .detail-info-value {
+            font-size: 15px;
+            font-weight: 700;
+            color: #e8f0ff;
+            font-family: 'Inter', -apple-system, sans-serif;
+        }
+
+        .detail-info-value.bold {
+            font-size: 18px;
+        }
+
+        .detail-info-value.hero {
+            font-size: 24px;
+            color: #69b1ff;
+        }
+
+        /* 估值时间小框 */
+        .estimation-box {
+            background: rgba(26, 47, 80, 0.4);
+            border: 1px solid #1e3a5f;
+            border-radius: 6px;
+            padding: 8px 12px;
+            text-align: right;
+            margin-bottom: 20px;
+        }
+        .estimation-label { font-size: 10px; color: #4a6a90; margin-bottom: 2px; }
+        .estimation-time { font-size: 12px; color: #c8d8f0; font-weight: 700; }
+
+        /* 两列股票网格 */
+        .holdings-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            padding: 10px 0;
+        }
+
+        .holding-card {
+            background: rgba(13, 27, 46, 0.5);
+            border: 1px solid #1e3a5f;
+            border-radius: 10px;
+            padding: 10px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.2s;
+        }
+
+        .holding-card:hover {
+            border-color: #2a4a72;
+        }
+
+        .holding-card-left {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            max-width: 55%;
+        }
+
+        .holding-card-name {
+            font-size: 13px;
+            color: #c8d8f0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-weight: 500;
+        }
+
+        .holding-card-badge {
+            font-size: 11px;
+            color: #3b6697;
+            font-weight: 600;
+        }
+
+        .holding-card-right {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+
+        .holding-card-rate {
+            font-size: 12px;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 6px;
+            min-width: 50px;
+            text-align: center;
+        }
+        .holding-card-rate.up { background: rgba(245, 34, 45, 0.1); color: #ff7875; }
+        .holding-card-rate.down { background: rgba(57, 181, 110, 0.1); color: #73d13d; }
+
+        .holding-card-percent {
+            font-size: 12px;
+            color: #69b1ff;
+            font-weight: 600;
+        }
+
+        /* 面积图渐变背景 */
+        .detail-chart-section {
+            background: #0a1525;
+            margin: 0;
+            padding: 0 20px 20px;
+        }
+
+        .detail-loading {
+            text-align: center;
+            color: #4a6a90;
+            font-size: 13px;
+            padding: 40px 0;
+        }
+
+        /* 补全 Tab 切换按钮样式 */
+        .detail-tabs {
+            display: flex;
+            background: #0d1b2e;
+            border-bottom: 1px solid #1e3a5f;
+            border-top: 1px solid #1e3a5f;
+            margin-bottom: 0px;
+        }
+
+        .detail-tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            font-size: 13px;
+            color: #4a6a90;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            font-weight: 600;
+        }
+
+        .detail-tab.active {
+            color: #69b1ff;
+            background: rgba(24, 144, 255, 0.05);
+            border-bottom-color: #1890ff;
+        }
+
+        .detail-tab:hover:not(.active) {
+            color: #c8d8f0;
+            background: rgba(255,255,255,0.02);
+        }
+
+        .detail-tab-content {
+            display: none;
+            background: #111f35;
+            padding: 15px 20px 20px;
+        }
+
+        .detail-tab-content.active {
+            display: block;
+        }
+
+        .detail-error {
+            text-align: center;
+            color: #ff7875;
+            font-size: 13px;
+            padding: 40px 0;
+        }
+
         /* 悬浮球容器 */
         .fab-container {
             position: fixed;
@@ -1108,6 +1366,20 @@
             <div class="modal-msg" id="modalMsg"></div>
             <input class="modal-input" id="modalInput" type="text" style="display:none;">
             <div class="modal-footer" id="modalFooter"></div>
+        </div>
+    </div>
+
+    <!-- 基金详情弹窗 -->
+    <div class="fund-detail-overlay" id="fundDetailOverlay">
+        <div class="fund-detail-box">
+            <div class="fund-detail-header">
+                <div class="fund-detail-title" id="fundDetailTitle">基金详情</div>
+                <div class="fund-detail-close" id="fundDetailClose">✕</div>
+            </div>
+            <div class="fund-detail-content" id="fundDetailContent" style="position:relative;">
+                <div class="detail-loading">加载中...</div>
+                <div class="detail-chart-tooltip" id="chartTooltip"></div>
+            </div>
         </div>
     </div>
 

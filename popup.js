@@ -4,6 +4,7 @@ let sortField = 'todayProfit'; // 默认排序字段
 let sortDirection = -1;        // 1:升序, -1:降序
 let selectedCodes = new Set();
 let lastClickedIndex = -1; // 上次点击行索引，用于 Shift 范围选
+let fundHistoryData = {}; // 存储基金历史估值数据 { code: { date: 'YYYY-MM-DD', points: [{ time, rate }] } }
 
 function clearSelection() {
     selectedCodes.clear();
@@ -286,6 +287,39 @@ function getToday() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * 恢复走势数据（从 storage 读取，清理非今日数据）
+ */
+async function restoreFundHistoryData() {
+    const todayStr = getToday();
+    try {
+        const result = await chrome.storage.local.get('fundHistoryData');
+        if (result.fundHistoryData) {
+            const stored = result.fundHistoryData;
+            // 只保留今日数据
+            for (const code in stored) {
+                if (stored[code].date === todayStr) {
+                    fundHistoryData[code] = stored[code];
+                }
+            }
+            console.log(`[走势数据] 已恢复 ${Object.keys(fundHistoryData).length} 个基金的今日走势`);
+        }
+    } catch (err) {
+        console.warn('[走势数据] 恢复失败:', err);
+    }
+}
+
+/**
+ * 持久化走势数据到 storage
+ */
+async function saveFundHistoryData() {
+    try {
+        await chrome.storage.local.set({ fundHistoryData });
+    } catch (err) {
+        console.warn('[走势数据] 保存失败:', err);
+    }
+}
+
 // ==================== 初始化 ====================
 document.addEventListener('DOMContentLoaded', async () => {
     // DOM 元素引用（在 DOM 准备就绪后往 elements 对象嵌入）
@@ -323,6 +357,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isPopup = chrome.extension.getViews({ type: 'popup' }).includes(window);
     if (!isPopup) document.body.classList.add('is-fullscreen');
 
+    // 恢复走势数据（清理非今日数据）
+    await restoreFundHistoryData();
+
     checkBackup();
     loadData();
 
@@ -356,6 +393,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             renderTable();
         });
     });
+
+    // 基金详情弹窗关闭按钮
+    const fundDetailClose = document.getElementById('fundDetailClose');
+    const fundDetailOverlay = document.getElementById('fundDetailOverlay');
+    if (fundDetailClose) {
+        fundDetailClose.onclick = closeFundDetail;
+    }
+    if (fundDetailOverlay) {
+        fundDetailOverlay.onclick = (e) => {
+            if (e.target === fundDetailOverlay) {
+                closeFundDetail();
+            }
+        };
+    }
 });
 
 
@@ -629,6 +680,26 @@ async function loadData() {
                 }
             }
             currentFundsData = results.filter(Boolean);
+
+            // 记录实时走势点（每次刷新追加一个时间点到 fundHistoryData）
+            const now = new Date();
+            const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            currentFundsData.forEach(item => {
+                if (!item || !item.code) return;
+                if (!fundHistoryData[item.code]) fundHistoryData[item.code] = { date: '', points: [] };
+                // 新的一天清空
+                if (fundHistoryData[item.code].date !== todayStr) {
+                    fundHistoryData[item.code] = { date: todayStr, points: [] };
+                }
+                const pts = fundHistoryData[item.code].points;
+                // 避免同一分钟重复记录
+                if (pts.length === 0 || pts[pts.length - 1].time !== hhmm) {
+                    pts.push({ time: hhmm, rate: item.rate || 0 });
+                }
+            });
+            // 持久化走势数据
+            saveFundHistoryData();
+
             const todayProfits = {};
             results.forEach(r => { if (r) todayProfits[r.code] = r.todayProfit; });
             chrome.storage.local.set({ lastDayProfits: todayProfits });
@@ -1642,6 +1713,17 @@ function renderTable() {
             tr.classList.add('selected-row');
         }
 
+        // 双击打开详情
+        tr.addEventListener('dblclick', (e) => {
+            // 点击操作按钮/齿轮/group-tag/del-btn 时不触发
+            if (e.target.closest('.settings-icon, .group-tag, .del-btn, button')) return;
+
+            const code = tr.dataset.code;
+            if (code) {
+                openFundDetail(code);
+            }
+        });
+
         tr.addEventListener('click', (e) => {
             // 点击操作按钮/齿轮/group-tag/del-btn 时不触发选择
             if (e.target.closest('.settings-icon, .group-tag, .del-btn, button')) return;
@@ -2502,5 +2584,895 @@ async function _saveOCRItems() {
         btn.textContent = '批量保存选中';
         showToast('保存失败：' + e.message, 'error');
     }
+}
+
+// ==================== 基金详情弹窗 ====================
+
+/**
+ * 打开基金详情弹窗
+ * @param {string} code - 基金代码
+ */
+async function openFundDetail(code) {
+    const overlay = document.getElementById('fundDetailOverlay');
+    const title = document.getElementById('fundDetailTitle');
+    const content = document.getElementById('fundDetailContent');
+
+    overlay.classList.add('visible');
+    content.innerHTML = '<div class="detail-loading">加载中...</div>';
+
+    try {
+        // 获取基金实时行情和持仓数据
+        const [live, myFunds] = await Promise.all([
+            fetchLiveInfo(code),
+            new Promise(r => chrome.storage.local.get(['myFunds'], res => r(res.myFunds || {})))
+        ]);
+
+        if (!live || !live.name) {
+            content.innerHTML = '<div class="detail-error">无法获取基金信息</div>';
+            return;
+        }
+
+        const fundData = myFunds[code] || {};
+        title.textContent = live.name;
+
+        const unitValue = live.prevPrice;   // 单位净值（最新确认净值）
+        const estimateValue = live.price;   // 今日估值净值
+        const estimateRate = unitValue > 0 ? ((estimateValue - unitValue) / unitValue * 100) : (live.rate || 0);
+
+        const holdAmount = fundData.amount || 0;
+        const shares = fundData.shares || 0;
+        const todayProfit = shares > 0 && unitValue > 0
+            ? parseFloat((shares * (estimateValue - unitValue)).toFixed(2))
+            : holdAmount * (estimateRate / 100);
+        const holdProfit = fundData.holdProfit || 0;
+
+        // 从 pingzhongdata 异步拉取：昨日涨幅 + 历史净值分时数据
+        // 这是社区公认最权威、最全的基金数据接口
+        let yesterdayRate = typeof live.rate === 'number' ? live.rate : 0; // 先占位
+
+        const upClass = 'up';
+        const downClass = 'down';
+
+        // 构建详情页面
+        let html = `
+            <div style="padding: 16px 20px 0; background: #0a1525;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                   <div style="display:flex; flex-direction:column; gap:2px;">
+                      <div class="fund-detail-title" style="font-size:18px; color:#e8f0ff; font-weight:700;">${live.name}</div>
+                      <div style="font-size:12px; color:#4a6a90; font-weight:600;">基金代码: ${code}</div>
+                   </div>
+                   <div class="estimation-box">
+                      <div class="estimation-label">最后更新 / 估值时间</div>
+                      <div class="estimation-time">${live.priceTime || getToday() + ' 15:00'}</div>
+                   </div>
+                </div>
+
+                <!-- 核心数据看板：Row 1 (净值与涨幅) -->
+                <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-bottom:15px; border-bottom: 1px solid #1e3a5f; padding-bottom: 15px;">
+                    <div class="detail-info-item">
+                        <span class="detail-info-label">单位净值</span>
+                        <span class="detail-info-value bold">${unitValue.toFixed(4)}</span>
+                    </div>
+                    <div class="detail-info-item">
+                        <span class="detail-info-label">昨日涨幅</span>
+                        <span id="detail-yesterday-rate" class="detail-info-value bold ${yesterdayRate >= 0 ? upClass : downClass}">
+                             ${(yesterdayRate >= 0 ? '+' : '') + yesterdayRate.toFixed(2) + '%'}
+                        </span>
+                    </div>
+                    <div class="detail-info-item">
+                        <span class="detail-info-label">估值净值</span>
+                        <span class="detail-info-value bold ${estimateRate >= 0 ? upClass : downClass}">${estimateValue.toFixed(4)}</span>
+                    </div>
+                    <div class="detail-info-item">
+                        <span class="detail-info-label">估值涨幅</span>
+                        <span class="detail-info-value bold ${estimateRate >= 0 ? upClass : downClass}">
+                            ${estimateRate >= 0 ? '+' : ''}${estimateRate.toFixed(2)}%
+                        </span>
+                    </div>
+                </div>
+
+                <!-- 核心数据看板：Row 2 (收益情况) -->
+                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; padding-bottom:10px;">
+                    <div class="detail-info-item">
+                        <span class="detail-info-label">持仓金额</span>
+                        <span class="detail-info-value hero">¥${holdAmount.toFixed(2)}</span>
+                    </div>
+                    <div class="detail-info-item">
+                        <span class="detail-info-label">当日预估收益</span>
+                        <span class="detail-info-value hero ${todayProfit >= 0 ? upClass : downClass}">
+                            ${todayProfit >= 0 ? '+' : ''}¥${todayProfit.toFixed(2)}
+                        </span>
+                    </div>
+                    <div class="detail-info-item">
+                        <span class="detail-info-label">持有收益</span>
+                        <span class="detail-info-value hero ${holdProfit >= 0 ? upClass : downClass}">
+                            ${holdProfit >= 0 ? '+' : ''}¥${holdProfit.toFixed(2)}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 实时走势图 -->
+            <div class="detail-chart-section" style="padding: 0 20px 15px; margin-top:-5px;">
+                <div style="font-size:11px;color:#4a6a90;margin-bottom:8px; display:flex; justify-content:space-between;">
+                    <span>📈 今日估值走势 (${getToday()})</span>
+                    <span style="font-size:10px; opacity:0.6;">09:30 - 15:00</span>
+                </div>
+                <div style="position:relative;">
+                    <canvas id="detailChart" style="width:100%;height:150px;display:block;"></canvas>
+                    <div id="chartTooltip" style="display:none;position:absolute;background:rgba(10,21,37,0.9);border:1px solid #1e3a5f;border-radius:6px;padding:6px 10px;pointer-events:none;min-width:120px;"></div>
+                </div>
+            </div>
+
+            <div style="height: 10px; background: #0a1525; border-top: 1px solid #1e3a5f;"></div>
+
+            <!-- Tab 切换 -->
+            <div class="detail-tabs">
+                <div class="detail-tab active" data-tab="holdings">前10重仓股票</div>
+                <div class="detail-tab" data-tab="performance">历史走势</div>
+            </div>
+
+            <!-- Tab 内容：重仓股 -->
+            <div class="detail-tab-content active" id="tabHoldings">
+                <div class="detail-loading">正在实时请求重仓股行情...</div>
+            </div>
+
+            <!-- Tab 内容：历史走势 -->
+            <div class="detail-tab-content" id="tabPerformance">
+                <div class="detail-loading">加载历史数据...</div>
+            </div>
+        `;
+
+        content.innerHTML = html;
+
+        // ① 实时走势：优先用本地 fundHistoryData 缓存（每次 loadData 刷新时追加）
+        (() => {
+            const cached = fundHistoryData[code];
+            let pts = (cached && cached.points && cached.points.length > 0) ? cached.points : null;
+            if (pts) {
+                if (pts[0].time !== '09:30') pts = [{ time: '09:30', rate: 0 }, ...pts];
+            } else {
+                // 无缓存：用当前估值率画两点兜底（09:30 ~ 当前时刻）
+                const rate = unitValue > 0 ? ((estimateValue - unitValue) / unitValue * 100) : 0;
+                const nowT = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`;
+                pts = [{ time: '09:30', rate: 0 }, { time: nowT, rate }];
+            }
+            // canvas 须等 DOM 渲染完成后再绘制
+            requestAnimationFrame(() => drawChart(code, estimateValue, unitValue, pts));
+        })();
+
+        // ② 异步拉 pingzhongdata：更新昨日涨幅
+        fetch(`https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`)
+            .then(r => r.text())
+            .then(text => {
+                // 获取 equityReturn（日增长率）字段，这是最准确的昨日涨幅
+                const trendMatch = text.match(/var\s+Data_netWorthTrend\s*=\s*(\[[\s\S]*?\]);/);
+                if (!trendMatch) return;
+                try {
+                    const arr = JSON.parse(trendMatch[1]);
+                    if (!arr || arr.length < 1) return;
+
+                    // 获取最后一个数据点的 equityReturn（日增长率）
+                    const lastPoint = arr[arr.length - 1];
+                    let yRate = 0;
+
+                    // 优先使用 equityReturn 字段（这是官方的日增长率）
+                    if (lastPoint.equityReturn !== undefined && lastPoint.equityReturn !== null && lastPoint.equityReturn !== '') {
+                        yRate = parseFloat(lastPoint.equityReturn);
+                    } else if (arr.length >= 2) {
+                        // 备用方案：手动计算最后两个净值的涨幅
+                        const prev = parseFloat(arr[arr.length - 2].y);
+                        const current = parseFloat(arr[arr.length - 1].y);
+                        if (prev > 0) {
+                            yRate = ((current - prev) / prev) * 100;
+                        }
+                    }
+
+                    const yEl = document.getElementById('detail-yesterday-rate');
+                    if (yEl) {
+                        yEl.textContent = (yRate >= 0 ? '+' : '') + yRate.toFixed(2) + '%';
+                        yEl.className = 'detail-info-value bold ' + (yRate >= 0 ? 'up' : 'down');
+                    }
+
+                    console.log('[openFundDetail] 昨日涨幅:', yRate.toFixed(2) + '%');
+                } catch (e) {
+                    console.warn('[openFundDetail] pingzhongdata parse error', e);
+                }
+            })
+            .catch(e => console.warn('[openFundDetail] pingzhongdata fetch failed', e));
+
+        // 绑定 Tab 切换事件
+        content.querySelectorAll('.detail-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                content.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+                content.querySelectorAll('.detail-tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                const tabName = tab.dataset.tab;
+                document.getElementById(`tab${tabName.charAt(0).toUpperCase() + tabName.slice(1)}`).classList.add('active');
+            });
+        });
+
+        // 异步加载重仓股和业绩数据
+        loadHoldings(code);
+        loadPerformance(code);
+
+    } catch (err) {
+        content.innerHTML = `<div class="detail-error">加载失败: ${err.message}</div>`;
+    }
+}
+
+/**
+ * 绘制分时/历史走势图
+ * @param {string} code
+ * @param {number} currentPrice - 当前估值净值
+ * @param {number} basePrice - 昨日净值（基准线）
+ * @param {Array} chartPoints - [{time, rate}] 真实数据点，为空则显示单点占位
+ */
+function drawChart(code, currentPrice, basePrice, chartPoints) {
+    const canvas = document.getElementById('detailChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const width = rect.width || canvas.offsetWidth || 400;
+    const height = rect.height || canvas.offsetHeight || 180;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const padding = { top: 20, right: 10, bottom: 30, left: 52 };
+    const cw = width - padding.left - padding.right;
+    const ch = height - padding.top - padding.bottom;
+
+    let points = chartPoints && chartPoints.length > 0 ? chartPoints : [];
+    if (points.length === 0) {
+        const rate = basePrice > 0 ? ((currentPrice - basePrice) / basePrice * 100) : 0;
+        points = [{ time: '--', rate: 0 }, { time: getToday(), rate }];
+    }
+
+    const rates = points.map(p => p.rate);
+    const absMax = Math.max(Math.abs(Math.max(...rates)), Math.abs(Math.min(...rates)), 0.05);
+    const yMax = absMax * 1.2, yMin = -absMax * 1.2, yRange = yMax - yMin;
+    const toY = r => padding.top + ch * (1 - (r - yMin) / yRange);
+
+    const isIntraday = points.length > 0 && /^\d{2}:\d{2}$/.test(points[0].time);
+    const timeToMin = t => {
+        const [h, m] = t.split(':').map(Number);
+        const total = h * 60 + m;
+        if (total <= 11 * 60 + 30) return total - (9 * 60 + 30);
+        if (total < 13 * 60) return 120;
+        return 120 + (total - 13 * 60);
+    };
+    const TOTAL_MINS = 240;
+    const toX = isIntraday ? t => padding.left + (cw / TOTAL_MINS) * timeToMin(t) : (_, i) => padding.left + (cw / Math.max(points.length - 1, 1)) * i;
+
+    const lastRate = rates[rates.length - 1];
+    const isUp = lastRate >= 0;
+    const lineColor = isUp ? '#ff7875' : '#73d13d';
+
+    // 背景
+    ctx.fillStyle = '#0a1525';
+    ctx.fillRect(0, 0, width, height);
+
+    // 网格线
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+        const y = padding.top + (ch / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(padding.left + cw, y);
+        ctx.stroke();
+    }
+
+    // 0轴
+    const zeroY = toY(0);
+    ctx.strokeStyle = 'rgba(100,140,180,0.5)';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(padding.left, zeroY);
+    ctx.lineTo(padding.left + cw, zeroY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 面积渐变
+    const grad = ctx.createLinearGradient(0, padding.top, 0, padding.top + ch);
+    if (isUp) {
+        grad.addColorStop(0, 'rgba(245,34,45,0.25)');
+        grad.addColorStop(1, 'rgba(245,34,45,0)');
+    } else {
+        grad.addColorStop(0, 'rgba(57,181,110,0)');
+        grad.addColorStop(1, 'rgba(57,181,110,0.25)');
+    }
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(isIntraday ? toX(points[0].time) : toX(null, 0), zeroY);
+    points.forEach((p, i) => ctx.lineTo(isIntraday ? toX(p.time) : toX(null, i), toY(p.rate)));
+    ctx.lineTo(isIntraday ? toX(points[points.length - 1].time) : toX(null, points.length - 1), zeroY);
+    ctx.closePath();
+    ctx.fill();
+
+    // 折线
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    points.forEach((p, i) => {
+        const x = isIntraday ? toX(p.time) : toX(null, i);
+        if (i === 0) ctx.moveTo(x, toY(p.rate));
+        else ctx.lineTo(x, toY(p.rate));
+    });
+    ctx.stroke();
+
+    // Y轴标签
+    ctx.fillStyle = '#4a6a90';
+    ctx.font = '10px Inter';
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 4; i++) {
+        const r = yMax - (yRange / 4) * i;
+        ctx.fillText((r >= 0 ? '+' : '') + r.toFixed(2) + '%', padding.left - 4, padding.top + (ch / 4) * i + 4);
+    }
+
+    // X轴标签
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#4a6a90';
+    if (isIntraday) {
+        [{ t: '09:30', min: 0 }, { t: '11:30', min: 120 }, { t: '15:00', min: 240 }].forEach(({ t, min }) => {
+            ctx.fillText(t, padding.left + (cw / TOTAL_MINS) * min, height - 8);
+        });
+    } else {
+        const idxs = [0, Math.floor(points.length / 2), points.length - 1];
+        idxs.forEach(idx => {
+            if (points[idx]) ctx.fillText(points[idx].time, toX(null, idx), height - 8);
+        });
+    }
+
+    // Tooltip 交互
+    canvas._chartPoints = points;
+    canvas.onmousemove = (e) => {
+        const tooltip = document.getElementById('chartTooltip');
+        if (!tooltip) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        if (x < padding.left || x > padding.left + cw) {
+            tooltip.style.display = 'none';
+            return;
+        }
+        let idx = 0, minDist = Infinity;
+        points.forEach((p, i) => {
+            const px = isIntraday ? toX(p.time) : toX(null, i);
+            const d = Math.abs(px - x);
+            if (d < minDist) { minDist = d; idx = i; }
+        });
+        const pt = points[idx];
+        if (pt) {
+            const clr = pt.rate >= 0 ? '#ff7875' : '#73d13d';
+            const est = basePrice > 0 ? '¥' + (basePrice * (1 + pt.rate / 100)).toFixed(4) + ' ' : '';
+            tooltip.innerHTML = `<div style="font-size:10px;color:#8aacce;">${pt.time}</div><div style="font-size:12px;font-weight:bold;color:#e8f0ff;">${est}<span style="color:${clr}">${pt.rate >= 0 ? '+' : ''}${pt.rate.toFixed(2)}%</span></div>`;
+            tooltip.style.display = 'block';
+            const pr = canvas.parentElement.getBoundingClientRect();
+            let left = (rect.left - pr.left) + x + 12;
+            if (left + 145 > pr.width) left = (rect.left - pr.left) + x - 155;
+            tooltip.style.left = left + 'px';
+            tooltip.style.top = ((rect.top - pr.top) + (e.clientY - rect.top) - 52) + 'px';
+        }
+    };
+    canvas.onmouseleave = () => {
+        const t = document.getElementById('chartTooltip');
+        if (t) t.style.display = 'none';
+    };
+}
+
+
+/**
+ * 加载基金重仓股信息
+ * @param {string} code - 基金代码
+ */
+async function loadHoldings(code) {
+    const container = document.getElementById('tabHoldings');
+    if (!container) return;
+
+    try {
+        const url = `https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition?FCODE=${code}&deviceid=Wap&plat=Wap&product=EFund&version=6.5.9`;
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        const stockCodes = [];
+        const stockNames = [];
+        const stockPercents = [];
+        
+        if (data && data.Datas && data.Datas.fundStocks && data.Datas.fundStocks.length > 0) {
+            data.Datas.fundStocks.forEach(stock => {
+                stockCodes.push(stock.GPDM);
+                stockNames.push(stock.GPJC);
+                stockPercents.push(stock.JZBL);
+            });
+        }
+        
+        if (stockCodes.length === 0) {
+            container.innerHTML = `
+                <div style="text-align:center;padding:10px 0;">
+                    <img src="https://fundpicturecdn.eastmoney.com/fund_detail_img/${code}.png?t=${Date.now()}"
+                        style="width:100%;border-radius:6px;"
+                        onerror="this.parentElement.innerHTML='<div class=\\'detail-error\\'>暂无重仓数据</div>';"
+                    />
+                </div>`;
+            return;
+        }
+
+        console.log('[loadHoldings] 获取到', stockCodes.length, '只重仓股');
+
+        // 构建腾讯股票代码列表
+        const stockList = stockCodes.slice(0, 10).map((c, idx) => {
+            const stockData = data.Datas.fundStocks[idx];
+            if (stockData.TEXCH === '1') return 'sh' + c;
+            if (stockData.TEXCH === '2') return 'sz' + c;
+            if (stockData.TEXCH === '5' || stockData.TEXCH === '8' || stockData.NEWTEXCH === '116') {
+               let hkCode = c;
+               while (hkCode.length < 5) hkCode = '0' + hkCode;
+               return 'hk' + hkCode;
+            }
+            if (c.startsWith('6')) return 'sh' + c;
+            return 'sz' + c;
+        });
+
+        const stockPrices = await fetchStockPrices(stockList);
+
+        let html = '<div class="holdings-grid">';
+        stockCodes.slice(0, 10).forEach((stockCode, idx) => {
+            const marketCode = stockList[idx];
+            const priceInfo = stockPrices[marketCode] || { rate: 0 };
+            const changeClass = priceInfo.rate >= 0 ? 'up' : 'down';
+            const changeSign = priceInfo.rate >= 0 ? '+' : '';
+            const name = stockNames[idx] || stockCode;
+            const percent = stockPercents[idx] || '--';
+
+            html += `
+                <div class="holding-card">
+                    <div class="holding-card-left">
+                        <div class="holding-card-name">${name}</div>
+                        <div class="holding-card-badge">${stockCode} · ${percent}%</div>
+                    </div>
+                    <div class="holding-card-right">
+                        <div class="holding-card-rate ${changeClass}">${changeSign}${priceInfo.rate.toFixed(2)}%</div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+
+    } catch (err) {
+        container.innerHTML = '<div class="detail-error">加载持仓失败</div>';
+        console.error('[loadHoldings] 加载持仓失败:', err);
+    }
+}
+
+// ==================== 数据获取函数（优化版） ====================
+
+/**
+ * 获取基金分时数据（基金无真实分时，返回空数组让绘图函数生成模拟走势）
+ */
+async function fetchIntradayData(code) {
+    console.log('[fetchIntradayData] 基金无分时数据，将使用估值生成模拟走势');
+    return [];
+}
+
+/**
+ * 获取基金历史净值数据
+ */
+async function fetchFundNetValues(code, startDate, endDate, pageSize = 200) {
+    try {
+        // 方案1: 使用 pingzhongdata 接口（最可靠，包含完整历史数据）
+        const url = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`;
+        const res = await fetch(url);
+        const text = await res.text();
+
+        // 解析 Data_netWorthTrend 数组
+        const match = text.match(/var\s+Data_netWorthTrend\s*=\s*(\[[\s\S]+?\]);/);
+        if (match) {
+            try {
+                const trendData = JSON.parse(match[1]);
+                if (Array.isArray(trendData) && trendData.length > 0) {
+                    // 格式: [{x: timestamp, y: netValue, equityReturn: "0.52"}, ...]
+                    const startTime = new Date(startDate).getTime();
+                    const endTime = new Date(endDate).getTime();
+
+                    const filtered = trendData
+                        .filter(item => item.x >= startTime && item.x <= endTime)
+                        .map(item => ({
+                            date: new Date(item.x).toISOString().split('T')[0],
+                            price: parseFloat(item.y)
+                        }));
+
+                    if (filtered.length > 0) {
+                        console.log('[fetchFundNetValues] 方案1成功，获取到', filtered.length, '条历史数据');
+                        return filtered;
+                    }
+                }
+            } catch (parseErr) {
+                console.warn('[fetchFundNetValues] 方案1解析失败:', parseErr);
+            }
+        }
+
+        // 方案2: 备用 - 使用移动端接口
+        const url2 = `https://fundmobapi.eastmoney.com/FundMNewApi/FundMNHisNetList?FCODE=${code}&PAGEINDEX=1&PAGESIZE=${pageSize}&SDATE=${startDate}&EDATE=${endDate}&deviceid=wap&plat=Wap`;
+        const res2 = await fetch(url2);
+        const data2 = await res2.json();
+
+        if (data2.Datas && data2.Datas.length > 0) {
+            console.log('[fetchFundNetValues] 方案2成功，获取到', data2.Datas.length, '条历史数据');
+            return data2.Datas.reverse().map(item => ({
+                date: item.FSRQ,
+                price: parseFloat(item.DWJZ)
+            }));
+        }
+
+        console.warn('[fetchFundNetValues] 所有方案均未获取到数据');
+        return null;
+    } catch (e) {
+        console.error('[fetchFundNetValues] 获取基金净值失败:', e);
+        return null;
+    }
+}
+
+/**
+ * 获取沪深300基准数据
+ */
+async function fetchBenchmarkData(code, startDate, endDate) {
+    try {
+        // 沪深300代码: 000300 (从东方财富指数接口获取)
+        const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.${code}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63&klt=101&fqt=1&beg=${startDate.replace(/-/g, '')}&end=${endDate.replace(/-/g, '')}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.data?.klines && data.data.klines.length > 0) {
+            console.log('[fetchBenchmarkData] 成功获取基准数据', data.data.klines.length, '条');
+            return data.data.klines.map(line => {
+                const [date, open, close, high, low, volume, amount, amplitude, changePct, changeAmt, turnover] = line.split(',');
+                return {
+                    date: date.substring(0, 4) + '-' + date.substring(4, 6) + '-' + date.substring(6, 8),
+                    price: parseFloat(close)
+                };
+            });
+        }
+
+        console.warn('[fetchBenchmarkData] 未获取到基准数据');
+        return null;
+    } catch (e) {
+        console.warn('[fetchBenchmarkData] 获取基准数据失败:', e);
+        return null;
+    }
+}
+
+/**
+ * 计算基准收益率（按日期对齐）
+ */
+function calculateBenchmarkReturns(benchmarkData, fundDates, basePrice) {
+    if (!benchmarkData || benchmarkData.length === 0) return null;
+
+    const benchmarkMap = {};
+    benchmarkData.forEach(item => {
+        benchmarkMap[item.date] = item.price;
+    });
+
+    return fundDates.map(date => {
+        const price = benchmarkMap[date];
+        if (price && basePrice > 0) {
+            return ((price - basePrice) / basePrice) * 100;
+        }
+        return null;
+    });
+}
+
+/**
+ * 计算最大回撤
+ */
+function calculateMaxDrawdown(prices) {
+    let maxDrawdown = 0;
+    let peak = prices[0];
+
+    for (let i = 1; i < prices.length; i++) {
+        if (prices[i] > peak) {
+            peak = prices[i];
+        }
+        const drawdown = ((peak - prices[i]) / peak) * 100;
+        if (drawdown > maxDrawdown) {
+            maxDrawdown = drawdown;
+        }
+    }
+
+    return maxDrawdown;
+}
+
+/**
+ * 计算年化收益率
+ */
+function calculateAnnualizedReturn(totalReturn, period) {
+    const periodMap = { '1M': 1/12, '3M': 3/12, '6M': 6/12, '1Y': 1, '3Y': 3, 'LY': 5 };
+    const years = periodMap[period] || 1;
+
+    if (years < 1) {
+        return (totalReturn / years);
+    }
+
+    return ((Math.pow(1 + totalReturn / 100, 1 / years) - 1) * 100);
+}
+
+/**
+ * 计算波动率
+ */
+function calculateVolatility(prices) {
+    if (prices.length < 2) return 0;
+
+    const returns = [];
+    for (let i = 1; i < prices.length; i++) {
+        returns.push((prices[i] - prices[i-1]) / prices[i-1]);
+    }
+
+    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / returns.length;
+
+    return Math.sqrt(variance) * Math.sqrt(252) * 100; // 年化波动率
+}
+
+/**
+ * 加载历史走势数据（多周期历史净值图表）
+ */
+async function loadPerformance(code) {
+    const container = document.getElementById('tabPerformance');
+    if (!container) return;
+
+    // 先显示周期按钮框架
+    container.innerHTML = `
+        <div style="padding: 14px 0 10px;">
+            <div id="perfPeriodBtns" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+                ${['1M', '3M', '6M', '1Y', '3Y', 'LY'].map((p, i) => {
+        const labels = { '1M': '近1月', '3M': '近3月', '6M': '近6月', '1Y': '近1年', '3Y': '近3年', 'LY': '成立来' };
+        return `<button class="perf-btn${i === 0 ? ' active' : ''}" data-period="${p}"
+                        style="padding:5px 12px;border-radius:16px;border:1px solid #1e3a5f;font-size:12px;
+                        cursor:pointer;background:${i === 0 ? '#1890ff' : '#0d1b2e'};color:${i === 0 ? '#fff' : '#4a6a90'};transition:all 0.2s;">
+                        ${labels[p]}
+                    </button>`;
+    }).join('')}
+            </div>
+            <div id="perfSummary" style="text-align:right;font-size:12px;color:#4a6a90;margin-bottom:8px;">加载中...</div>
+            <div style="position:relative;">
+                <canvas id="perfChart" style="width:100%;height:130px;display:block;"></canvas>
+                <div id="perfChartTooltip" style="display:none;position:absolute;background:rgba(10,21,37,0.9);border:1px solid #1e3a5f;border-radius:6px;padding:6px 10px;pointer-events:none;min-width:120px;z-index:100;"></div>
+            </div>
+        </div>
+    `;
+
+    // 默认加载近1月
+    loadPerformancePeriod(code, '1M');
+
+    // 绑定周期按钮事件
+    container.querySelectorAll('.perf-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            container.querySelectorAll('.perf-btn').forEach(b => {
+                b.style.background = '#0d1b2e'; b.style.color = '#4a6a90';
+                b.classList.remove('active');
+            });
+            btn.style.background = '#1890ff'; btn.style.color = '#fff';
+            btn.classList.add('active');
+            loadPerformancePeriod(code, btn.dataset.period);
+        });
+    });
+}
+
+/**
+ * 具体加载某个周期的业绩图表
+ */
+async function loadPerformancePeriod(code, period) {
+    const summary = document.getElementById('perfSummary');
+    const canvas = document.getElementById('perfChart');
+    if (!canvas || !summary) return;
+
+    // 根据周期计算开始日期
+    const endDate = new Date();
+    const startDate = new Date();
+    const periodMap = { '1M': 1, '3M': 3, '6M': 6, '1Y': 12, '3Y': 36, 'LY': 360 };
+    startDate.setMonth(startDate.getMonth() - (periodMap[period] || 1));
+    if (period === 'LY') startDate.setFullYear(2000);
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const pageSize = period === 'LY' ? 500 : 200;
+
+    try {
+        summary.textContent = '加载中...';
+
+        // 使用优化后的数据获取函数
+        const fundData = await fetchFundNetValues(code, fmt(startDate), fmt(endDate), pageSize);
+
+        if (!fundData || fundData.length === 0) {
+            summary.textContent = '暂无数据';
+            return;
+        }
+
+        const prices = fundData.map(p => p.price);
+        const dates = fundData.map(p => p.date);
+        const firstPrice = prices[0];
+        const lastPrice = prices[prices.length - 1];
+        const totalRate = ((lastPrice - firstPrice) / firstPrice * 100).toFixed(2);
+        const isUp = lastPrice >= firstPrice;
+
+        summary.innerHTML = `<span style="color:#8aacce;">近${{ '1M': '1月', '3M': '3月', '6M': '6月', '1Y': '1年', '3Y': '3年', 'LY': '成立' }[period] || period}涨跌幅</span>
+            <span style="font-weight:bold;color:${isUp ? '#ff7875' : '#73d13d'};">${isUp ? '+' : ''}${totalRate}%</span>`;
+
+        // 绘制图表
+        const dpr = window.devicePixelRatio || 1;
+        const canvasWidth = canvas.offsetWidth || canvas.parentElement?.offsetWidth || 360;
+        const canvasHeight = 130;
+        canvas.style.width = canvasWidth + 'px';
+        canvas.style.height = canvasHeight + 'px';
+        drawPerfChart(canvas, prices, dates, isUp);
+
+    } catch (err) {
+        summary.textContent = '加载失败';
+        console.error('[loadPerformancePeriod] 业绩数据加载失败:', err);
+    }
+}
+
+/**
+ * 绘制业绩折线图（Y轴为涨跌幅%，支持隐藏tab下的canvas尺寸）
+ */
+function drawPerfChart(canvas, prices, dates, isUp) {
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    // 优先用 style.width（由调用方强制设置），再 fallback
+    const width = parseInt(canvas.style.width) || canvas.getBoundingClientRect().width || canvas.parentElement?.offsetWidth || 360;
+    const height = parseInt(canvas.style.height) || canvas.getBoundingClientRect().height || 130;
+
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const pad = { top: 10, right: 10, bottom: 28, left: 52 };
+    const cw = width - pad.left - pad.right;
+    const ch = height - pad.top - pad.bottom;
+
+    // 转换为相对期初的涨跌幅百分比
+    const baseP = prices[0];
+    const returns = prices.map(p => (p - baseP) / baseP * 100);
+    const maxR = Math.max(...returns, 0.01);
+    const minR = Math.min(...returns, -0.01);
+    const range = maxR - minR || 0.01;
+
+    const color = isUp ? '#ff7875' : '#73d13d';
+    const toX = i => pad.left + (cw / Math.max(prices.length - 1, 1)) * i;
+    const toY = r => pad.top + ch * (1 - (r - minR) / range);
+
+    // 背景
+    ctx.fillStyle = '#111f35';
+    ctx.fillRect(0, 0, width, height);
+
+    // 网格线
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
+    for (let i = 0; i <= 3; i++) {
+        const y = pad.top + (ch / 3) * i;
+        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
+    }
+
+    // 0 轴基准线（虚线）
+    const zeroY = toY(0);
+    if (zeroY >= pad.top && zeroY <= pad.top + ch) {
+        ctx.strokeStyle = 'rgba(100,140,180,0.5)'; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(pad.left, zeroY); ctx.lineTo(pad.left + cw, zeroY); ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    // 面积图填充
+    const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
+    gradient.addColorStop(0, isUp ? 'rgba(255,120,117,0.3)' : 'rgba(115,209,61,0.3)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(toX(0), zeroY);
+    returns.forEach((r, i) => ctx.lineTo(toX(i), toY(r)));
+    ctx.lineTo(toX(returns.length - 1), zeroY);
+    ctx.closePath(); ctx.fill();
+
+    // 折线
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    returns.forEach((r, i) => { if (i === 0) ctx.moveTo(toX(i), toY(r)); else ctx.lineTo(toX(i), toY(r)); });
+    ctx.stroke();
+
+    // Y 轴标签（涨跌幅%）
+    ctx.fillStyle = '#4a6a90'; ctx.font = '10px Inter'; ctx.textAlign = 'right';
+    for (let i = 0; i <= 3; i++) {
+        const r = maxR - (range / 3) * i;
+        ctx.fillText((r >= 0 ? '+' : '') + r.toFixed(2) + '%', pad.left - 4, pad.top + (ch / 3) * i + 4);
+    }
+
+    // X 轴标签（首、中、尾，格式 MM-DD）
+    ctx.textAlign = 'center'; ctx.fillStyle = '#4a6a90';
+    const fmtD = s => s ? s.slice(5) : '';
+    if (dates.length > 0) {
+        const mid = Math.floor(dates.length / 2);
+        ctx.fillText(fmtD(dates[0]), toX(0), height - 8);
+        ctx.fillText(fmtD(dates[mid]), toX(mid), height - 8);
+        ctx.fillText(fmtD(dates[dates.length - 1]), toX(dates.length - 1), height - 8);
+    }
+
+    // Tooltip 交互
+    canvas._chartPoints = returns;
+    canvas.onmousemove = (e) => {
+        const tooltip = document.getElementById('perfChartTooltip');
+        if (!tooltip) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        if (x < pad.left || x > pad.left + cw) {
+            tooltip.style.display = 'none';
+            return;
+        }
+        let idx = 0, minDist = Infinity;
+        returns.forEach((r, i) => {
+            const px = toX(i);
+            const d = Math.abs(px - x);
+            if (d < minDist) { minDist = d; idx = i; }
+        });
+        const r = returns[idx];
+        const date = dates[idx];
+        const p = prices[idx];
+        if (date) {
+            const clr = r >= 0 ? '#ff7875' : '#73d13d';
+            const est = '净值: ' + parseFloat(p).toFixed(4);
+            tooltip.innerHTML = `<div style="font-size:10px;color:#8aacce;">${date}</div><div style="font-size:12px;font-weight:bold;color:#e8f0ff;">${est} <span style="color:${clr};margin-left:6px;">${r >= 0 ? '+' : ''}${r.toFixed(2)}%</span></div>`;
+            tooltip.style.display = 'block';
+            const pr = canvas.parentElement.getBoundingClientRect();
+            let left = (rect.left - pr.left) + x + 12;
+            if (left + 145 > pr.width) left = (rect.left - pr.left) + x - 155;
+            tooltip.style.left = left + 'px';
+            tooltip.style.top = ((rect.top - pr.top) + Math.min(Math.max((e.clientY - rect.top) - 52, 0), ch)) + 'px';
+        }
+    };
+    canvas.onmouseleave = () => {
+        const t = document.getElementById('perfChartTooltip');
+        if (t) t.style.display = 'none';
+    };
+}
+
+async function fetchStockPrices(codes) {
+    if (!codes || codes.length === 0) return {};
+
+    try {
+        // 切换至腾讯财经接口，避免新浪的 403 限制
+        const list = codes.join(',');
+        const url = `https://qt.gtimg.cn/q=${list}`;
+        const response = await fetch(url);
+        // 腾讯接口返回的是 GBK 编码（扩展里通常能自动处理，或这里手动 decode）
+        const buffer = await response.arrayBuffer();
+        const decoder = new TextDecoder('gbk');
+        const text = decoder.decode(buffer);
+
+        const result = {};
+        const lines = text.split(';');
+
+        lines.forEach(line => {
+            if (!line.trim() || !line.includes('~')) return;
+
+            const parts = line.split('~');
+            if (parts.length < 33) return;
+
+            // 腾讯格式：1:名称, 2:代码, 3:当前价, 4:昨收价, 5:开盘价... 32:涨跌幅
+            const fullCode = parts[0].match(/v_([a-z0-9]+)=/)[1];
+            const rate = parseFloat(parts[32]) || 0;
+
+            result[fullCode] = { rate };
+        });
+
+        return result;
+    } catch (err) {
+        console.error('获取股票行情失败:', err);
+        return {};
+    }
+}
+
+/**
+ * 关闭基金详情弹窗
+ */
+function closeFundDetail() {
+    const overlay = document.getElementById('fundDetailOverlay');
+    overlay.classList.remove('visible');
 }
 // getCodeByName 和 OCR 双模式解析已整合至上方 _parseOCRText / _runOCR 函数

@@ -17,7 +17,9 @@
     "https://fundgz.1234567.com.cn/*",
     "https://hq.sinajs.cn/*",
     "https://fund.eastmoney.com/*",
-    "https://fundsuggest.eastmoney.com/*"
+    "https://fundsuggest.eastmoney.com/*",
+    "https://fundmobapi.eastmoney.com/*",
+    "https://qt.gtimg.cn/*"
   ],
   "action": {
     "default_popup": "popup.html"
