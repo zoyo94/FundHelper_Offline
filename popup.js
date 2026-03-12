@@ -38,6 +38,27 @@ const apiLogger = {
 // ==================== DOM 元素引用 ====================
 let elements = {};  // populated in DOMContentLoaded
 
+// ==================== 工具函数 ====================
+
+/**
+ * 统一的 storage 访问层（Promise 化）
+ */
+const storage = {
+    async get(keys) {
+        return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+    },
+    async set(data) {
+        return new Promise(resolve => chrome.storage.local.set(data, resolve));
+    }
+};
+
+/**
+ * 数值格式化工具（保留 2 位小数）
+ */
+function round2(num) {
+    return parseFloat(num.toFixed(2));
+}
+
 // ==================== Toast / Modal 工具函数 ====================
 
 /**
@@ -122,48 +143,35 @@ function _setFooter(btns) {
 }
 
 // ==================== 撤销结算功能 ====================
-function checkBackup() {
-    chrome.storage.local.get(['backupFunds', 'lastSettlementDate'], (res) => {
-        const fabRollback = document.getElementById('fabRollback');
-        if (fabRollback) {
-            if (res.backupFunds && res.lastSettlementDate === getToday()) {
-                fabRollback.style.display = 'block';
-            } else {
-                fabRollback.style.display = 'none';
-            }
-        }
-    });
+async function checkBackup() {
+    const { backupFunds, lastSettlementDate } = await storage.get(['backupFunds', 'lastSettlementDate']);
+    const fabRollback = document.getElementById('fabRollback');
+    if (fabRollback) {
+        fabRollback.style.display = (backupFunds && lastSettlementDate === getToday()) ? 'block' : 'none';
+    }
 }
-
-
 
 // ==================== 1. 新增：统一的备份函数 ====================
 /**
  * 执行结算前，先备份当前数据（模拟导出功能）
  * @returns {Promise<void>}
  */
-function backupFundsData() {
-    return new Promise(resolve => {
-        chrome.storage.local.get(['myFunds', 'lastUpdateDate', 'lastDayProfits'], (res) => {
-            const funds = res.myFunds || {};
-            if (Object.keys(funds).length === 0) {
-                resolve();
-                return;
-            }
-            // 将当前数据存入 backupFunds 字段，结构完全模拟导出文件
-            const backupData = {
-                backupTime: new Date().toLocaleString(),
-                lastUpdateDate: res.lastUpdateDate || '',
-                lastDayProfits: res.lastDayProfits || {},
-                myFunds: funds
-            };
-            chrome.storage.local.set({ backupFunds: backupData }, () => {
-                console.log('[Backup] 数据已备份:', backupData);
-                resolve();
-            });
-        });
-    });
+async function backupFundsData() {
+    const { myFunds, lastUpdateDate, lastDayProfits } = await storage.get(['myFunds', 'lastUpdateDate', 'lastDayProfits']);
+    const funds = myFunds || {};
+    if (Object.keys(funds).length === 0) return;
+
+    const backupData = {
+        version: '1.0',
+        exportDate: new Date().toISOString(),
+        lastUpdateDate: lastUpdateDate || getToday(),
+        lastDayProfits: lastDayProfits || {},
+        myFunds: funds
+    };
+    await storage.set({ backupFunds: backupData });
+    console.log('[Backup] 数据已备份:', backupData);
 }
+
 /**
  * 结算核心逻辑（手动/自动共用）
  * @param {Object} funds        - myFunds 对象（直接修改）
@@ -179,10 +187,10 @@ function _applySettlementLoop(funds, settlements, todayStr, skipUnchanged = fals
         if (!item || price <= 0) continue;
         const basePrice = item.savedPrevPrice || (item.shares > 0 ? (item.amount / item.shares) : price);
         if (skipUnchanged && Math.abs(price - basePrice) < 0.00001) continue;
-        const actualProfit = parseFloat((item.shares * (price - basePrice)).toFixed(2));
-        funds[code].holdProfit = parseFloat(((item.holdProfit || 0) + actualProfit).toFixed(2));
+        const actualProfit = round2(item.shares * (price - basePrice));
+        funds[code].holdProfit = round2((item.holdProfit || 0) + actualProfit);
         funds[code].yesterdayProfit = actualProfit;
-        funds[code].amount = parseFloat((item.shares * price).toFixed(2));
+        funds[code].amount = round2(item.shares * price);
         funds[code].savedPrevPrice = price;
         funds[code].savedPrevDate = prevPriceDate || todayStr;
         updatedCount++;
@@ -195,90 +203,86 @@ async function manualSettlement() {
     const ok = await showConfirm('确认进行日结算吗？\n系统将对比最新公布的净值与上次结算的净值，计算并记录收益。', '日结算确认');
     if (!ok) return;
     elements.status.innerText = '正在备份数据...';
-    // 【关键修改】结算前先备份！
     await backupFundsData();
     elements.status.innerText = '正在执行日结算...';
-    chrome.storage.local.get(['myFunds'], (res) => {
-        const funds = res.myFunds || {};
-        const settlements = Object.keys(funds).map(code => {
-            const live = currentFundsData.find(f => f.code === code);
-            return (live && live.prevPrice) ? { code, price: live.prevPrice, prevPriceDate: live.prevPriceDate } : null;
-        }).filter(Boolean);
-        const updatedCount = _applySettlementLoop(funds, settlements, getToday(), false);
-        chrome.storage.local.set({
-            myFunds: funds,
-            lastSettlementDate: getToday(),
-            lastUpdateDate: new Date().toLocaleDateString()
-        }, () => {
-            showToast(`✅ 结算完成！已更新 ${updatedCount} 条`, 'success');
-            checkBackup();
-            loadData();
-        });
+
+    const { myFunds } = await storage.get(['myFunds']);
+    const funds = myFunds || {};
+    const settlements = Object.keys(funds).map(code => {
+        const live = currentFundsData.find(f => f.code === code);
+        return (live && live.prevPrice) ? { code, price: live.prevPrice, prevPriceDate: live.prevPriceDate } : null;
+    }).filter(Boolean);
+    const updatedCount = _applySettlementLoop(funds, settlements, getToday(), false);
+
+    await storage.set({
+        myFunds: funds,
+        lastSettlementDate: getToday(),
+        lastUpdateDate: new Date().toLocaleDateString()
     });
+    showToast(`✅ 结算完成！已更新 ${updatedCount} 条`, 'success');
+    checkBackup();
+    loadData();
 }
+
 // ==================== 3. 修改：撤销结算（使用备份数据覆盖）====================
 async function rollbackSettlement() {
-    // 1. 检查是否有备份
-    chrome.storage.local.get(['backupFunds'], async (res) => {
-        if (!res.backupFunds || !res.backupFunds.myFunds) {
-            await showAlert('未找到备份数据，无法撤销！');
-            return;
-        }
-        const backup = res.backupFunds;
-        const backupTime = backup.backupTime || '未知时间';
-        // 2. 确认提示
-        const ok = await showConfirm(
-            `确定要撤销日结算吗？\n\n数据将恢复至备份时间：\n【${backupTime}】\n\n请注意：撤销后，当天的结算状态也将重置。`,
-            '撤销确认',
-            true
-        );
-        if (!ok) return;
-        // 3. 执行恢复（直接覆盖）
-        chrome.storage.local.set({
-            myFunds: backup.myFunds,
-            lastDayProfits: backup.lastDayProfits || {},
-            lastUpdateDate: backup.lastUpdateDate || '',
-            // 【关键点】保持今天日期，防止 loadData 触发自动结算循环
-            lastSettlementDate: getToday(),
-            // 清空备份，防止重复撤销
-            backupFunds: null
-        }, () => {
-            showToast('✅ 已成功撤销，数据已恢复！', 'success');
-            checkBackup(); // 隐藏撤销按钮
-            loadData();    // 刷新界面
-        });
+    const { backupFunds } = await storage.get(['backupFunds']);
+    if (!backupFunds || !backupFunds.myFunds) {
+        await showAlert('未找到备份数据，无法撤销！');
+        return;
+    }
+
+    const backupTime = backupFunds.exportDate ? new Date(backupFunds.exportDate).toLocaleString() : '未知时间';
+    const ok = await showConfirm(
+        `确定要撤销日结算吗？\n\n数据将恢复至备份时间：\n【${backupTime}】\n\n请注意：撤销后，当天的结算状态也将重置。`,
+        '撤销确认',
+        true
+    );
+    if (!ok) return;
+
+    await storage.set({
+        myFunds: backupFunds.myFunds,
+        lastDayProfits: backupFunds.lastDayProfits || {},
+        lastSettlementDate: '',
+        backupFunds: null
     });
+    showToast('✅ 已撤销结算，数据已恢复！', 'success');
+    checkBackup();
+    loadData();
 }
+
 // ==================== 4. 自动结算部分（确保也有备份）====================
 async function autoSettlement(funds, fetchedData, todayStr) {
     console.log('[autoSettlement] 检测到净值更新，开始自动结算...');
     elements.status.innerText = '正在自动结算...';
-    // 1. 备份原始数据
-    // 构造和手动备份一样的结构
+
+    // 备份原始数据
     const backupData = {
-        backupTime: new Date().toLocaleString(),
-        myFunds: JSON.parse(JSON.stringify(funds)) // 深拷贝当前数据
+        version: '1.0',
+        exportDate: new Date().toISOString(),
+        myFunds: JSON.parse(JSON.stringify(funds))
     };
-    await new Promise(r => chrome.storage.local.set({ backupFunds: backupData }, r));
+    await storage.set({ backupFunds: backupData });
+
     // 将 fetchedData 转换为 _applySettlementLoop 所需格式
     const settlements = fetchedData
         .filter(({ live }) => live && live.prevPrice > 0)
         .map(({ code, live }) => ({ code, price: live.prevPrice, prevPriceDate: live.prevPriceDate }));
     const updatedCount = _applySettlementLoop(funds, settlements, todayStr, true);
+
     if (updatedCount === 0) {
         console.log('[autoSettlement] 净值无变化，跳过');
         return;
     }
-    // 写入结算结果，await 确保外层 loadData 读到最新数据
-    await new Promise(r => chrome.storage.local.set({
+
+    await storage.set({
         myFunds: funds,
         lastSettlementDate: todayStr,
         lastUpdateDate: new Date().toLocaleDateString()
-    }, r));
+    });
     console.log('[autoSettlement] ✅ 完成，共更新 ' + updatedCount + ' 条');
     showToast('✅ 已自动完成日结算（' + updatedCount + ' 条）', 'success', 4000);
     checkBackup();
-    // 不调用 loadData()，由外层 loadData 继续执行，避免重复读取引发竞态
 }
 
 
@@ -511,7 +515,7 @@ async function fetchLiveInfo(code) {
                 const parts = data.split(',');
                 const cur = parseFloat(parts[3]) || 0;
                 const pre = parseFloat(parts[2]) || 0;
-                const rate = pre !== 0 ? parseFloat(((cur - pre) / pre * 100).toFixed(2)) : 0;
+                const rate = pre !== 0 ? round2((cur - pre) / pre * 100) : 0;
                 return {
                     name: '[场]' + (parts[0] || cleanCode),
                     rate: rate,
@@ -533,7 +537,7 @@ async function fetchLiveInfo(code) {
             if (parts.length > 10) {
                 const cur = parseFloat(parts[8]) || 0;
                 const pre = parseFloat(parts[5]) || 0;
-                const rate = pre !== 0 ? parseFloat(((cur - pre) / pre * 100).toFixed(2)) : 0;
+                const rate = pre !== 0 ? round2((cur - pre) / pre * 100) : 0;
                 return {
                     name: '[期]' + (parts[0] || cleanCode),
                     rate: rate,
@@ -564,154 +568,149 @@ async function loadData() {
     clearSelection();
     elements.status.innerText = '同步行情中...';
     apiLogger.reset();
-    return new Promise(resolve => {
-        chrome.storage.local.get(['myFunds', 'lastSettlementDate'], async (res) => {
-            let funds = res.myFunds || {};
-            const codes = Object.keys(funds);
-            let dataChanged = false;
-            const results = [];
-            // 1. 获取行情数据
-            const fetchedData = await Promise.all(
-                codes.map(async (code, index) => {
-                    await new Promise(r => setTimeout(r, index * 50));
-                    const live = await withTimeout(fetchLiveInfo(code), 8000, { name: '[超时]' + code, rate: 0, price: 0, prevPrice: 0 });
-                    return { code, live };
-                })
-            );
-            const todayStr = getToday();
-            // 2. 自动结算逻辑
-            if (res.lastSettlementDate !== todayStr) {
-                const needsSettlement = fetchedData.some(({ code, live }) => {
-                    if (!live || live.prevPrice <= 0) return false;
-                    const fund = funds[code];
-                    if (!fund.savedPrevPrice) return false;
-                    return Math.abs(live.prevPrice - fund.savedPrevPrice) > 0.00001;
-                });
-                if (needsSettlement) {
-                    await autoSettlement(funds, fetchedData, todayStr);
-                }
-            }
-            // 3. 处理数据 & 自动确认份额
-            for (const { code, live } of fetchedData) {
-                if (live && live.prevPrice > 0) {
-                    const item = funds[code];
-                    // --- A. 处理待确认份额 ---
-                    if (item.pendingAdjustments && item.pendingAdjustments.length > 0) {
-                        for (const adj of item.pendingAdjustments) {
-                            if (adj.status === 'confirmed') continue; // 已确认跳过
-                            if (todayStr >= adj.targetDate) {
-                                if (adj.type === 'add') {
-                                    const actualRate = (adj.feeRate || 0) / 100;
-                                    const price = live.prevPrice;
-                                    if (price > 0) {
-                                        const deltaShares = (adj.amount * (1 - actualRate)) / price;
-                                        item.shares = parseFloat((item.shares + deltaShares).toFixed(6));
-                                        item.amount = parseFloat((item.shares * price).toFixed(2));
-                                        // 标记已确认，保留记录
-                                        adj.status = 'confirmed';
-                                        adj.confirmedPrice = price;
-                                        adj.confirmedShares = parseFloat(deltaShares.toFixed(6));
-                                        adj.confirmedDate = todayStr;
-                                        showToast(`✅ ${code} 加仓已确认 (净值${price}, +${adj.confirmedShares}份)`, 'success');
-                                        dataChanged = true;
-                                    }
-                                } else if (adj.type === 'remove') {
-                                    const price = live.prevPrice;
-                                    if (price > 0) {
-                                        item.shares = parseFloat((item.shares - adj.shares).toFixed(6));
-                                        if (item.shares < 0) item.shares = 0;
-                                        item.amount = parseFloat((item.shares * price).toFixed(2));
-                                        adj.status = 'confirmed';
-                                        adj.confirmedPrice = price;
-                                        adj.confirmedShares = adj.shares;
-                                        adj.confirmedDate = todayStr;
-                                        showToast(`✅ ${code} 减仓已确认 (净值${price}, -${adj.shares}份)`, 'success');
-                                        dataChanged = true;
-                                    }
-                                }
+
+    const { myFunds, lastSettlementDate } = await storage.get(['myFunds', 'lastSettlementDate']);
+    let funds = myFunds || {};
+    const codes = Object.keys(funds);
+    let dataChanged = false;
+    const results = [];
+    const todayStr = getToday();
+
+    // 1. 获取行情数据
+    const fetchedData = await Promise.all(
+        codes.map(async (code, index) => {
+            await new Promise(r => setTimeout(r, index * 50));
+            const live = await withTimeout(fetchLiveInfo(code), 8000, { name: '[超时]' + code, rate: 0, price: 0, prevPrice: 0 });
+            return { code, live };
+        })
+    );
+
+    // 2. 自动结算逻辑
+    if (lastSettlementDate !== todayStr) {
+        const needsSettlement = fetchedData.some(({ code, live }) => {
+            if (!live || live.prevPrice <= 0) return false;
+            const fund = funds[code];
+            if (!fund.savedPrevPrice) return false;
+            return Math.abs(live.prevPrice - fund.savedPrevPrice) > 0.00001;
+        });
+        if (needsSettlement) {
+            await autoSettlement(funds, fetchedData, todayStr);
+        }
+    }
+
+    // 3. 处理数据 & 自动确认份额
+    for (const { code, live } of fetchedData) {
+        if (live && live.prevPrice > 0) {
+            const item = funds[code];
+            // --- A. 处理待确认份额 ---
+            if (item.pendingAdjustments && item.pendingAdjustments.length > 0) {
+                for (const adj of item.pendingAdjustments) {
+                    if (adj.status === 'confirmed') continue;
+                    if (todayStr >= adj.targetDate) {
+                        if (adj.type === 'add') {
+                            const actualRate = (adj.feeRate || 0) / 100;
+                            const price = live.prevPrice;
+                            if (price > 0) {
+                                const deltaShares = (adj.amount * (1 - actualRate)) / price;
+                                item.shares = parseFloat((item.shares + deltaShares).toFixed(6));
+                                item.amount = round2(item.shares * price);
+                                adj.status = 'confirmed';
+                                adj.confirmedPrice = price;
+                                adj.confirmedShares = parseFloat(deltaShares.toFixed(6));
+                                adj.confirmedDate = todayStr;
+                                showToast(`✅ ${code} 加仓已确认 (净值${price}, +${adj.confirmedShares}份)`, 'success');
+                                dataChanged = true;
+                            }
+                        } else if (adj.type === 'remove') {
+                            const price = live.prevPrice;
+                            if (price > 0) {
+                                item.shares = parseFloat((item.shares - adj.shares).toFixed(6));
+                                if (item.shares < 0) item.shares = 0;
+                                item.amount = round2(item.shares * price);
+                                adj.status = 'confirmed';
+                                adj.confirmedPrice = price;
+                                adj.confirmedShares = adj.shares;
+                                adj.confirmedDate = todayStr;
+                                showToast(`✅ ${code} 减仓已确认 (净值${price}, -${adj.shares}份)`, 'success');
+                                dataChanged = true;
                             }
                         }
                     }
-                    // --- B. 原有份额修正逻辑 (必须放在 if(pending) 外面) ---
-                    if (!item.shares && item.amount > 0) {
-                        if (live.prevPrice > 0) {
-                            item.shares = parseFloat((item.amount / live.prevPrice).toFixed(6));
-                            dataChanged = true;
-                        } else if (live.price > 0) {
-                            item.shares = parseFloat((item.amount / live.price).toFixed(6));
-                            dataChanged = true;
-                        }
-                    }
-                    if (item.shares > 0 && Math.abs(item.amount - item.shares) < 0.0001 && live.prevPrice > 0 && !live.name.includes('[未知]')) {
-                        const correctedAmount = parseFloat((item.shares * live.prevPrice).toFixed(2));
-                        item.amount = correctedAmount;
-                        dataChanged = true;
-                    }
-                    // --- C. 收益计算 ---
-                    let todayProfit, useFallbackNav = false;
-                    if (!live.isFallback && live.price > 0) {
-                        todayProfit = item.shares ? parseFloat((item.shares * (live.price - live.prevPrice)).toFixed(2)) : 0;
-                    } else if (live.prevPrice > 0 && item.savedPrevPrice > 0) {
-                        todayProfit = item.shares ? parseFloat((item.shares * (live.prevPrice - item.savedPrevPrice)).toFixed(2)) : 0;
-                        useFallbackNav = true;
-                    } else {
-                        todayProfit = null;
-                    }
-                    const totalProfit = parseFloat(((item.holdProfit || 0) + (todayProfit || 0)).toFixed(2));
-                    // --- D. 构造结果集 ---
-                    results.push({
-                        code,
-                        name: live.name,
-                        amount: item.amount || 0,
-                        yesterdayProfit: item.yesterdayProfit || 0,
-                        group: item.group || '默认',
-                        rate: live.rate,
-                        prevPrice: live.prevPrice || 0,
-                        price: live.price || 0,
-                        prevPriceDate: live.prevPriceDate || '',
-                        priceTime: live.priceTime || '',
-                        todayProfit,
-                        totalProfit,
-                        holdProfit: item.holdProfit || 0,
-                        shares: item.shares || 0,
-                        useFallbackNav,
-                        pendingAdjustments: item.pendingAdjustments
-                    });
                 }
             }
-            currentFundsData = results.filter(Boolean);
-
-            // 记录实时走势点（每次刷新追加一个时间点到 fundHistoryData）
-            const now = new Date();
-            const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-            currentFundsData.forEach(item => {
-                if (!item || !item.code) return;
-                if (!fundHistoryData[item.code]) fundHistoryData[item.code] = { date: '', points: [] };
-                // 新的一天清空
-                if (fundHistoryData[item.code].date !== todayStr) {
-                    fundHistoryData[item.code] = { date: todayStr, points: [] };
+            // --- B. 原有份额修正逻辑 ---
+            if (!item.shares && item.amount > 0) {
+                if (live.prevPrice > 0) {
+                    item.shares = parseFloat((item.amount / live.prevPrice).toFixed(6));
+                    dataChanged = true;
+                } else if (live.price > 0) {
+                    item.shares = parseFloat((item.amount / live.price).toFixed(6));
+                    dataChanged = true;
                 }
-                const pts = fundHistoryData[item.code].points;
-                // 避免同一分钟重复记录
-                if (pts.length === 0 || pts[pts.length - 1].time !== hhmm) {
-                    pts.push({ time: hhmm, rate: item.rate || 0 });
-                }
+            }
+            if (item.shares > 0 && Math.abs(item.amount - item.shares) < 0.0001 && live.prevPrice > 0 && !live.name.includes('[未知]')) {
+                item.amount = round2(item.shares * live.prevPrice);
+                dataChanged = true;
+            }
+            // --- C. 收益计算 ---
+            let todayProfit, useFallbackNav = false;
+            if (!live.isFallback && live.price > 0) {
+                todayProfit = item.shares ? round2(item.shares * (live.price - live.prevPrice)) : 0;
+            } else if (live.prevPrice > 0 && item.savedPrevPrice > 0) {
+                todayProfit = item.shares ? round2(item.shares * (live.prevPrice - item.savedPrevPrice)) : 0;
+                useFallbackNav = true;
+            } else {
+                todayProfit = null;
+            }
+            const totalProfit = round2((item.holdProfit || 0) + (todayProfit || 0));
+            // --- D. 构造结果集 ---
+            results.push({
+                code,
+                name: live.name,
+                amount: item.amount || 0,
+                yesterdayProfit: item.yesterdayProfit || 0,
+                group: item.group || '默认',
+                rate: live.rate,
+                prevPrice: live.prevPrice || 0,
+                price: live.price || 0,
+                prevPriceDate: live.prevPriceDate || '',
+                priceTime: live.priceTime || '',
+                todayProfit,
+                totalProfit,
+                holdProfit: item.holdProfit || 0,
+                shares: item.shares || 0,
+                useFallbackNav,
+                pendingAdjustments: item.pendingAdjustments
             });
-            // 持久化走势数据
-            saveFundHistoryData();
+        }
+    }
+    currentFundsData = results.filter(Boolean);
 
-            const todayProfits = {};
-            results.forEach(r => { if (r) todayProfits[r.code] = r.todayProfit; });
-            chrome.storage.local.set({ lastDayProfits: todayProfits });
-            if (dataChanged) {
-                chrome.storage.local.set({ myFunds: funds });
-            }
-            updateGroupFilter();
-            renderTable();
-            elements.status.innerText = `最后更新: ${new Date().toLocaleTimeString()}`;
-            resolve();
-        });
+    // 记录实时走势点（每次刷新追加一个时间点到 fundHistoryData）
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    currentFundsData.forEach(item => {
+        if (!item || !item.code) return;
+        if (!fundHistoryData[item.code]) fundHistoryData[item.code] = { date: '', points: [] };
+        if (fundHistoryData[item.code].date !== todayStr) {
+            fundHistoryData[item.code] = { date: todayStr, points: [] };
+        }
+        const pts = fundHistoryData[item.code].points;
+        if (pts.length === 0 || pts[pts.length - 1].time !== hhmm) {
+            pts.push({ time: hhmm, rate: item.rate || 0 });
+        }
     });
+    saveFundHistoryData();
+
+    const todayProfits = {};
+    results.forEach(r => { if (r) todayProfits[r.code] = r.todayProfit; });
+    await storage.set({ lastDayProfits: todayProfits });
+    if (dataChanged) {
+        await storage.set({ myFunds: funds });
+    }
+    updateGroupFilter();
+    renderTable();
+    elements.status.innerText = `最后更新: ${new Date().toLocaleTimeString()}`;
 }
 
 // ==================== 批量操作核心逻辑 ====================
@@ -722,23 +721,21 @@ async function batchRecalculateShares() {
     const ok = await showConfirm(`确认根据当前金额重算选中的 ${selectedCodes.size} 支基金的份额吗？`);
     if (!ok) return;
 
-    chrome.storage.local.get(['myFunds'], async (res) => {
-        const funds = res.myFunds || {};
-        let count = 0;
-        for (const code of selectedCodes) {
-            if (funds[code]) {
-                const live = await fetchLiveInfo(code);
-                if (live && live.prevPrice > 0) {
-                    funds[code].shares = parseFloat((funds[code].amount / live.prevPrice).toFixed(6));
-                    count++;
-                }
+    const { myFunds } = await storage.get(['myFunds']);
+    const funds = myFunds || {};
+    let count = 0;
+    for (const code of selectedCodes) {
+        if (funds[code]) {
+            const live = await fetchLiveInfo(code);
+            if (live && live.prevPrice > 0) {
+                funds[code].shares = parseFloat((funds[code].amount / live.prevPrice).toFixed(6));
+                count++;
             }
         }
-        chrome.storage.local.set({ myFunds: funds }, () => {
-            showToast(`✅ 已重算 ${count} 支基金份额`, 'success');
-            loadData();
-        });
-    });
+    }
+    await storage.set({ myFunds: funds });
+    showToast(`✅ 已重算 ${count} 支基金份额`, 'success');
+    loadData();
 }
 
 // 2. 批量修改分组
@@ -747,16 +744,14 @@ async function batchChangeGroup() {
     const newGroup = await showPrompt('请输入新的分组名称：', '批量修改分组', '默认');
     if (newGroup === null) return;
 
-    chrome.storage.local.get(['myFunds'], (res) => {
-        const funds = res.myFunds || {};
-        selectedCodes.forEach(code => {
-            if (funds[code]) funds[code].group = newGroup || '默认';
-        });
-        chrome.storage.local.set({ myFunds: funds }, () => {
-            showToast(`📁 已将选中基金移至分组：${newGroup || '默认'}`, 'success');
-            loadData();
-        });
+    const { myFunds } = await storage.get(['myFunds']);
+    const funds = myFunds || {};
+    selectedCodes.forEach(code => {
+        if (funds[code]) funds[code].group = newGroup || '默认';
     });
+    await storage.set({ myFunds: funds });
+    showToast(`📁 已将选中基金移至分组：${newGroup || '默认'}`, 'success');
+    loadData();
 }
 
 // 3. 清空持仓（单个或批量统一入口，codes 传字符串或数组）
@@ -795,16 +790,14 @@ async function clearPositions(codes) {
 
     if (!ok) return;
 
-    chrome.storage.local.get(['myFunds'], (res) => {
-        const funds = res.myFunds || {};
-        codeList.forEach(code => {
-            if (funds[code]) resetFundPosition(funds[code], ok === 'yes');
-        });
-        chrome.storage.local.set({ myFunds: funds }, () => {
-            showToast(isBatch ? '🧹 选中持仓已清空' : `✅ 基金 ${codeList[0]} 持仓已清空`, 'success');
-            loadData();
-        });
+    const { myFunds } = await storage.get(['myFunds']);
+    const funds = myFunds || {};
+    codeList.forEach(code => {
+        if (funds[code]) resetFundPosition(funds[code], ok === 'yes');
     });
+    await storage.set({ myFunds: funds });
+    showToast(isBatch ? '🧹 选中持仓已清空' : `✅ 基金 ${codeList[0]} 持仓已清空`, 'success');
+    loadData();
 }
 
 // 批量清空入口（fabMenu 绑定保持不变）
@@ -812,20 +805,19 @@ async function batchClearPositions() {
     if (selectedCodes.size === 0) return showToast('❌ 请先勾选基金', 'error');
     await clearPositions([...selectedCodes]);
 }
+
 // 4. 批量删除
 async function batchDeleteFunds() {
     if (selectedCodes.size === 0) return;
     const ok = await showConfirm(`确定要删除选中的 ${selectedCodes.size} 支基金吗？该操作不可恢复！`, '危险操作');
     if (!ok) return;
 
-    chrome.storage.local.get(['myFunds'], (res) => {
-        const funds = res.myFunds || {};
-        selectedCodes.forEach(code => delete funds[code]);
-        chrome.storage.local.set({ myFunds: funds }, () => {
-            showToast('🗑 选中基金已删除', 'success');
-            loadData();
-        });
-    });
+    const { myFunds } = await storage.get(['myFunds']);
+    const funds = myFunds || {};
+    selectedCodes.forEach(code => delete funds[code]);
+    await storage.set({ myFunds: funds });
+    showToast('🗑 选中基金已删除', 'success');
+    loadData();
 }
 
 // ==================== 悬浮球交互绑定 ====================
@@ -1038,7 +1030,8 @@ function showFormModal(config) {
 async function adjustPosition(code, type) {
     try {
         // 获取基础数据
-        const funds = await new Promise(r => chrome.storage.local.get(['myFunds'], res => r(res.myFunds || {})));
+        const { myFunds } = await storage.get(['myFunds']);
+        const funds = myFunds || {};
         const fundItem = funds[code];
         if (!fundItem) {
             await showAlert('未找到该标的数据！');
@@ -1180,7 +1173,7 @@ async function adjustPosition(code, type) {
             });
         }
         // 保存
-        await new Promise(r => chrome.storage.local.set({ myFunds: funds }, r));
+        await storage.set({ myFunds: funds });
         showToast(`✅ 操作成功！将在 ${result.confirmDate} 确认`, 'success');
         loadData();
     } catch (e) {
@@ -1188,14 +1181,15 @@ async function adjustPosition(code, type) {
         showAlert(`操作失败: ${e.message} `);
     }
 }
+
 // ==================== 统一的：添加资产 / 编辑持仓 ====================
 async function openFundEditor(existingCode = null) {
     let fund = null, live = null;
-    let currentNav = 1.0000; // 默认净值
+    let currentNav = 1.0000;
 
     if (existingCode) {
-        const funds = await new Promise(r => chrome.storage.local.get(['myFunds'], res => r(res.myFunds || {})));
-        fund = funds[existingCode];
+        const { myFunds } = await storage.get(['myFunds']);
+        fund = (myFunds || {})[existingCode];
         live = await fetchLiveInfo(existingCode);
         currentNav = live?.prevPrice || 1.0000;
     }
@@ -1271,25 +1265,23 @@ async function openFundEditor(existingCode = null) {
         }
     }
 
-    chrome.storage.local.get(['myFunds'], async (res) => {
-        const funds = res.myFunds || {};
-        funds[code] = {
-            ...(funds[code] || {}), // 保留可能存在的历史调整数据
-            amount: parseFloat(result.amount) || 0,
-            shares: parseFloat(result.shares) || 0,
-            holdProfit: parseFloat(result.holdProfit) || 0,
-            yesterdayProfit: parseFloat(result.yesterdayProfit) || 0,
-            group: result.group || '默认',
-            savedPrevPrice: funds[code]?.savedPrevPrice || live?.prevPrice || 1,
-            savedPrevDate: funds[code]?.savedPrevDate || live?.prevPriceDate || getToday()
-        };
+    const { myFunds } = await storage.get(['myFunds']);
+    const funds = myFunds || {};
+    funds[code] = {
+        ...(funds[code] || {}),
+        amount: parseFloat(result.amount) || 0,
+        shares: parseFloat(result.shares) || 0,
+        holdProfit: parseFloat(result.holdProfit) || 0,
+        yesterdayProfit: parseFloat(result.yesterdayProfit) || 0,
+        group: result.group || '默认',
+        savedPrevPrice: funds[code]?.savedPrevPrice || live?.prevPrice || 1,
+        savedPrevDate: funds[code]?.savedPrevDate || live?.prevPriceDate || getToday()
+    };
 
-        chrome.storage.local.set({ myFunds: funds }, () => {
-            showToast(`✅ ${code} 保存成功！`, 'success');
-            elements.status.innerText = '准备就绪';
-            loadData();
-        });
-    });
+    await storage.set({ myFunds: funds });
+    showToast(`✅ ${code} 保存成功！`, 'success');
+    elements.status.innerText = '准备就绪';
+    loadData();
 }
 
 // 绑定添加按钮
@@ -1356,7 +1348,8 @@ function showCenterMenu(code) {
     }
 
     async function showPendingTransactions(code) {
-        const funds = await new Promise(r => chrome.storage.local.get(['myFunds'], res => r(res.myFunds || {})));
+        const { myFunds } = await storage.get(['myFunds']);
+        const funds = myFunds || {};
         const fund = funds[code];
         const txList = fund?.pendingAdjustments || [];
 
@@ -1419,7 +1412,7 @@ function showCenterMenu(code) {
         ]);
         elements.modalOverlay.classList.add('visible');
 
-        // 绑定撤销按钮（用 onclick 替代 addEventListener，防止每次打开叠加监听器）
+        // 绑定撤销按钮
         elements.modalMsg.onclick = async (e) => {
             const btn = e.target.closest('[data-revoke]');
             if (!btn) return;
@@ -1432,7 +1425,7 @@ function showCenterMenu(code) {
             if (!ok) return;
 
             txList.splice(idx, 1);
-            await new Promise(r => chrome.storage.local.set({ myFunds: funds }, r));
+            await storage.set({ myFunds: funds });
             showToast('已撤销该笔交易', 'success');
 
             if (txList.length === 0) {
@@ -1453,11 +1446,10 @@ function showCenterMenu(code) {
 
             if (action === 'add') adjustPosition(c, 'add');
             else if (action === 'remove') adjustPosition(c, 'remove');
-            else if (action === 'edit') openFundEditor(c); // 注意这里换成了新函数
-            else if (action === 'clear') clearPosition(c);
-            // ======= 下面是新增的两个动作 =======
+            else if (action === 'edit') openFundEditor(c);
+            else if (action === 'clear') clearPositions(c);
             else if (action === 'calc_shares') forceRecalculateShares(c);
-            else if (action === 'delete') removeFund(c); // 直接复用你已有的 removeFund 函数
+            else if (action === 'delete') removeFund(c);
         });
     });
 
@@ -1485,20 +1477,17 @@ async function forceRecalculateShares(code) {
         return;
     }
 
-    chrome.storage.local.get(['myFunds'], (res) => {
-        const funds = res.myFunds || {};
-        if (funds[code]) {
-            // 用当前金额 除以 当前净值
-            const newShares = parseFloat((funds[code].amount / live.prevPrice).toFixed(6));
-            funds[code].shares = newShares;
+    const { myFunds } = await storage.get(['myFunds']);
+    const funds = myFunds || {};
+    if (funds[code]) {
+        const newShares = parseFloat((funds[code].amount / live.prevPrice).toFixed(6));
+        funds[code].shares = newShares;
 
-            chrome.storage.local.set({ myFunds: funds }, () => {
-                showToast(`✅ 已按照净值 ${live.prevPrice} 修正份额为: ${newShares} `, 'success');
-                elements.status.innerText = '准备就绪';
-                loadData();
-            });
-        }
-    });
+        await storage.set({ myFunds: funds });
+        showToast(`✅ 已按照净值 ${live.prevPrice} 修正份额为: ${newShares} `, 'success');
+        elements.status.innerText = '准备就绪';
+        loadData();
+    }
 }
 
 // ==================== 修改：渲染表格 ====================
@@ -1680,7 +1669,7 @@ function renderTable() {
     };
     // 绑定可编辑单元格事件
     elements.tableBody.querySelectorAll('.editable-cell').forEach(cell => {
-        cell.onblur = () => {
+        cell.onblur = async () => {
             const code = cell.dataset.code;
             const field = cell.dataset.field;
             const valStr = cell.textContent.trim();
@@ -1690,19 +1679,17 @@ function renderTable() {
                 loadData();
                 return;
             }
-            chrome.storage.local.get(['myFunds'], (res) => {
-                const funds = res.myFunds || {};
-                if (funds[code]) {
-                    if (funds[code][field] === val) return;
-                    funds[code][field] = val;
-                    const localItem = currentFundsData.find(f => f.code === code);
-                    if (localItem) localItem[field] = val;
-                    chrome.storage.local.set({ myFunds: funds }, () => {
-                        showToast('已保存', 'success', 1500);
-                        renderTable();
-                    });
-                }
-            });
+            const { myFunds } = await storage.get(['myFunds']);
+            const funds = myFunds || {};
+            if (funds[code]) {
+                if (funds[code][field] === val) return;
+                funds[code][field] = val;
+                const localItem = currentFundsData.find(f => f.code === code);
+                if (localItem) localItem[field] = val;
+                await storage.set({ myFunds: funds });
+                showToast('已保存', 'success', 1500);
+                renderTable();
+            }
         };
         cell.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); cell.blur(); } };
     });
@@ -1784,12 +1771,6 @@ function updateSelectionStatus() {
     }
 }
 
-// --- 单点清空（委托给统一函数）---
-function clearPosition(code) { return clearPositions(code); }
-
-
-
-
 
 function _td(tr, text) {
     const td = document.createElement('td');
@@ -1821,43 +1802,41 @@ function resetFundPosition(fund, shouldResetGroup = true) {
 async function removeFund(code) {
     const ok = await showConfirm(`确定删除 ${code}？`, '删除确认', true);
     if (ok) {
-        chrome.storage.local.get(['myFunds'], (res) => {
-            const f = res.myFunds || {};
-            delete f[code];
-            chrome.storage.local.set({ myFunds: f }, loadData);
-        });
+        const { myFunds } = await storage.get(['myFunds']);
+        const f = myFunds || {};
+        delete f[code];
+        await storage.set({ myFunds: f });
+        loadData();
     }
 }
 
-function exportFundsData() {
-    chrome.storage.local.get(['myFunds', 'lastUpdateDate', 'lastDayProfits'], (res) => {
-        const fundsData = res.myFunds || {};
-        if (Object.keys(fundsData).length === 0) {
-            showToast('暂无可导出的基金数据！', 'warning');
-            return;
-        }
+async function exportFundsData() {
+    const { myFunds, lastUpdateDate, lastDayProfits } = await storage.get(['myFunds', 'lastUpdateDate', 'lastDayProfits']);
+    const fundsData = myFunds || {};
+    if (Object.keys(fundsData).length === 0) {
+        showToast('暂无可导出的基金数据！', 'warning');
+        return;
+    }
 
-        const exportData = {
-            exportTime: new Date().toLocaleString(),
-            lastUpdateDate: res.lastUpdateDate || '',
-            lastDayProfits: res.lastDayProfits || {},
-            myFunds: fundsData
-        };
+    const exportData = {
+        exportTime: new Date().toLocaleString(),
+        lastUpdateDate: lastUpdateDate || '',
+        lastDayProfits: lastDayProfits || {},
+        myFunds: fundsData
+    };
 
-        const jsonStr = JSON.stringify(exportData, null, 2);
-        const blob = new Blob([jsonStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const now = new Date();
-        const fileName = `基金数据_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}.json`;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-
-        showToast(`✅ 数据导出成功！文件名: ${fileName}`, 'success');
-    });
+    const jsonStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const now = new Date();
+    const fileName = `基金数据_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}.json`;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    showToast(`✅ 数据导出成功！文件名: ${fileName}`, 'success');
 }
 
 
@@ -1914,11 +1893,10 @@ function importFundsData(event) {
             if (importData.lastUpdateDate) dataToSave.lastUpdateDate = importData.lastUpdateDate;
             if (importData.lastDayProfits) dataToSave.lastDayProfits = importData.lastDayProfits;
 
-            chrome.storage.local.set(dataToSave, () => {
-                showToast('✅ 数据导入成功！', 'success');
-                fileInput.value = '';
-                loadData();
-            });
+            await storage.set(dataToSave);
+            showToast('✅ 数据导入成功！', 'success');
+            fileInput.value = '';
+            loadData();
         } catch (err) {
             await showAlert(`导入失败: ${err.message}`);
             fileInput.value = '';
@@ -2551,7 +2529,8 @@ async function _saveOCRItems() {
     btn.textContent = '保存中...';
 
     try {
-        const funds = await new Promise(r => chrome.storage.local.get(['myFunds'], res => r(res.myFunds || {})));
+        const { myFunds } = await storage.get(['myFunds']);
+        const funds = myFunds || {};
         for (const a of toSave) {
             const code = String(a.code).trim().toUpperCase();
             if (!code) continue;
@@ -2560,20 +2539,18 @@ async function _saveOCRItems() {
                 ...existing,
                 name: a.name || existing.name || '',
                 amount: a.amount ?? 0,
-                holdProfit: a.holdProfit ?? 0,           // 持有收益（累计）
-                yesterdayProfit: a.yesterdayProfit ?? 0, // 昨日收益
+                holdProfit: a.holdProfit ?? 0,
+                yesterdayProfit: a.yesterdayProfit ?? 0,
                 group: a.group || '默认',
-                // 净值相关：优先保留已有记录，若无则用默认值
                 savedPrevPrice: existing.savedPrevPrice || 1,
                 savedPrevDate: existing.savedPrevDate || getToday(),
             };
-            // 份额仅当有值时才覆盖（默认不采集）
             if (a.shares && a.shares > 0) {
                 funds[code].shares = a.shares;
             }
         }
 
-        await new Promise(r => chrome.storage.local.set({ myFunds: funds }, r));
+        await storage.set({ myFunds: funds });
         showToast(`✅ 成功保存 ${toSave.length} 个资产！`, 'success');
         _ocrModalEl.remove();
         _ocrModalEl = null;
@@ -2602,9 +2579,9 @@ async function openFundDetail(code) {
 
     try {
         // 获取基金实时行情和持仓数据
-        const [live, myFunds] = await Promise.all([
+        const [live, { myFunds }] = await Promise.all([
             fetchLiveInfo(code),
-            new Promise(r => chrome.storage.local.get(['myFunds'], res => r(res.myFunds || {})))
+            storage.get(['myFunds'])
         ]);
 
         if (!live || !live.name) {
@@ -2612,17 +2589,17 @@ async function openFundDetail(code) {
             return;
         }
 
-        const fundData = myFunds[code] || {};
+        const fundData = (myFunds || {})[code] || {};
         title.textContent = live.name;
 
-        const unitValue = live.prevPrice;   // 单位净值（最新确认净值）
-        const estimateValue = live.price;   // 今日估值净值
+        const unitValue = live.prevPrice;
+        const estimateValue = live.price;
         const estimateRate = unitValue > 0 ? ((estimateValue - unitValue) / unitValue * 100) : (live.rate || 0);
 
         const holdAmount = fundData.amount || 0;
         const shares = fundData.shares || 0;
         const todayProfit = shares > 0 && unitValue > 0
-            ? parseFloat((shares * (estimateValue - unitValue)).toFixed(2))
+            ? round2(shares * (estimateValue - unitValue))
             : holdAmount * (estimateRate / 100);
         const holdProfit = fundData.holdProfit || 0;
 
@@ -2989,13 +2966,7 @@ async function loadHoldings(code) {
         }
         
         if (stockCodes.length === 0) {
-            container.innerHTML = `
-                <div style="text-align:center;padding:10px 0;">
-                    <img src="https://fundpicturecdn.eastmoney.com/fund_detail_img/${code}.png?t=${Date.now()}"
-                        style="width:100%;border-radius:6px;"
-                        onerror="this.parentElement.innerHTML='<div class=\\'detail-error\\'>暂无重仓数据</div>';"
-                    />
-                </div>`;
+            container.innerHTML = '<div class="detail-error">接口获取不到数据</div>';
             return;
         }
 
@@ -3042,7 +3013,7 @@ async function loadHoldings(code) {
         container.innerHTML = html;
 
     } catch (err) {
-        container.innerHTML = '<div class="detail-error">加载持仓失败</div>';
+        container.innerHTML = '<div class="detail-error">接口获取不到数据</div>';
         console.error('[loadHoldings] 加载持仓失败:', err);
     }
 }
