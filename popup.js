@@ -1,3 +1,13 @@
+// ==================== 配置常量 ====================
+const CONFIG = {
+    API_TIMEOUT: 8000,              // API 请求超时时间（毫秒）
+    SINA_PROXY_TIMEOUT: 5000,       // 新浪代理请求超时时间（毫秒）
+    BATCH_SIZE: 15,                 // 批量请求每批数量
+    BATCH_DELAY: 50,                // 批次间延迟（毫秒）
+    HISTORY_SAVE_DEBOUNCE: 300,     // 走势数据保存防抖时间（毫秒）
+    OCR_CONTEXT_LINES: 5            // OCR 解析上下文行数
+};
+
 // ==================== 全局状态 ====================
 let currentFundsData = [];
 let sortField = 'todayProfit'; // 默认排序字段
@@ -74,9 +84,6 @@ function formatDate(date) {
     const d = date instanceof Date ? date : new Date(date);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-
-// 缓存 formatDate 引用，避免重复定义
-const formatDateAlias = formatDate;
 
 /**
  * 时间戳转日期字符串 YYYY-MM-DD
@@ -454,11 +461,11 @@ async function autoSettlement(funds, fetchedData, todayStr) {
     console.log('[autoSettlement] 检测到净值更新，开始自动结算...');
     elements.status.innerText = '正在自动结算...';
 
-    // 备份原始数据 - 优化：使用 structuredClone 替代 JSON 深拷贝（更快且支持更多类型）
+    // 备份原始数据
     const backupData = {
         version: '1.0',
         exportDate: new Date().toISOString(),
-        myFunds: structuredClone ? structuredClone(funds) : JSON.parse(JSON.stringify(funds))
+        myFunds: structuredClone(funds)
     };
     await storage.set({ backupFunds: backupData });
 
@@ -523,7 +530,22 @@ async function saveFundHistoryData() {
         } catch (err) {
             console.warn('[走势数据] 保存失败:', err);
         }
-    }, 1000); // 1秒防抖
+    }, CONFIG.HISTORY_SAVE_DEBOUNCE);
+}
+
+/**
+ * 强制立即保存走势数据（用于页面关闭前）
+ */
+async function forceSaveFundHistoryData() {
+    if (saveFundHistoryTimer) {
+        clearTimeout(saveFundHistoryTimer);
+        saveFundHistoryTimer = null;
+    }
+    try {
+        await chrome.storage.local.set({ fundHistoryData });
+    } catch (err) {
+        console.warn('[走势数据] 强制保存失败:', err);
+    }
 }
 
 // ==================== 初始化 ====================
@@ -622,11 +644,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         };
     }
+
+    // 页面关闭前强制保存走势数据
+    window.addEventListener('beforeunload', () => {
+        forceSaveFundHistoryData();
+    });
 });
 
 
 // ==================== 新浪行情代理请求（优化：添加超时和错误处理）====================
-function proxyFetchSina(url, timeout = 5000) {
+function proxyFetchSina(url, timeout = CONFIG.SINA_PROXY_TIMEOUT) {
     apiLogger.log('新浪代理', url, '发起请求');
     return new Promise((resolve) => {
         let resolved = false;
@@ -854,21 +881,20 @@ async function loadData() {
     const results = [];
     const todayStr = getToday();
 
-    // 1. 获取行情数据 - 优化：批量并发请求（每批10个）
-    const BATCH_SIZE = 10;
+    // 1. 获取行情数据 - 优化：批量并发请求
     const fetchedData = [];
-    for (let i = 0; i < codes.length; i += BATCH_SIZE) {
-        const batch = codes.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < codes.length; i += CONFIG.BATCH_SIZE) {
+        const batch = codes.slice(i, i + CONFIG.BATCH_SIZE);
         const batchResults = await Promise.all(
             batch.map(code =>
-                withTimeout(fetchLiveInfo(code), 8000, { name: '[超时]' + code, rate: 0, price: 0, prevPrice: 0 })
+                withTimeout(fetchLiveInfo(code), CONFIG.API_TIMEOUT, { name: '[超时]' + code, rate: 0, price: 0, prevPrice: 0 })
                     .then(live => ({ code, live }))
             )
         );
         fetchedData.push(...batchResults);
-        // 批次间短暂延迟，避免请求过于密集
-        if (i + BATCH_SIZE < codes.length) {
-            await new Promise(r => setTimeout(r, 100));
+        // 批次间短暂延迟，避免请求过于密集（少量基金时跳过延迟）
+        if (i + CONFIG.BATCH_SIZE < codes.length && codes.length > CONFIG.BATCH_SIZE) {
+            await new Promise(r => setTimeout(r, CONFIG.BATCH_DELAY));
         }
     }
 
@@ -891,39 +917,44 @@ async function loadData() {
             const item = funds[code];
 
             // --- 新增：自动检测分红 ---
-            if (live.dividendList && live.dividendList.length > 0) {
-                for (const dividend of live.dividendList) {
-                    const divDate = dividend.date;
+            try {
+                if (live.dividendList && live.dividendList.length > 0) {
+                    for (const dividend of live.dividendList) {
+                        const divDate = dividend.date;
 
-                    // 关键判断：只处理"添加日期之后"的分红
-                    // 如果分红日期早于添加日期，说明是添加前的历史分红，不处理
-                    if (item.addedDate && divDate < item.addedDate) {
-                        // 这是添加前的历史分红，忽略
-                        continue;
-                    }
+                        // 关键判断：只处理"添加日期之后"的分红
+                        // 如果分红日期早于添加日期，说明是添加前的历史分红，不处理
+                        if (item.addedDate && divDate < item.addedDate) {
+                            // 这是添加前的历史分红，忽略
+                            continue;
+                        }
 
-                    // 检查是否已经记录过这次分红
-                    const existingDiv = item.pendingAdjustments?.find(
-                        adj => isDividendType(adj.type) && adj.targetDate === divDate
-                    );
-                    if (!existingDiv && item.shares > 0) {
-                        // 自动创建分红记录（默认现金分红）
-                        const totalDividend = round2(item.shares * dividend.perShare);
-                        if (!item.pendingAdjustments) item.pendingAdjustments = [];
-                        item.pendingAdjustments.push({
-                            type: 'dividend',  // 默认现金分红
-                            dividendAmount: totalDividend,
-                            perShare: dividend.perShare,
-                            dividendNavPrice: dividend.navPrice,  // 保存分红日净值（用于红利再投）
-                            targetDate: divDate,
-                            orderDate: divDate,
-                            status: 'pending',
-                            autoDetected: true
-                        });
-                        showToast(`🔔 检测到 ${code} 分红(${divDate})：每份${dividend.perShare}元，共${totalDividend}元（默认现金分红）`, 'info', 6000);
-                        dataChanged = true;
+                        // 检查是否已经记录过这次分红
+                        const existingDiv = item.pendingAdjustments?.find(
+                            adj => isDividendType(adj.type) && adj.targetDate === divDate
+                        );
+                        if (!existingDiv && item.shares > 0) {
+                            // 自动创建分红记录（默认现金分红）
+                            const totalDividend = round2(item.shares * dividend.perShare);
+                            if (!item.pendingAdjustments) item.pendingAdjustments = [];
+                            item.pendingAdjustments.push({
+                                type: 'dividend',  // 默认现金分红
+                                dividendAmount: totalDividend,
+                                perShare: dividend.perShare,
+                                dividendNavPrice: dividend.navPrice,  // 保存分红日净值（用于红利再投）
+                                targetDate: divDate,
+                                orderDate: divDate,
+                                status: 'pending',
+                                autoDetected: true
+                            });
+                            showToast(`🔔 检测到 ${code} 分红(${divDate})：每份${dividend.perShare}元，共${totalDividend}元（默认现金分红）`, 'info', 6000);
+                            dataChanged = true;
+                        }
                     }
                 }
+            } catch (err) {
+                console.warn(`[loadData] ${code} 分红检测失败:`, err);
+                // 继续处理其他基金
             }
 
             // --- A. 处理待确认份额（加仓/减仓/分红）---
@@ -1921,8 +1952,43 @@ async function forceRecalculateShares(code) {
     }
 }
 
+// ==================== 表格渲染辅助函数 ====================
+
+/**
+ * 创建简单的 td 元素
+ */
+function _td(tr, text) {
+    const td = document.createElement('td');
+    td.textContent = text;
+    tr.appendChild(td);
+}
+
+/**
+ * 创建带涨跌颜色的收益 td 元素
+ */
+function _tdProfit(tr, value, isUp) {
+    const td = document.createElement('td');
+    td.className = isUp ? 'up' : 'down';
+    td.textContent = `${isUp ? '+' : ''}${value.toFixed(2)} `;
+    tr.appendChild(td);
+}
+
+/**
+ * 更新表格汇总统计
+ */
+function _updateTableSummary(sumAmount, sumYesterdayProfit, sumTodayProfit, sumTotalProfit) {
+    elements.totalAmount.textContent = sumAmount.toLocaleString(undefined, { minimumFractionDigits: 2 });
+    elements.totalYesterdayProfit.textContent = (sumYesterdayProfit >= 0 ? '+' : '') + sumYesterdayProfit.toFixed(2);
+    elements.totalYesterdayProfit.className = sumYesterdayProfit >= 0 ? 'up' : 'down';
+    elements.totalTodayProfit.textContent = (sumTodayProfit >= 0 ? '+' : '') + sumTodayProfit.toFixed(2);
+    elements.totalTodayProfit.className = sumTodayProfit >= 0 ? 'up' : 'down';
+    elements.totalTotalProfit.textContent = (sumTotalProfit >= 0 ? '+' : '') + sumTotalProfit.toFixed(2);
+    elements.totalTotalProfit.className = sumTotalProfit >= 0 ? 'up' : 'down';
+}
+
 // ==================== 修改：渲染表格 ====================
 function renderTable() {
+    // 1. 过滤和排序数据
     const filter = elements.groupFilter.value;
     let displayData = currentFundsData.filter(item => filter === 'all' || item.group === filter);
     displayData.sort((a, b) => {
@@ -1930,12 +1996,16 @@ function renderTable() {
         const valB = b[sortField] ?? 0;
         return (valA - valB) * sortDirection;
     });
+
+    // 2. 更新排序箭头
     document.querySelectorAll('.sortable').forEach(th => {
         // 用 data-label 保存原始文字，避免 textContent 替换破坏子元素
         if (!th.dataset.label) th.dataset.label = th.textContent.trim();
         const arrow = th.dataset.sort === sortField ? (sortDirection === 1 ? ' ↑' : ' ↓') : '';
         th.textContent = th.dataset.label + arrow;
     });
+
+    // 3. 渲染表格行并累计统计
     let sumAmount = 0, sumYesterdayProfit = 0, sumTodayProfit = 0, sumTotalProfit = 0;
     const fragment = document.createDocumentFragment();
     displayData.forEach((item, index) => {
@@ -2080,15 +2150,12 @@ function renderTable() {
     });
     elements.tableBody.innerHTML = '';
     elements.tableBody.appendChild(fragment);
-    // ... [汇总统计代码保持不变] ...
-    elements.totalAmount.textContent = sumAmount.toLocaleString(undefined, { minimumFractionDigits: 2 });
-    elements.totalYesterdayProfit.textContent = (sumYesterdayProfit >= 0 ? '+' : '') + sumYesterdayProfit.toFixed(2);
-    elements.totalYesterdayProfit.className = sumYesterdayProfit >= 0 ? 'up' : 'down';
-    elements.totalTodayProfit.textContent = (sumTodayProfit >= 0 ? '+' : '') + sumTodayProfit.toFixed(2);
-    elements.totalTodayProfit.className = sumTodayProfit >= 0 ? 'up' : 'down';
-    elements.totalTotalProfit.textContent = (sumTotalProfit >= 0 ? '+' : '') + sumTotalProfit.toFixed(2);
-    elements.totalTotalProfit.className = sumTotalProfit >= 0 ? 'up' : 'down';
-    // 绑定删除按钮和分组标签事件
+
+    // 4. 更新汇总统计
+    _updateTableSummary(sumAmount, sumYesterdayProfit, sumTodayProfit, sumTotalProfit);
+
+    // 5. 绑定事件监听器
+    // 5.1 删除按钮和分组标签点击事件
     elements.tableBody.onclick = (e) => {
         const target = e.target;
         const code = target.dataset.code;
@@ -2098,7 +2165,8 @@ function renderTable() {
             openFundEditor(code);
         }
     };
-    // 绑定可编辑单元格事件
+
+    // 5.2 可编辑单元格事件
     elements.tableBody.querySelectorAll('.editable-cell').forEach(cell => {
         cell.onblur = async () => {
             const code = cell.dataset.code;
@@ -2124,7 +2192,8 @@ function renderTable() {
         };
         cell.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); cell.blur(); } };
     });
-    // ---- 行点击选择（文件管理器风格）----
+
+    // 5.3 行点击选择事件（文件管理器风格）
     elements.tableBody.querySelectorAll('tr').forEach((tr, idx) => {
         // 渲染时恢复选中高亮
         if (tr.dataset.code && selectedCodes.has(tr.dataset.code)) {
@@ -2203,18 +2272,6 @@ function updateSelectionStatus() {
 }
 
 
-function _td(tr, text) {
-    const td = document.createElement('td');
-    td.textContent = text;
-    tr.appendChild(td);
-}
-
-function _tdProfit(tr, value, isUp) {
-    const td = document.createElement('td');
-    td.className = isUp ? 'up' : 'down';
-    td.textContent = `${isUp ? '+' : ''}${value.toFixed(2)}`;
-    tr.appendChild(td);
-}
 // 辅助函数：重置单个基金的持仓数据
 function resetFundPosition(fund, shouldResetGroup = true) {
     fund.amount = 0;
@@ -3334,7 +3391,9 @@ function drawChart(code, currentPrice, basePrice, chartPoints) {
         });
     }
 
-    // Tooltip 交互
+    // Tooltip 交互（先清理旧监听器，避免内存泄漏）
+    canvas.onmousemove = null;
+    canvas.onmouseleave = null;
     canvas._chartPoints = points;
     canvas.onmousemove = (e) => {
         const tooltip = document.getElementById('chartTooltip');
@@ -3796,7 +3855,9 @@ function drawPerfChart(canvas, prices, dates, isUp) {
         ctx.fillText(fmtD(dates[dates.length - 1]), toX(dates.length - 1), height - 8);
     }
 
-    // Tooltip 交互
+    // Tooltip 交互（先清理旧监听器，避免内存泄漏）
+    canvas.onmousemove = null;
+    canvas.onmouseleave = null;
     canvas._chartPoints = returns;
     canvas.onmousemove = (e) => {
         const tooltip = document.getElementById('perfChartTooltip');
