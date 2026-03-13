@@ -669,6 +669,10 @@
             color: #73d13d;
         }
 
+        .tx-type.dividend {
+            color: #ffc53d;
+        }
+
         .tx-amount {
             font-size: 12px;
             color: #c8d8f0;
@@ -888,6 +892,16 @@
             background: rgba(57, 181, 110, 0.22);
         }
 
+        .btn-op.dividend {
+            background: rgba(250, 140, 22, 0.12);
+            color: #ffc53d;
+            border-color: rgba(250, 140, 22, 0.3);
+        }
+
+        .btn-op.dividend:hover {
+            background: rgba(250, 140, 22, 0.22);
+        }
+
         .btn-op.edit {
             background: rgba(24, 144, 255, 0.12);
             color: #69b1ff;
@@ -1052,8 +1066,18 @@
             text-align: right;
             margin-bottom: 20px;
         }
-        .estimation-label { font-size: 10px; color: #4a6a90; margin-bottom: 2px; }
-        .estimation-time { font-size: 12px; color: #c8d8f0; font-weight: 700; }
+
+        .estimation-label {
+            font-size: 10px;
+            color: #4a6a90;
+            margin-bottom: 2px;
+        }
+
+        .estimation-time {
+            font-size: 12px;
+            color: #c8d8f0;
+            font-weight: 700;
+        }
 
         /* 两列股票网格 */
         .holdings-grid {
@@ -1115,8 +1139,16 @@
             min-width: 50px;
             text-align: center;
         }
-        .holding-card-rate.up { background: rgba(245, 34, 45, 0.1); color: #ff7875; }
-        .holding-card-rate.down { background: rgba(57, 181, 110, 0.1); color: #73d13d; }
+
+        .holding-card-rate.up {
+            background: rgba(245, 34, 45, 0.1);
+            color: #ff7875;
+        }
+
+        .holding-card-rate.down {
+            background: rgba(57, 181, 110, 0.1);
+            color: #73d13d;
+        }
 
         .holding-card-percent {
             font-size: 12px;
@@ -1167,7 +1199,7 @@
 
         .detail-tab:hover:not(.active) {
             color: #c8d8f0;
-            background: rgba(255,255,255,0.02);
+            background: rgba(255, 255, 255, 0.02);
         }
 
         .detail-tab-content {
@@ -1276,6 +1308,94 @@
         #fundTableBody tr:hover:not(.selected-row) {
             background-color: rgba(255, 255, 255, 0.04);
         }
+
+        /* ===== 通知中心样式 ===== */
+        #notificationBtn {
+            position: relative;
+            cursor: pointer;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #a8c4e8;
+            padding: 4px 8px;
+            border-radius: 6px;
+            line-height: 1;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        #notificationBtn:hover {
+            background: rgba(24, 144, 255, 0.25);
+            color: #69b1ff;
+        }
+
+        .notification-list {
+            max-height: 400px;
+            overflow-y: auto;
+            margin: -14px 0 -14px 0;
+            line-height: 1;
+        }
+
+        .notification-item {
+            padding: 6px 0;
+            border-bottom: 1px solid #1e3a5f;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .notification-item:last-child {
+            border-bottom: none;
+        }
+
+        .notification-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .notification-type {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 8px;
+            color: #fff;
+            flex-shrink: 0;
+        }
+
+        .notification-type.info {
+            background: #1890ff;
+        }
+
+        .notification-type.success {
+            background: #2ea44f;
+        }
+
+        .notification-type.warning {
+            background: #fa8c16;
+        }
+
+        .notification-type.error {
+            background: #cf4444;
+        }
+
+        .notification-time {
+            font-size: 10px;
+            color: #4a6a90;
+            margin-left: auto;
+        }
+
+        .notification-message {
+            font-size: 12px;
+            color: #c8d8f0;
+            line-height: 1.4;
+            padding-left: 2px;
+        }
+
+        .notification-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: #4a6a90;
+            font-size: 13px;
+        }
     </style>
 </head>
 
@@ -1283,6 +1403,11 @@
     <div class="header">
         <span>资产收益助手</span>
         <div class="header-actions">
+            <button id="notificationBtn" title="通知中心" style="position: relative;">
+                🔔
+                <span id="notificationBadge"
+                    style="display: none; position: absolute; top: -2px; right: -2px; background: #ff4d4f; color: white; border-radius: 10px; padding: 0 5px; font-size: 10px; min-width: 16px; text-align: center;"></span>
+            </button>
             <button id="refreshBtn" title="刷新行情">🔄</button>
             <span id="fullscreenBtn" title="全屏查看">⛶</span>
         </div>
