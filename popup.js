@@ -5,6 +5,7 @@ let sortDirection = -1;        // 1:升序, -1:降序
 let selectedCodes = new Set();
 let lastClickedIndex = -1; // 上次点击行索引，用于 Shift 范围选
 let fundHistoryData = {}; // 存储基金历史估值数据 { code: { date: 'YYYY-MM-DD', points: [{ time, rate }] } }
+let lastUpdateTime = ''; // 最后一次 loadData 完成的时间，用于选中状态切换后恢复显示
 
 function clearSelection() {
     selectedCodes.clear();
@@ -22,16 +23,15 @@ const apiLogger = {
     },
 
     /**
-     * 打印日志（仅第一次调用时打印）
-     * @param {string} apiName 接口名称
-     * @param {string} url 请求地址
-     * @param {string} status 状态描述
+     * 打印日志（同一 URL 只打印一次，避免重复刷新时刷屏）
+     * @param {string} apiName 接口名称（仅用于展示）
+     * @param {string} url     请求地址（作为去重 key）
+     * @param {string} status  状态描述
      */
     log(apiName, url, status) {
-        if (this.loggedApis.has(apiName)) return; // 已经记录过，跳过
-
+        if (this.loggedApis.has(url)) return;
         console.log(`[API Monitor] ${apiName} | 状态: ${status} | 地址: ${url}`);
-        this.loggedApis.add(apiName);
+        this.loggedApis.add(url);
     }
 };
 
@@ -60,6 +60,23 @@ function round2(num) {
 }
 
 /**
+ * 数值格式化工具（保留 6 位小数，用于份额计算）
+ */
+function round6(num) {
+    return parseFloat(num.toFixed(6));
+}
+
+/**
+ * 格式化收益显示（带正负号，保留 2 位小数）
+ * @param {number} num - 数值
+ * @param {string} suffix - 后缀（如 '%'）
+ * @returns {string} 格式化后的字符串
+ */
+function formatProfit(num, suffix = '') {
+    return `${num >= 0 ? '+' : ''}${num.toFixed(2)}${suffix}`;
+}
+
+/**
  * 获取今天日期 YYYY-MM-DD
  */
 function getToday() {
@@ -75,8 +92,21 @@ function formatDate(date) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// 缓存 formatDate 引用，避免重复定义
-const formatDateAlias = formatDate;
+/**
+ * 格式化时间为 HH:MM
+ */
+function formatTime(date = new Date()) {
+    const d = date instanceof Date ? date : new Date(date);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * 格式化日期时间为文件名格式 YYYYMMDD_HHMM
+ */
+function formatDateTimeForFile(date = new Date()) {
+    const d = date instanceof Date ? date : new Date(date);
+    return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 /**
  * 时间戳转日期字符串 YYYY-MM-DD
@@ -317,14 +347,14 @@ async function backupFundsData() {
 /**
  * 结算核心逻辑（手动/自动共用）
  * @param {Object} funds        - myFunds 对象（直接修改）
- * @param {Array}  settlements  - [{code, price, prevPriceDate, acNetValue}]
+ * @param {Array}  settlements  - [{code, price, prevPriceDate, acNetValue, prevTradingDayPrice, prevTradingDayDate}]
  * @param {string} todayStr     - YYYY-MM-DD
  * @param {boolean} skipUnchanged - 是否跳过未变化项（自动结算传 true）
  * @returns {number} updatedCount
  */
 function _applySettlementLoop(funds, settlements, todayStr, skipUnchanged = false) {
     let updatedCount = 0;
-    for (const { code, price, prevPriceDate, acNetValue } of settlements) {
+    for (const { code, price, prevPriceDate, acNetValue, prevTradingDayPrice, prevTradingDayDate } of settlements) {
         const item = funds[code];
         if (!item || price <= 0) continue;
 
@@ -332,14 +362,31 @@ function _applySettlementLoop(funds, settlements, todayStr, skipUnchanged = fals
         let shares = item.shares || 0;
         if (shares <= 0 && item.amount > 0) {
             const baseNav = item.savedPrevPrice || price;
-            shares = parseFloat((item.amount / baseNav).toFixed(6));
+            shares = round6(item.amount / baseNav);
             funds[code].shares = shares;
+        }
+
+        // ── 无份额：仅更新净值锚点，不做任何收益计算 ────────────────────────
+        if (shares <= 0) {
+            funds[code].yesterdayProfit = 0;
+            funds[code].savedPrevPrice = price;
+            funds[code].savedPrevDate = prevPriceDate || todayStr;
+            if (acNetValue) funds[code].savedAcNetValue = acNetValue;
+            continue;
         }
 
         const basePrice = item.savedPrevPrice || (shares > 0 ? (item.amount / shares) : price);
         const baseAcNet = item.savedAcNetValue || null;
 
-        if (skipUnchanged && Math.abs(price - basePrice) < 0.00001) continue;
+        // 净值无变化时：仍需更新 yesterdayProfit=0 和 savedPrevPrice/Date，
+        // 避免下次结算把多日收益累加进来，同时保证"昨日收益"显示 0 而非陈旧数据。
+        if (skipUnchanged && Math.abs(price - basePrice) < 0.00001) {
+            funds[code].yesterdayProfit = 0;
+            funds[code].savedPrevPrice = price;
+            funds[code].savedPrevDate = prevPriceDate || todayStr;
+            if (acNetValue) funds[code].savedAcNetValue = acNetValue;
+            continue;
+        }
 
         // ── 分红检测（仅当累计净值可用时）────────────────────────────────────
         // 原理：单位净值差 vs 累计净值差的差额 = 每份分红派发金额
@@ -348,7 +395,7 @@ function _applySettlementLoop(funds, settlements, todayStr, skipUnchanged = fals
         if (acNetValue && baseAcNet) {
             const navDiff = price - basePrice;       // 单位净值变化（分红后可能为负）
             const acDiff = acNetValue - baseAcNet;  // 累计净值变化（包含分红）
-            dividendPerShare = parseFloat((acDiff - navDiff).toFixed(6));
+            dividendPerShare = round6(acDiff - navDiff);
             if (dividendPerShare < 0.00001) dividendPerShare = 0; // 容错
         }
 
@@ -356,25 +403,40 @@ function _applySettlementLoop(funds, settlements, todayStr, skipUnchanged = fals
         const dividendMode = item.dividendMode || 'cash'; // 'cash' | 'reinvest'
         const totalDividend = hasDividend ? round2(shares * dividendPerShare) : 0;
 
-        let actualProfit;
+        // ── 总区间收益（用于累计 holdProfit）────────────────────────────────
+        let totalPeriodProfit;
         if (hasDividend && acNetValue && baseAcNet) {
-            // 用累计净值差计算真实收益（单位净值差 + 分红派现都包含在内）
-            actualProfit = round2(shares * (acNetValue - baseAcNet));
+            totalPeriodProfit = round2(shares * (acNetValue - baseAcNet));
         } else {
-            actualProfit = shares > 0 ? round2(shares * (price - basePrice)) : 0;
+            totalPeriodProfit = shares > 0 ? round2(shares * (price - basePrice)) : 0;
+        }
+
+        // ── 单日昨日收益（仅最后一个交易日的净值差）────────────────────────
+        // 优先使用接口返回的前一交易日净值（prevTradingDayPrice），
+        // 这样即使中间跳过了几天，yesterdayProfit 始终只反映最后一天的变动。
+        // 净值不变时结果为 0，也是正确的。
+        // 若接口未返回该字段（场内/期货），则退化为区间收益。
+        let yesterdayProfit;
+        if (prevTradingDayPrice && prevTradingDayPrice > 0) {
+            // 有前一交易日净值：精确计算单日收益（净值不变则为 0，正确）
+            yesterdayProfit = shares > 0 ? round2(shares * (price - prevTradingDayPrice)) : 0;
+            console.log(`[结算] ${code}: 单日收益=${yesterdayProfit} (${prevTradingDayDate}→${prevPriceDate}: ${prevTradingDayPrice}→${price}), 区间总收益=${totalPeriodProfit}`);
+        } else {
+            // 无前一交易日净值（场内/期货）：退化为区间收益
+            yesterdayProfit = totalPeriodProfit;
         }
 
         // ── 红利再投：增加份额 ────────────────────────────────────────────────
         if (hasDividend && dividendMode === 'reinvest' && price > 0) {
-            const newShares = parseFloat((totalDividend / price).toFixed(6));
-            shares = parseFloat((shares + newShares).toFixed(6));
+            const newShares = round6(totalDividend / price);
+            shares = round6(shares + newShares);
             funds[code].shares = shares;
             console.log(`[分红-再投] ${code}: +${newShares}份 (派现${totalDividend}元 / 净值${price})`);
         }
 
         // ── 写回 ──────────────────────────────────────────────────────────────
-        funds[code].holdProfit = round2((item.holdProfit || 0) + actualProfit);
-        funds[code].yesterdayProfit = actualProfit;
+        funds[code].holdProfit = round2((item.holdProfit || 0) + totalPeriodProfit);
+        funds[code].yesterdayProfit = yesterdayProfit;
         funds[code].amount = round2(shares * price);
         funds[code].savedPrevPrice = price;
         funds[code].savedPrevDate = prevPriceDate || todayStr;
@@ -383,7 +445,7 @@ function _applySettlementLoop(funds, settlements, todayStr, skipUnchanged = fals
         }
 
         if (hasDividend) {
-            console.log(`[分红] ${code}: 每份${dividendPerShare.toFixed(4)}元, 共${totalDividend}元, 模式=${dividendMode}, 昨日收益=${actualProfit}`);
+            console.log(`[分红] ${code}: 每份${dividendPerShare.toFixed(4)}元, 共${totalDividend}元, 模式=${dividendMode}, 昨日收益=${yesterdayProfit}`);
         }
 
         updatedCount++;
@@ -407,7 +469,9 @@ async function manualSettlement() {
             code,
             price: live.prevPrice,
             prevPriceDate: live.prevPriceDate,
-            acNetValue: live.acNetValue  // 传递累计净值
+            acNetValue: live.acNetValue,
+            prevTradingDayPrice: live.prevTradingDayPrice || 0,  // 前一交易日净值
+            prevTradingDayDate: live.prevTradingDayDate || ''
         } : null;
     }).filter(Boolean);
     const updatedCount = _applySettlementLoop(funds, settlements, getToday(), false);
@@ -458,6 +522,7 @@ async function autoSettlement(funds, fetchedData, todayStr) {
     const backupData = {
         version: '1.0',
         exportDate: new Date().toISOString(),
+        backupDate: todayStr,  // 与 backupFundsData 保持一致，防止手动结算覆盖此备份
         myFunds: structuredClone ? structuredClone(funds) : JSON.parse(JSON.stringify(funds))
     };
     await storage.set({ backupFunds: backupData });
@@ -469,20 +534,22 @@ async function autoSettlement(funds, fetchedData, todayStr) {
             code,
             price: live.prevPrice,
             prevPriceDate: live.prevPriceDate,
-            acNetValue: live.acNetValue  // 传递累计净值
+            acNetValue: live.acNetValue,
+            prevTradingDayPrice: live.prevTradingDayPrice || 0,  // 前一交易日净值
+            prevTradingDayDate: live.prevTradingDayDate || ''
         }));
     const updatedCount = _applySettlementLoop(funds, settlements, todayStr, true);
-
-    if (updatedCount === 0) {
-        console.log('[autoSettlement] 净值无变化，跳过');
-        return;
-    }
 
     await storage.set({
         myFunds: funds,
         lastSettlementDate: todayStr,
         lastUpdateDate: new Date().toLocaleDateString()
     });
+
+    if (updatedCount === 0) {
+        console.log('[autoSettlement] 净值无变化，仅更新结算日期');
+        return;
+    }
     console.log('[autoSettlement] ✅ 完成，共更新 ' + updatedCount + ' 条');
     showToast('✅ 已自动完成日结算（' + updatedCount + ' 条）', 'success', 4000);
     checkBackup();
@@ -650,7 +717,7 @@ function proxyFetchSina(url, timeout = 5000) {
             }
 
             if (response && response.success && response.data) {
-                const content = response.data.match(/"(.*)"/);
+                const content = response.data.match(/"([^"]*)"/s);
                 const result = content ? content[1] : null;
                 if (result) {
                     apiLogger.log('新浪代理', url, '成功获取数据');
@@ -716,9 +783,13 @@ async function fetchLiveInfo(code) {
                     const netWorthData = JSON.parse(netWorthMatch[1]);
                     if (netWorthData && netWorthData.length >= 2) {
                         const latest = netWorthData[netWorthData.length - 1];
+                        const prev = netWorthData[netWorthData.length - 2]; // 真正的前一交易日
                         const gsz = parseFloat(latest.y) || 0;
                         const dwjz = gsz;
                         const dateStr = latest.x ? timestampToDate(latest.x) : '';
+                        // 前一交易日净值（用于精确计算单日 yesterdayProfit，避免跨日累计）
+                        const prevTradingDayPrice = parseFloat(prev.y) || 0;
+                        const prevTradingDayDate = prev.x ? timestampToDate(prev.x) : '';
 
                         // 检测分红信息（检查最近30条数据）
                         const dividendList = [];
@@ -760,6 +831,8 @@ async function fetchLiveInfo(code) {
                             price: gsz,
                             prevPrice: dwjz,
                             prevPriceDate: dateStr,
+                            prevTradingDayPrice,  // 前一交易日净值（用于精确单日收益）
+                            prevTradingDayDate,
                             acNetValue,
                             dividendList: dividendList,  // 返回分红列表
                             isFallback: true
@@ -767,6 +840,8 @@ async function fetchLiveInfo(code) {
                         if (mainResult) {
                             mainResult.acNetValue = acNetValue;
                             mainResult.dividendList = dividendList;  // 合并分红列表
+                            mainResult.prevTradingDayPrice = prevTradingDayPrice;
+                            mainResult.prevTradingDayDate = prevTradingDayDate;
                             return mainResult;
                         }
                         return fallbackResult;
@@ -842,7 +917,21 @@ function withTimeout(promise, ms, fallback) {
 }
 
 // ==================== 加载数据 ====================
+let _loadDataRunning = false; // 并发保护
 async function loadData() {
+    if (_loadDataRunning) {
+        console.log('[loadData] 已在运行中，跳过本次调用');
+        return;
+    }
+    _loadDataRunning = true;
+    try {
+        await _loadDataImpl();
+    } finally {
+        _loadDataRunning = false;
+    }
+}
+
+async function _loadDataImpl() {
     clearSelection();
     elements.status.innerText = '同步行情中...';
     apiLogger.reset();
@@ -916,7 +1005,7 @@ async function loadData() {
                             perShare: dividend.perShare,
                             dividendNavPrice: dividend.navPrice,  // 保存分红日净值（用于红利再投）
                             targetDate: divDate,
-                            orderDate: divDate,
+                            orderDate: getToday(),  // 检测日期
                             status: 'pending',
                             autoDetected: true
                         });
@@ -936,11 +1025,11 @@ async function loadData() {
                             const price = live.prevPrice;
                             if (price > 0) {
                                 const deltaShares = (adj.amount * (1 - actualRate)) / price;
-                                item.shares = parseFloat((item.shares + deltaShares).toFixed(6));
+                                item.shares = round6(item.shares + deltaShares);
                                 item.amount = round2(item.shares * price);
                                 adj.status = 'confirmed';
                                 adj.confirmedPrice = price;
-                                adj.confirmedShares = parseFloat(deltaShares.toFixed(6));
+                                adj.confirmedShares = round6(deltaShares);
                                 adj.confirmedDate = todayStr;
                                 showToast(`✅ ${code} 加仓已确认 (净值${price}, +${adj.confirmedShares}份)`, 'success');
                                 dataChanged = true;
@@ -948,19 +1037,30 @@ async function loadData() {
                         } else if (adj.type === 'remove') {
                             const price = live.prevPrice;
                             if (price > 0) {
-                                item.shares = parseFloat((item.shares - adj.shares).toFixed(6));
+                                item.shares = round6(item.shares - adj.shares);
                                 if (item.shares < 0) item.shares = 0;
                                 item.amount = round2(item.shares * price);
+                                // 赎回手续费：按卖出金额扣减，计入累计收益（成本）
+                                const fee = round2(adj.shares * price * ((adj.feeRate || 0) / 100));
+                                if (fee > 0) {
+                                    item.holdProfit = round2((item.holdProfit || 0) - fee);
+                                }
                                 adj.status = 'confirmed';
                                 adj.confirmedPrice = price;
                                 adj.confirmedShares = adj.shares;
                                 adj.confirmedDate = todayStr;
-                                showToast(`✅ ${code} 减仓已确认 (净值${price}, -${adj.shares}份)`, 'success');
+                                const feeText = fee > 0 ? `，手续费 -${fee}` : '';
+                                showToast(`✅ ${code} 减仓已确认 (净值${price}, -${adj.shares}份${feeText})`, 'success');
                                 dataChanged = true;
                             }
                         } else if (adj.type === 'dividend') {
-                            // 现金分红：份额不变，累计收益增加
-                            item.holdProfit = round2((item.holdProfit || 0) + adj.dividendAmount);
+                            // 现金分红确认：
+                            // autoDetected=true 的分红已由结算层（累计净值差）计入 holdProfit，
+                            // 此处只标记 confirmed，不重复累加，避免双计。
+                            // 手动录入的分红（autoDetected 为空/false）结算层不感知，需在此加入。
+                            if (!adj.autoDetected) {
+                                item.holdProfit = round2((item.holdProfit || 0) + adj.dividendAmount);
+                            }
                             adj.status = 'confirmed';
                             adj.confirmedDate = todayStr;
                             showToast(`✅ ${code} 现金分红已确认 (${adj.dividendAmount}元已计入累计收益)`, 'success');
@@ -968,8 +1068,8 @@ async function loadData() {
                         } else if (adj.type === 'dividend_reinvest') {
                             // 红利再投：份额增加，累计收益不变
                             const reinvestPrice = adj.dividendNavPrice || live.prevPrice;
-                            const deltaShares = parseFloat((adj.dividendAmount / reinvestPrice).toFixed(6));
-                            item.shares = parseFloat((item.shares + deltaShares).toFixed(6));
+                            const deltaShares = round6(adj.dividendAmount / reinvestPrice);
+                            item.shares = round6(item.shares + deltaShares);
                             item.amount = round2(item.shares * live.prevPrice);
                             adj.status = 'confirmed';
                             adj.confirmedPrice = reinvestPrice;
@@ -984,10 +1084,10 @@ async function loadData() {
             // --- B. 原有份额修正逻辑 ---
             if (!item.shares && item.amount > 0) {
                 if (live.prevPrice > 0) {
-                    item.shares = parseFloat((item.amount / live.prevPrice).toFixed(6));
+                    item.shares = round6(item.amount / live.prevPrice);
                     dataChanged = true;
                 } else if (live.price > 0) {
-                    item.shares = parseFloat((item.amount / live.price).toFixed(6));
+                    item.shares = round6(item.amount / live.price);
                     dataChanged = true;
                 }
             }
@@ -999,11 +1099,7 @@ async function loadData() {
             let todayProfit, useFallbackNav = false;
 
             if (!live.isFallback && live.price > 0) {
-                // 交易时段：用估值计算当日浮动
-                // 若有累计净值，用累计净值作为昨日基准（更准确，含分红）
-                const baseNav = (live.acNetValue && item.savedAcNetValue)
-                    ? item.savedAcNetValue + (live.prevPrice - (item.savedPrevPrice || live.prevPrice))
-                    : live.prevPrice;
+                // 交易时段：用估值与昨日净值的差计算当日浮动
                 todayProfit = item.shares ? round2(item.shares * (live.price - live.prevPrice)) : 0;
             } else if (live.prevPrice > 0 && item.savedPrevPrice > 0) {
                 // 非交易时段：用净值差（已含分红调整，由结算层保证正确性）
@@ -1030,6 +1126,9 @@ async function loadData() {
                 holdProfit: item.holdProfit || 0,
                 shares: item.shares || 0,
                 useFallbackNav,
+                acNetValue: live.acNetValue || null,
+                prevTradingDayPrice: live.prevTradingDayPrice || 0,
+                prevTradingDayDate: live.prevTradingDayDate || '',
                 pendingAdjustments: item.pendingAdjustments
             });
         }
@@ -1038,7 +1137,7 @@ async function loadData() {
 
     // 记录实时走势点（每次刷新追加一个时间点到 fundHistoryData）
     const now = new Date();
-    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const hhmm = formatTime(now);
     currentFundsData.forEach(item => {
         if (!item || !item.code) return;
         if (!fundHistoryData[item.code]) fundHistoryData[item.code] = { date: '', points: [] };
@@ -1060,7 +1159,8 @@ async function loadData() {
     }
     updateGroupFilter();
     renderTable();
-    elements.status.innerText = `最后更新: ${new Date().toLocaleTimeString()}`;
+    lastUpdateTime = new Date().toLocaleTimeString();
+    elements.status.innerText = `最后更新: ${lastUpdateTime}`;
 }
 
 // ==================== 批量操作核心逻辑 ====================
@@ -1073,14 +1173,19 @@ async function batchRecalculateShares() {
 
     const { myFunds } = await storage.get(['myFunds']);
     const funds = myFunds || {};
+    const codes = [...selectedCodes].filter(c => funds[c]);
+
+    // 并发请求，与 loadData 批量逻辑保持一致
+    const results = await Promise.all(
+        codes.map(code =>
+            withTimeout(fetchLiveInfo(code), 8000, null).then(live => ({ code, live }))
+        )
+    );
     let count = 0;
-    for (const code of selectedCodes) {
-        if (funds[code]) {
-            const live = await fetchLiveInfo(code);
-            if (live && live.prevPrice > 0) {
-                funds[code].shares = parseFloat((funds[code].amount / live.prevPrice).toFixed(6));
-                count++;
-            }
+    for (const { code, live } of results) {
+        if (live && live.prevPrice > 0) {
+            funds[code].shares = round6(funds[code].amount / live.prevPrice);
+            count++;
         }
     }
     await storage.set({ myFunds: funds });
@@ -1518,8 +1623,9 @@ async function adjustPosition(code, type) {
             fundItem.pendingAdjustments.push({
                 type: 'dividend',
                 dividendAmount: dividendAmount,
+                dividendNavPrice: defaultNav,  // 当前净值，供改为红利再投时使用
                 targetDate: confirmDate,
-                orderDate: new Date().toLocaleDateString(),
+                orderDate: getToday(),
                 status: 'pending'
             });
         } else if (isAdd) {
@@ -1531,7 +1637,7 @@ async function adjustPosition(code, type) {
                 feeRate: feeRate,
                 targetDate: confirmDate,
                 orderNav: defaultNav,        // 下单时净值
-                orderDate: new Date().toLocaleDateString(),
+                orderDate: getToday(),
                 status: 'pending'
             });
         } else {
@@ -1543,7 +1649,7 @@ async function adjustPosition(code, type) {
                 feeRate: feeRate,
                 targetDate: confirmDate,
                 orderNav: defaultNav,        // 下单时净值
-                orderDate: new Date().toLocaleDateString(),
+                orderDate: getToday(),
                 status: 'pending'
             });
         }
@@ -1657,6 +1763,7 @@ async function openFundEditor(existingCode = null) {
         holdProfit: parseFloat(result.holdProfit) || 0,
         yesterdayProfit: parseFloat(result.yesterdayProfit) || 0,
         group: result.group || '默认',
+        dividendMode: result.dividendMode || 'cash',
         savedPrevPrice: funds[code]?.savedPrevPrice || live?.prevPrice || 1,
         savedPrevDate: funds[code]?.savedPrevDate || live?.prevPriceDate || getToday(),
         savedAcNetValue: funds[code]?.savedAcNetValue || live?.acNetValue || null,
@@ -1713,6 +1820,7 @@ function showCenterMenu(code) {
                     <button class="btn-op add" data-action="add" data-code="${code}">+ 加仓</button>
                     <button class="btn-op remove" data-action="remove" data-code="${code}">− 减仓</button>
                 </div>
+                <button class="btn-op dividend" data-action="dividend" data-code="${code}">💰 手动录入分红</button>
                 <button class="btn-op edit" data-action="edit" data-code="${code}">✏️ 编辑持仓</button>
                 <button class="btn-op calc" data-action="calc_shares" data-code="${code}">🔄 根据金额重算份额</button>
                 <button class="btn-op clear" data-action="clear" data-code="${code}">🧹 清空金额</button>
@@ -1732,142 +1840,7 @@ function showCenterMenu(code) {
         });
     }
 
-    async function showPendingTransactions(code) {
-        const { myFunds } = await storage.get(['myFunds']);
-        const funds = myFunds || {};
-        const fund = funds[code];
-        const txList = fund?.pendingAdjustments || [];
-
-        if (txList.length === 0) {
-            await showAlert('暂无交易记录');
-            return;
-        }
-
-        const renderList = () => {
-            let html = `<div class="tx-list">`;
-            txList.forEach((adj, idx) => {
-                const isPending = adj.status !== 'confirmed';
-                let typeLabel = adj.type === 'add' ? '加仓'
-                    : adj.type === 'dividend' ? '现金分红'
-                        : adj.type === 'dividend_reinvest' ? '红利再投'
-                            : '减仓';
-                const typeCls = adj.type === 'add' ? 'add'
-                    : isDividendType(adj.type) ? 'dividend'
-                        : 'remove';
-
-                const statusBadge = `<span class="tx-badge ${isPending ? 'pending' : 'confirmed'}">${isPending ? '待确认' : '已确认'}</span>`;
-
-                const amountText = adj.type === 'add'
-                    ? `¥${adj.amount} (费率${adj.feeRate}%)`
-                    : isDividendType(adj.type)
-                        ? `¥${adj.dividendAmount}`
-                        : `${adj.shares} 份 (费率${adj.feeRate}%)`;
-
-                let navInfo = '';
-                if (adj.orderNav) navInfo += `下单净值 ${adj.orderNav} `;
-                if (adj.confirmedPrice) navInfo += `　确认净值 ${adj.confirmedPrice} `;
-                if (adj.confirmedShares && (adj.type === 'add' || adj.type === 'dividend_reinvest')) navInfo += `　到账 ${adj.confirmedShares} 份`;
-
-                let dateInfo = `预计确认日 ${adj.targetDate} `;
-                if (adj.confirmedDate) dateInfo = `确认日 ${adj.confirmedDate} `;
-                if (adj.orderDate) dateInfo = `下单 ${adj.orderDate} · ` + dateInfo;
-
-                // 分红记录的特殊按钮
-                let actionBtn = '';
-                if (isPending) {
-                    if (adj.type === 'dividend') {
-                        // 现金分红可以改为红利再投
-                        actionBtn = `
-                            <button data-convert-reinvest="${idx}" class="tx-revoke-btn" style="background: #1890ff; border-color: #1890ff;">改为红利再投</button>
-                            <button data-revoke="${idx}" class="tx-revoke-btn">撤销</button>
-                        `;
-                    } else {
-                        actionBtn = `<button data-revoke="${idx}" class="tx-revoke-btn">撤销</button>`;
-                    }
-                } else {
-                    actionBtn = `<span class="tx-no-revoke">不可撤销</span>`;
-                }
-
-                html += `
-            <div class="tx-item">
-                <div class="tx-row-main">
-                    <div class="tx-row-left">
-                        <span class="tx-type ${typeCls}">${typeLabel}</span>
-                        ${statusBadge}
-                        <span class="tx-amount">${amountText}</span>
-                    </div>
-                    <div style="display: flex; gap: 4px;">
-                        ${actionBtn}
-                    </div>
-                </div>
-                        ${navInfo ? `<div class="tx-nav">${navInfo}</div>` : ''}
-        <div class="tx-date">${dateInfo}</div>
-                    </div>`;
-            });
-            html += `</div>`;
-            return html;
-        };
-
-        // 打开 Modal 显示列表
-        elements.modalTitle.textContent = '交易记录';
-        elements.modalMsg.innerHTML = renderList();
-        elements.modalInput.style.display = 'none';
-        _setFooter([
-            { text: '关闭', cls: 'modal-btn-cancel', onClick: _closeModal }
-        ]);
-        elements.modalOverlay.classList.add('visible');
-
-        // 绑定撤销和转换按钮
-        elements.modalMsg.onclick = async (e) => {
-            // 处理"改为红利再投"按钮
-            const convertBtn = e.target.closest('[data-convert-reinvest]');
-            if (convertBtn) {
-                const idx = parseInt(convertBtn.dataset.convertReinvest);
-                const adj = txList[idx];
-                if (!adj || adj.status === 'confirmed' || adj.type !== 'dividend') return;
-
-                const ok = await showConfirm(
-                    `确认将现金分红改为红利再投吗？\n\n分红金额：¥${adj.dividendAmount}\n分红日净值：${adj.dividendNavPrice || '未知'}\n\n红利再投后，份额会增加，累计收益不变。`,
-                    '改为红利再投'
-                );
-                if (!ok) return;
-
-                // 修改类型为红利再投
-                adj.type = 'dividend_reinvest';
-                await storage.set({ myFunds: funds });
-                showToast(`✅ ${code} 分红${adj.dividendAmount}元已改为红利再投`, 'success');
-                elements.modalMsg.innerHTML = renderList();
-                loadData();
-                return;
-            }
-
-            // 处理"撤销"按钮
-            const revokeBtn = e.target.closest('[data-revoke]');
-            if (!revokeBtn) return;
-            const idx = parseInt(revokeBtn.dataset.revoke);
-            const adj = txList[idx];
-            if (!adj || adj.status === 'confirmed') return;
-
-            const typeLabel = adj.type === 'add' ? `加仓 ¥${adj.amount} `
-                : isDividendType(adj.type) ? `分红 ¥${adj.dividendAmount} `
-                    : `减仓 ${adj.shares} 份`;
-            const ok = await showConfirm(`确认撤销：${typeLabel}（${adj.targetDate}）？`, '撤销确认', true);
-            if (!ok) return;
-
-            txList.splice(idx, 1);
-            await storage.set({ myFunds: funds });
-            showToast(`✅ ${code} ${typeLabel}已撤销`, 'success');
-
-            if (txList.length === 0) {
-                _closeModal();
-            } else {
-                elements.modalMsg.innerHTML = renderList();
-            }
-            loadData();
-        };
-    }
-
-    // 绑定其他按钮（原有代码已正确绑定）
+    // 绑定其他按钮
     centerModalOverlay.querySelectorAll('.btn-op').forEach(btn => {
         btn.addEventListener('click', () => {
             const action = btn.dataset.action;
@@ -1889,6 +1862,136 @@ function showCenterMenu(code) {
         centerModalOverlay.classList.add('visible');
     });
 }
+
+/**
+ * 显示某基金的交易记录弹窗（加仓/减仓/分红，支持撤销和分红类型切换）
+ */
+async function showPendingTransactions(code) {
+    const { myFunds } = await storage.get(['myFunds']);
+    const funds = myFunds || {};
+    const fund = funds[code];
+    const txList = fund?.pendingAdjustments || [];
+
+    if (txList.length === 0) {
+        await showAlert('暂无交易记录');
+        return;
+    }
+
+    const renderList = () => {
+        let html = `<div class="tx-list">`;
+        txList.forEach((adj, idx) => {
+            const isPending = adj.status !== 'confirmed';
+            let typeLabel = adj.type === 'add' ? '加仓'
+                : adj.type === 'dividend' ? '现金分红'
+                    : adj.type === 'dividend_reinvest' ? '红利再投'
+                        : '减仓';
+            const typeCls = adj.type === 'add' ? 'add'
+                : isDividendType(adj.type) ? 'dividend'
+                    : 'remove';
+
+            const statusBadge = `<span class="tx-badge ${isPending ? 'pending' : 'confirmed'}">${isPending ? '待确认' : '已确认'}</span>`;
+
+            const amountText = adj.type === 'add'
+                ? `¥${adj.amount} (费率${adj.feeRate}%)`
+                : isDividendType(adj.type)
+                    ? `¥${adj.dividendAmount}`
+                    : `${adj.shares} 份 (费率${adj.feeRate}%)`;
+
+            let navInfo = '';
+            if (adj.orderNav) navInfo += `下单净值 ${adj.orderNav} `;
+            if (adj.confirmedPrice) navInfo += `　确认净值 ${adj.confirmedPrice} `;
+            if (adj.confirmedShares && (adj.type === 'add' || adj.type === 'dividend_reinvest')) navInfo += `　到账 ${adj.confirmedShares} 份`;
+
+            let dateInfo = `预计确认日 ${adj.targetDate} `;
+            if (adj.confirmedDate) dateInfo = `确认日 ${adj.confirmedDate} `;
+            if (adj.orderDate) dateInfo = `下单 ${adj.orderDate} · ` + dateInfo;
+
+            let actionBtn = '';
+            if (isPending) {
+                if (adj.type === 'dividend') {
+                    actionBtn = `
+                        <button data-convert-reinvest="${idx}" class="tx-revoke-btn" style="background: #1890ff; border-color: #1890ff;">改为红利再投</button>
+                        <button data-revoke="${idx}" class="tx-revoke-btn">撤销</button>
+                    `;
+                } else {
+                    actionBtn = `<button data-revoke="${idx}" class="tx-revoke-btn">撤销</button>`;
+                }
+            } else {
+                actionBtn = `<span class="tx-no-revoke">不可撤销</span>`;
+            }
+
+            html += `
+        <div class="tx-item">
+            <div class="tx-row-main">
+                <div class="tx-row-left">
+                    <span class="tx-type ${typeCls}">${typeLabel}</span>
+                    ${statusBadge}
+                    <span class="tx-amount">${amountText}</span>
+                </div>
+                <div style="display: flex; gap: 4px;">
+                    ${actionBtn}
+                </div>
+            </div>
+            ${navInfo ? `<div class="tx-nav">${navInfo}</div>` : ''}
+            <div class="tx-date">${dateInfo}</div>
+        </div>`;
+        });
+        html += `</div>`;
+        return html;
+    };
+
+    elements.modalTitle.textContent = '交易记录';
+    elements.modalMsg.innerHTML = renderList();
+    elements.modalInput.style.display = 'none';
+    _setFooter([
+        { text: '关闭', cls: 'modal-btn-cancel', onClick: _closeModal }
+    ]);
+    elements.modalOverlay.classList.add('visible');
+
+    elements.modalMsg.onclick = async (e) => {
+        const convertBtn = e.target.closest('[data-convert-reinvest]');
+        if (convertBtn) {
+            const idx = parseInt(convertBtn.dataset.convertReinvest);
+            const adj = txList[idx];
+            if (!adj || adj.status === 'confirmed' || adj.type !== 'dividend') return;
+            const ok = await showConfirm(
+                `确认将现金分红改为红利再投吗？\n\n分红金额：¥${adj.dividendAmount}\n分红日净值：${adj.dividendNavPrice || '未知'}\n\n红利再投后，份额会增加，累计收益不变。`,
+                '改为红利再投'
+            );
+            if (!ok) return;
+            adj.type = 'dividend_reinvest';
+            await storage.set({ myFunds: funds });
+            showToast(`✅ ${code} 分红${adj.dividendAmount}元已改为红利再投`, 'success');
+            elements.modalMsg.innerHTML = renderList();
+            loadData();
+            return;
+        }
+
+        const revokeBtn = e.target.closest('[data-revoke]');
+        if (!revokeBtn) return;
+        const idx = parseInt(revokeBtn.dataset.revoke);
+        const adj = txList[idx];
+        if (!adj || adj.status === 'confirmed') return;
+
+        const typeLabel = adj.type === 'add' ? `加仓 ¥${adj.amount} `
+            : isDividendType(adj.type) ? `分红 ¥${adj.dividendAmount} `
+                : `减仓 ${adj.shares} 份`;
+        const ok = await showConfirm(`确认撤销：${typeLabel}（${adj.targetDate}）？`, '撤销确认', true);
+        if (!ok) return;
+
+        txList.splice(idx, 1);
+        await storage.set({ myFunds: funds });
+        showToast(`✅ ${code} ${typeLabel}已撤销`, 'success');
+
+        if (txList.length === 0) {
+            _closeModal();
+        } else {
+            elements.modalMsg.innerHTML = renderList();
+        }
+        loadData();
+    };
+}
+
 /**
  * 隐藏弹窗
  */
@@ -1911,7 +2014,7 @@ async function forceRecalculateShares(code) {
     const { myFunds } = await storage.get(['myFunds']);
     const funds = myFunds || {};
     if (funds[code]) {
-        const newShares = parseFloat((funds[code].amount / live.prevPrice).toFixed(6));
+        const newShares = round6(funds[code].amount / live.prevPrice);
         funds[code].shares = newShares;
 
         await storage.set({ myFunds: funds });
@@ -1936,16 +2039,17 @@ function renderTable() {
         const arrow = th.dataset.sort === sortField ? (sortDirection === 1 ? ' ↑' : ' ↓') : '';
         th.textContent = th.dataset.label + arrow;
     });
-    let sumAmount = 0, sumYesterdayProfit = 0, sumTodayProfit = 0, sumTotalProfit = 0;
+    let sumAmount = 0, sumYesterdayProfit = 0, sumTodayProfit = 0, sumHoldProfit = 0;
+    const todayStr2 = getToday(); // 提到循环外，避免每行重复调用
     const fragment = document.createDocumentFragment();
     displayData.forEach((item, index) => {
         sumAmount += item.amount || 0;
         sumYesterdayProfit += item.yesterdayProfit || 0;
         sumTodayProfit += item.todayProfit || 0;
-        sumTotalProfit += item.holdProfit || 0;
+        sumHoldProfit += item.holdProfit || 0;
         const todayProfitText = item.todayProfit === null
             ? '—'
-            : `${item.todayProfit >= 0 ? '+' : ''}${item.todayProfit.toFixed(2)} `;
+            : formatProfit(item.todayProfit) + ' ';
         const tr = document.createElement('tr');
         tr.dataset.code = item.code;
         _td(tr, String(index + 1));
@@ -2005,7 +2109,6 @@ function renderTable() {
         // ... [净值列、昨日收益列、估值收益列代码保持不变] ...
         const tdNav = document.createElement('td');
         tdNav.className = 'col-hide';
-        const todayStr2 = getToday();
         const prevNavLine = document.createElement('div');
         prevNavLine.style.cssText = 'display:flex; align-items:baseline; gap:4px;';
         const navVal = document.createElement('span');
@@ -2038,7 +2141,7 @@ function renderTable() {
         if (item.rate !== null && item.rate !== undefined) {
             const rateSpan = document.createElement('span');
             rateSpan.style.cssText = `font-size:11px; font-weight:bold; color:${item.rate >= 0 ? '#f5222d' : '#389e0d'};`;
-            rateSpan.textContent = `${item.rate >= 0 ? '+' : ''}${item.rate.toFixed(2)}% `;
+            rateSpan.textContent = formatProfit(item.rate, '%') + ' ';
             liveNavLine.appendChild(rateSpan);
         }
         tdNav.appendChild(liveNavLine);
@@ -2054,7 +2157,7 @@ function renderTable() {
         if (item.rate !== null && item.rate !== undefined) {
             const todayRateLine = document.createElement('div');
             todayRateLine.style.cssText = 'font-size:10px; margin-top:1px; opacity:0.85;';
-            todayRateLine.textContent = `${item.rate >= 0 ? '+' : ''}${item.rate.toFixed(2)}% `;
+            todayRateLine.textContent = formatProfit(item.rate, '%') + ' ';
             tdToday.appendChild(todayRateLine);
         }
         tr.appendChild(tdToday);
@@ -2064,7 +2167,7 @@ function renderTable() {
         tdHoldProfit.contentEditable = 'true';
         tdHoldProfit.dataset.field = 'holdProfit';
         tdHoldProfit.dataset.code = item.code;
-        tdHoldProfit.textContent = `${item.holdProfit >= 0 ? '+' : ''}${item.holdProfit.toFixed(2)} `;
+        tdHoldProfit.textContent = formatProfit(item.holdProfit) + ' ';
         tr.appendChild(tdHoldProfit);
         // -- 操作列 (只保留删除) --
         const tdOp = document.createElement('td');
@@ -2082,11 +2185,15 @@ function renderTable() {
     elements.tableBody.appendChild(fragment);
     // ... [汇总统计代码保持不变] ...
     elements.totalAmount.textContent = sumAmount.toLocaleString(undefined, { minimumFractionDigits: 2 });
-    elements.totalYesterdayProfit.textContent = (sumYesterdayProfit >= 0 ? '+' : '') + sumYesterdayProfit.toFixed(2);
+    elements.totalYesterdayProfit.textContent = formatProfit(sumYesterdayProfit);
     elements.totalYesterdayProfit.className = sumYesterdayProfit >= 0 ? 'up' : 'down';
-    elements.totalTodayProfit.textContent = (sumTodayProfit >= 0 ? '+' : '') + sumTodayProfit.toFixed(2);
+    elements.totalTodayProfit.textContent = formatProfit(sumTodayProfit);
     elements.totalTodayProfit.className = sumTodayProfit >= 0 ? 'up' : 'down';
-    elements.totalTotalProfit.textContent = (sumTotalProfit >= 0 ? '+' : '') + sumTotalProfit.toFixed(2);
+    // 总累计收益：显示历史累计，并附上含今日浮动的合计
+    const sumTotalProfit = sumHoldProfit + sumTodayProfit;
+    elements.totalTotalProfit.innerHTML =
+        `<span>${formatProfit(sumHoldProfit)}</span>` +
+        `<span style="font-size:10px;opacity:0.7;margin-left:4px;">(含浮动 ${formatProfit(sumTotalProfit)})</span>`;
     elements.totalTotalProfit.className = sumTotalProfit >= 0 ? 'up' : 'down';
     // 绑定删除按钮和分组标签事件
     elements.tableBody.onclick = (e) => {
@@ -2107,7 +2214,7 @@ function renderTable() {
             const val = parseFloat(valStr);
             if (valStr === '' || isNaN(val)) {
                 showToast('请输入有效的数字', 'warning');
-                loadData();
+                renderTable(); // 恢复显示值，无需重新请求网络
                 return;
             }
             const { myFunds } = await storage.get(['myFunds']);
@@ -2197,7 +2304,7 @@ function updateSelectionStatus() {
         };
         if (fabMain) fabMain.style.background = '#fa8c16';
     } else {
-        elements.status.innerText = `最后更新: ${new Date().toLocaleTimeString()}`;
+        elements.status.innerText = lastUpdateTime ? `最后更新: ${lastUpdateTime}` : '准备就绪';
         if (fabMain) fabMain.style.background = '';
     }
 }
@@ -2212,7 +2319,7 @@ function _td(tr, text) {
 function _tdProfit(tr, value, isUp) {
     const td = document.createElement('td');
     td.className = isUp ? 'up' : 'down';
-    td.textContent = `${isUp ? '+' : ''}${value.toFixed(2)}`;
+    td.textContent = formatProfit(value);
     tr.appendChild(td);
 }
 // 辅助函数：重置单个基金的持仓数据
@@ -2220,7 +2327,7 @@ function resetFundPosition(fund, shouldResetGroup = true) {
     fund.amount = 0;
     fund.shares = 0;
     fund.lastClosedAmount = 0;
-    //fund.yesterdayProfit = 0;
+    fund.yesterdayProfit = 0;
     if (shouldResetGroup) fund.group = "已撤回"; // 核心：根据参数决定是否改分组
     if (fund.cost !== undefined) fund.cost = 0;
     // 注意：保留 holdProfit (累计收益)
@@ -2261,8 +2368,7 @@ async function exportFundsData() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const now = new Date();
-    const fileName = `基金数据_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}.json`;
+    const fileName = `基金数据_${formatDateTimeForFile()}.json`;
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
@@ -2281,7 +2387,9 @@ function migrateFund(fund) {
         shares: parseFloat(fund.shares) || 0,
         yesterdayProfit: parseFloat(fund.yesterdayProfit) || 0,
         group: typeof fund.group === 'string' ? fund.group : '默认',
+        dividendMode: fund.dividendMode || 'cash',
         savedPrevPrice: fund.savedPrevPrice ? parseFloat(fund.savedPrevPrice) : undefined,
+        addedDate: fund.addedDate || null,
         // pendingAdjustments（交易记录）原样保留，不做转换
         pendingAdjustments: Array.isArray(fund.pendingAdjustments) ? fund.pendingAdjustments : [],
     };
@@ -2323,6 +2431,8 @@ function importFundsData(event) {
             const dataToSave = { myFunds: migratedFunds };
             if (importData.lastUpdateDate) dataToSave.lastUpdateDate = importData.lastUpdateDate;
             if (importData.lastDayProfits) dataToSave.lastDayProfits = importData.lastDayProfits;
+            // 清除结算日期，让下次 loadData 重新触发自动结算检测
+            dataToSave.lastSettlementDate = null;
 
             await storage.set(dataToSave);
             showToast('✅ 数据导入成功！', 'success');
@@ -2966,6 +3076,16 @@ async function _saveOCRItems() {
             const code = String(a.code).trim().toUpperCase();
             if (!code) continue;
             const existing = funds[code] || {};
+            // 拉取实际净值作为结算锚点，避免用 1 导致首次结算收益异常
+            let actualPrevPrice = existing.savedPrevPrice;
+            if (!actualPrevPrice) {
+                try {
+                    const liveInfo = await fetchLiveInfo(code);
+                    actualPrevPrice = liveInfo?.prevPrice || 0;
+                } catch (e) {
+                    actualPrevPrice = 0;
+                }
+            }
             funds[code] = {
                 ...existing,
                 name: a.name || existing.name || '',
@@ -2973,8 +3093,9 @@ async function _saveOCRItems() {
                 holdProfit: a.holdProfit ?? 0,
                 yesterdayProfit: a.yesterdayProfit ?? 0,
                 group: a.group || '默认',
-                savedPrevPrice: existing.savedPrevPrice || 1,
+                savedPrevPrice: actualPrevPrice || existing.savedPrevPrice || undefined,
                 savedPrevDate: existing.savedPrevDate || getToday(),
+                addedDate: existing.addedDate || getToday(),  // 防止历史分红被误检测
             };
             if (a.shares && a.shares > 0) {
                 funds[code].shares = a.shares;
@@ -3029,9 +3150,9 @@ async function openFundDetail(code) {
 
         const holdAmount = fundData.amount || 0;
         const shares = fundData.shares || 0;
-        const todayProfit = shares > 0 && unitValue > 0
+        const todayProfit = shares > 0 && unitValue > 0 && estimateValue > 0
             ? round2(shares * (estimateValue - unitValue))
-            : holdAmount * (estimateRate / 100);
+            : (estimateRate !== 0 ? round2(holdAmount * (estimateRate / 100)) : 0);
         const holdProfit = fundData.holdProfit || 0;
 
         // 从 pingzhongdata 异步拉取：昨日涨幅 + 历史净值分时数据
@@ -3064,7 +3185,7 @@ async function openFundDetail(code) {
                     <div class="detail-info-item">
                         <span class="detail-info-label">昨日涨幅</span>
                         <span id="detail-yesterday-rate" class="detail-info-value bold ${yesterdayRate >= 0 ? upClass : downClass}">
-                             ${(yesterdayRate >= 0 ? '+' : '') + yesterdayRate.toFixed(2) + '%'}
+                             ${formatProfit(yesterdayRate, '%')}
                         </span>
                     </div>
                     <div class="detail-info-item">
@@ -3074,7 +3195,7 @@ async function openFundDetail(code) {
                     <div class="detail-info-item">
                         <span class="detail-info-label">估值涨幅</span>
                         <span class="detail-info-value bold ${estimateRate >= 0 ? upClass : downClass}">
-                            ${estimateRate >= 0 ? '+' : ''}${estimateRate.toFixed(2)}%
+                            ${formatProfit(estimateRate, '%')}
                         </span>
                     </div>
                 </div>
@@ -3088,13 +3209,13 @@ async function openFundDetail(code) {
                     <div class="detail-info-item">
                         <span class="detail-info-label">当日预估收益</span>
                         <span class="detail-info-value hero ${todayProfit >= 0 ? upClass : downClass}">
-                            ${todayProfit >= 0 ? '+' : ''}¥${todayProfit.toFixed(2)}
+                            ${formatProfit(todayProfit)}¥
                         </span>
                     </div>
                     <div class="detail-info-item">
                         <span class="detail-info-label">持有收益</span>
                         <span class="detail-info-value hero ${holdProfit >= 0 ? upClass : downClass}">
-                            ${holdProfit >= 0 ? '+' : ''}¥${holdProfit.toFixed(2)}
+                            ${formatProfit(holdProfit)}¥
                         </span>
                     </div>
                 </div>
@@ -3142,52 +3263,27 @@ async function openFundDetail(code) {
             } else {
                 // 无缓存：用当前估值率画两点兜底（09:30 ~ 当前时刻）
                 const rate = unitValue > 0 ? ((estimateValue - unitValue) / unitValue * 100) : 0;
-                const nowT = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`;
+                const nowT = formatTime();
                 pts = [{ time: '09:30', rate: 0 }, { time: nowT, rate }];
             }
             // canvas 须等 DOM 渲染完成后再绘制
             requestAnimationFrame(() => drawChart(code, estimateValue, unitValue, pts));
         })();
 
-        // ② 异步拉 pingzhongdata：更新昨日涨幅
-        fetch(`https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`)
-            .then(r => r.text())
-            .then(text => {
-                // 获取 equityReturn（日增长率）字段，这是最准确的昨日涨幅
-                const trendMatch = text.match(/var\s+Data_netWorthTrend\s*=\s*(\[[\s\S]*?\]);/);
-                if (!trendMatch) return;
-                try {
-                    const arr = JSON.parse(trendMatch[1]);
-                    if (!arr || arr.length < 1) return;
-
-                    // 获取最后一个数据点的 equityReturn（日增长率）
-                    const lastPoint = arr[arr.length - 1];
-                    let yRate = 0;
-
-                    // 优先使用 equityReturn 字段（这是官方的日增长率）
-                    if (lastPoint.equityReturn !== undefined && lastPoint.equityReturn !== null && lastPoint.equityReturn !== '') {
-                        yRate = parseFloat(lastPoint.equityReturn);
-                    } else if (arr.length >= 2) {
-                        // 备用方案：手动计算最后两个净值的涨幅
-                        const prev = parseFloat(arr[arr.length - 2].y);
-                        const current = parseFloat(arr[arr.length - 1].y);
-                        if (prev > 0) {
-                            yRate = ((current - prev) / prev) * 100;
-                        }
-                    }
-
-                    const yEl = document.getElementById('detail-yesterday-rate');
-                    if (yEl) {
-                        yEl.textContent = (yRate >= 0 ? '+' : '') + yRate.toFixed(2) + '%';
-                        yEl.className = 'detail-info-value bold ' + (yRate >= 0 ? 'up' : 'down');
-                    }
-
-                    console.log('[openFundDetail] 昨日涨幅:', yRate.toFixed(2) + '%');
-                } catch (e) {
-                    console.warn('[openFundDetail] pingzhongdata parse error', e);
-                }
-            })
-            .catch(e => console.warn('[openFundDetail] pingzhongdata fetch failed', e));
+        // ② 用已有的 live 数据直接计算昨日涨幅，无需重复请求 pingzhongdata
+        (() => {
+            let yRate = 0;
+            if (live.prevTradingDayPrice && live.prevTradingDayPrice > 0 && live.prevPrice > 0) {
+                yRate = (live.prevPrice - live.prevTradingDayPrice) / live.prevTradingDayPrice * 100;
+            } else if (typeof live.rate === 'number') {
+                yRate = live.rate;
+            }
+            const yEl = document.getElementById('detail-yesterday-rate');
+            if (yEl) {
+                yEl.textContent = formatProfit(yRate, '%');
+                yEl.className = 'detail-info-value bold ' + (yRate >= 0 ? 'up' : 'down');
+            }
+        })();
 
         // 绑定 Tab 切换事件
         content.querySelectorAll('.detail-tab').forEach(tab => {
@@ -3317,7 +3413,7 @@ function drawChart(code, currentPrice, basePrice, chartPoints) {
     ctx.textAlign = 'right';
     for (let i = 0; i <= 4; i++) {
         const r = yMax - (yRange / 4) * i;
-        ctx.fillText((r >= 0 ? '+' : '') + r.toFixed(2) + '%', padding.left - 4, padding.top + (ch / 4) * i + 4);
+        ctx.fillText(formatProfit(r, '%'), padding.left - 4, padding.top + (ch / 4) * i + 4);
     }
 
     // X轴标签
@@ -3355,7 +3451,7 @@ function drawChart(code, currentPrice, basePrice, chartPoints) {
         if (pt) {
             const clr = pt.rate >= 0 ? '#ff7875' : '#73d13d';
             const est = basePrice > 0 ? '¥' + (basePrice * (1 + pt.rate / 100)).toFixed(4) + ' ' : '';
-            tooltip.innerHTML = `<div style="font-size:10px;color:#8aacce;">${pt.time}</div><div style="font-size:12px;font-weight:bold;color:#e8f0ff;">${est}<span style="color:${clr}">${pt.rate >= 0 ? '+' : ''}${pt.rate.toFixed(2)}%</span></div>`;
+            tooltip.innerHTML = `<div style="font-size:10px;color:#8aacce;">${pt.time}</div><div style="font-size:12px;font-weight:bold;color:#e8f0ff;">${est}<span style="color:${clr}">${formatProfit(pt.rate, '%')}</span></div>`;
             tooltip.style.display = 'block';
             const pr = canvas.parentElement.getBoundingClientRect();
             let left = (rect.left - pr.left) + x + 12;
@@ -3452,14 +3548,6 @@ async function loadHoldings(code) {
 // ==================== 数据获取函数（优化版） ====================
 
 /**
- * 获取基金分时数据（基金无真实分时，返回空数组让绘图函数生成模拟走势）
- */
-async function fetchIntradayData(code) {
-    console.log('[fetchIntradayData] 基金无分时数据，将使用估值生成模拟走势');
-    return [];
-}
-
-/**
  * 获取基金历史净值数据
  */
 async function fetchFundNetValues(code, startDate, endDate, pageSize = 200) {
@@ -3517,105 +3605,6 @@ async function fetchFundNetValues(code, startDate, endDate, pageSize = 200) {
     }
 }
 
-/**
- * 获取沪深300基准数据
- */
-async function fetchBenchmarkData(code, startDate, endDate) {
-    try {
-        // 沪深300代码: 000300 (从东方财富指数接口获取)
-        const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.${code}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63&klt=101&fqt=1&beg=${startDate.replace(/-/g, '')}&end=${endDate.replace(/-/g, '')}`;
-        const res = await fetch(url);
-        const data = await res.json();
-
-        if (data.data?.klines && data.data.klines.length > 0) {
-            console.log('[fetchBenchmarkData] 成功获取基准数据', data.data.klines.length, '条');
-            return data.data.klines.map(line => {
-                const [date, open, close, high, low, volume, amount, amplitude, changePct, changeAmt, turnover] = line.split(',');
-                return {
-                    date: date.substring(0, 4) + '-' + date.substring(4, 6) + '-' + date.substring(6, 8),
-                    price: parseFloat(close)
-                };
-            });
-        }
-
-        console.warn('[fetchBenchmarkData] 未获取到基准数据');
-        return null;
-    } catch (e) {
-        console.warn('[fetchBenchmarkData] 获取基准数据失败:', e);
-        return null;
-    }
-}
-
-/**
- * 计算基准收益率（按日期对齐）
- */
-function calculateBenchmarkReturns(benchmarkData, fundDates, basePrice) {
-    if (!benchmarkData || benchmarkData.length === 0) return null;
-
-    const benchmarkMap = {};
-    benchmarkData.forEach(item => {
-        benchmarkMap[item.date] = item.price;
-    });
-
-    return fundDates.map(date => {
-        const price = benchmarkMap[date];
-        if (price && basePrice > 0) {
-            return ((price - basePrice) / basePrice) * 100;
-        }
-        return null;
-    });
-}
-
-/**
- * 计算最大回撤
- */
-function calculateMaxDrawdown(prices) {
-    let maxDrawdown = 0;
-    let peak = prices[0];
-
-    for (let i = 1; i < prices.length; i++) {
-        if (prices[i] > peak) {
-            peak = prices[i];
-        }
-        const drawdown = ((peak - prices[i]) / peak) * 100;
-        if (drawdown > maxDrawdown) {
-            maxDrawdown = drawdown;
-        }
-    }
-
-    return maxDrawdown;
-}
-
-/**
- * 计算年化收益率
- */
-function calculateAnnualizedReturn(totalReturn, period) {
-    const periodMap = { '1M': 1 / 12, '3M': 3 / 12, '6M': 6 / 12, '1Y': 1, '3Y': 3, 'LY': 5 };
-    const years = periodMap[period] || 1;
-
-    if (years < 1) {
-        return (totalReturn / years);
-    }
-
-    return ((Math.pow(1 + totalReturn / 100, 1 / years) - 1) * 100);
-}
-
-/**
- * 计算波动率
- */
-function calculateVolatility(prices) {
-    if (prices.length < 2) return 0;
-
-    const returns = [];
-    for (let i = 1; i < prices.length; i++) {
-        returns.push((prices[i] - prices[i - 1]) / prices[i - 1]);
-    }
-
-    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
-    const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / returns.length;
-
-    return Math.sqrt(variance) * Math.sqrt(252) * 100; // 年化波动率
-}
 
 /**
  * 加载历史走势数据（多周期历史净值图表）
@@ -3662,6 +3651,10 @@ async function loadPerformance(code) {
     });
 }
 
+// 历史净值内存缓存：{ code: { date: 'YYYY-MM-DD', data: [{date, price}] } }
+// 每次打开详情页时有效，同一只基金切换周期无需重复请求
+const _netValueCache = {};
+
 /**
  * 具体加载某个周期的业绩图表
  */
@@ -3676,14 +3669,27 @@ async function loadPerformancePeriod(code, period) {
     const periodMap = { '1M': 1, '3M': 3, '6M': 6, '1Y': 12, '3Y': 36, 'LY': 360 };
     startDate.setMonth(startDate.getMonth() - (periodMap[period] || 1));
     if (period === 'LY') startDate.setFullYear(2000);
-    const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const startStr = formatDate(startDate);
+    const endStr = formatDate(endDate);
     const pageSize = period === 'LY' ? 500 : 200;
 
     try {
         summary.textContent = '加载中...';
 
-        // 使用优化后的数据获取函数
-        const fundData = await fetchFundNetValues(code, fmt(startDate), fmt(endDate), pageSize);
+        // 优先从缓存里裁剪，避免重复请求相同基金的数据
+        const cached = _netValueCache[code];
+        let fundData;
+        if (cached && cached.date === endStr && cached.data && cached.data.length > 0) {
+            // 直接从缓存按日期过滤
+            fundData = cached.data.filter(p => p.date >= startStr && p.date <= endStr);
+        } else {
+            // 拉取成立以来全量数据并缓存，后续切周期直接裁剪
+            const allData = await fetchFundNetValues(code, '2000-01-01', endStr, 500);
+            if (allData && allData.length > 0) {
+                _netValueCache[code] = { date: endStr, data: allData };
+                fundData = allData.filter(p => p.date >= startStr && p.date <= endStr);
+            }
+        }
 
         if (!fundData || fundData.length === 0) {
             summary.textContent = '暂无数据';
@@ -3783,7 +3789,7 @@ function drawPerfChart(canvas, prices, dates, isUp) {
     ctx.fillStyle = '#4a6a90'; ctx.font = '10px Inter'; ctx.textAlign = 'right';
     for (let i = 0; i <= 3; i++) {
         const r = maxR - (range / 3) * i;
-        ctx.fillText((r >= 0 ? '+' : '') + r.toFixed(2) + '%', pad.left - 4, pad.top + (ch / 3) * i + 4);
+        ctx.fillText(formatProfit(r, '%'), pad.left - 4, pad.top + (ch / 3) * i + 4);
     }
 
     // X 轴标签（首、中、尾，格式 MM-DD）
@@ -3819,7 +3825,7 @@ function drawPerfChart(canvas, prices, dates, isUp) {
         if (date) {
             const clr = r >= 0 ? '#ff7875' : '#73d13d';
             const est = '净值: ' + parseFloat(p).toFixed(4);
-            tooltip.innerHTML = `<div style="font-size:10px;color:#8aacce;">${date}</div><div style="font-size:12px;font-weight:bold;color:#e8f0ff;">${est} <span style="color:${clr};margin-left:6px;">${r >= 0 ? '+' : ''}${r.toFixed(2)}%</span></div>`;
+            tooltip.innerHTML = `<div style="font-size:10px;color:#8aacce;">${date}</div><div style="font-size:12px;font-weight:bold;color:#e8f0ff;">${est} <span style="color:${clr};margin-left:6px;">${formatProfit(r, '%')}</span></div>`;
             tooltip.style.display = 'block';
             const pr = canvas.parentElement.getBoundingClientRect();
             let left = (rect.left - pr.left) + x + 12;
