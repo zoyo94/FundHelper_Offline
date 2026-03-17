@@ -1038,7 +1038,8 @@ async function _loadDataImpl() {
                         status: 'pending',
                         autoDetected: true
                     });
-                    showToast(`🔔 ${code}(${live.name || code}) 检测到分红\n日期：${divDate}  净值：${dividend.navPrice}\n每份：${dividend.perShare}元  共：${totalDividend}元（默认现金分红）`, 'info', 8000);
+                    // 改为只在通知中心记录，不弹 toast
+                    notificationCenter.add(`检测到 ${code} 分红：${divDate}，每份${dividend.perShare}元，共${totalDividend}元`, 'info');
                     dataChanged = true;
                 }
             }
@@ -1059,6 +1060,14 @@ async function _loadDataImpl() {
     }
 
     // 4. 处理数据 & 自动确认份额
+    // 收集所有确认的交易，最后合并通知
+    const confirmedTransactions = {
+        add: [],
+        remove: [],
+        dividend: [],
+        dividend_reinvest: []
+    };
+
     for (const { code, live } of fetchedData) {
         if (live && live.prevPrice > 0) {
             const item = funds[code];
@@ -1079,7 +1088,8 @@ async function _loadDataImpl() {
                                 adj.confirmedPrice = price;
                                 adj.confirmedShares = round6(deltaShares);
                                 adj.confirmedDate = todayStr;
-                                showToast(`✅ ${code} 加仓已确认 (净值${price}, +${adj.confirmedShares}份)`, 'success');
+                                // 收集确认信息，不立即弹 toast
+                                confirmedTransactions.add.push({ code, shares: adj.confirmedShares, price });
                                 dataChanged = true;
                             }
                         } else if (adj.type === 'remove') {
@@ -1097,21 +1107,27 @@ async function _loadDataImpl() {
                                 adj.confirmedPrice = price;
                                 adj.confirmedShares = adj.shares;
                                 adj.confirmedDate = todayStr;
-                                const feeText = fee > 0 ? `，手续费 -${fee}` : '';
-                                showToast(`✅ ${code} 减仓已确认 (净值${price}, -${adj.shares}份${feeText})`, 'success');
+                                // 收集确认信息，不立即弹 toast
+                                confirmedTransactions.remove.push({ code, shares: adj.shares, price, fee });
                                 dataChanged = true;
                             }
                         } else if (adj.type === 'dividend') {
                             // 现金分红确认：
-                            // autoDetected=true 的分红已由结算层（累计净值差）计入 holdProfit，
-                            // 此处只标记 confirmed，不重复累加，避免双计。
-                            // 手动录入的分红（autoDetected 为空/false）结算层不感知，需在此加入。
-                            if (!adj.autoDetected) {
+                            // 检查是否已经被结算层计入
+                            const wasSettledAfterDividend = item.savedPrevDate && item.savedPrevDate > adj.targetDate;
+
+                            if (adj.autoDetected && wasSettledAfterDividend) {
+                                // 已由结算层（累计净值差）计入 holdProfit，不重复累加
+                                console.log(`[分红确认] ${code}: 已由结算层计入，跳过`);
+                            } else {
+                                // 未被结算层计入，需要手动累加
                                 item.holdProfit = round2((item.holdProfit || 0) + adj.dividendAmount);
+                                console.log(`[分红确认] ${code}: 手动计入 ${adj.dividendAmount} 元`);
                             }
                             adj.status = 'confirmed';
                             adj.confirmedDate = todayStr;
-                            showToast(`✅ ${code} 现金分红已确认\n日期：${adj.targetDate || '-'}  净值：${adj.dividendNavPrice || '-'}\n共：${adj.dividendAmount}元已计入累计收益`, 'success', 6000);
+                            // 收集确认信息，不立即弹 toast
+                            confirmedTransactions.dividend.push({ code, amount: adj.dividendAmount, date: adj.targetDate });
                             dataChanged = true;
                         } else if (adj.type === 'dividend_reinvest') {
                             // 红利再投：份额增加，累计收益不变
@@ -1123,7 +1139,8 @@ async function _loadDataImpl() {
                             adj.confirmedPrice = reinvestPrice;
                             adj.confirmedShares = deltaShares;
                             adj.confirmedDate = todayStr;
-                            showToast(`✅ ${code} 红利再投已确认 (净值${reinvestPrice}, +${deltaShares}份)`, 'success');
+                            // 收集确认信息，不立即弹 toast
+                            confirmedTransactions.dividend_reinvest.push({ code, shares: deltaShares, price: reinvestPrice });
                             dataChanged = true;
                         }
                     }
@@ -1205,6 +1222,36 @@ async function _loadDataImpl() {
     if (dataChanged) {
         await storage.set({ myFunds: funds });
     }
+
+    // 显示合并的交易确认通知
+    let totalConfirmed = 0;
+    const notifications = [];
+
+    if (confirmedTransactions.add.length > 0) {
+        totalConfirmed += confirmedTransactions.add.length;
+        const codes = confirmedTransactions.add.map(t => t.code).join('、');
+        notifications.push(`加仓 ${confirmedTransactions.add.length} 笔：${codes}`);
+    }
+    if (confirmedTransactions.remove.length > 0) {
+        totalConfirmed += confirmedTransactions.remove.length;
+        const codes = confirmedTransactions.remove.map(t => t.code).join('、');
+        notifications.push(`减仓 ${confirmedTransactions.remove.length} 笔：${codes}`);
+    }
+    if (confirmedTransactions.dividend.length > 0) {
+        totalConfirmed += confirmedTransactions.dividend.length;
+        const codes = confirmedTransactions.dividend.map(t => t.code).join('、');
+        notifications.push(`现金分红 ${confirmedTransactions.dividend.length} 笔：${codes}`);
+    }
+    if (confirmedTransactions.dividend_reinvest.length > 0) {
+        totalConfirmed += confirmedTransactions.dividend_reinvest.length;
+        const codes = confirmedTransactions.dividend_reinvest.map(t => t.code).join('、');
+        notifications.push(`红利再投 ${confirmedTransactions.dividend_reinvest.length} 笔：${codes}`);
+    }
+
+    if (totalConfirmed > 0) {
+        showToast(`✅ 已确认 ${totalConfirmed} 笔交易\n${notifications.join('\n')}`, 'success', 4000);
+    }
+
     updateGroupFilter();
     renderTable();
     lastUpdateTime = new Date().toLocaleTimeString();
@@ -1213,11 +1260,19 @@ async function _loadDataImpl() {
 
 // ==================== 批量操作核心逻辑 ====================
 
+// 通用批量操作确认函数
+async function confirmBatchOperation(action, count, details = '', danger = false) {
+    return showConfirm(
+        `确认${action}选中的 ${count} 项吗？${details}`,
+        `${action}确认`,
+        danger
+    );
+}
+
 // 1. 批量重算份额 (根据金额和净值)
 async function batchRecalculateShares() {
     if (selectedCodes.size === 0) return showToast('❌ 请先勾选基金', 'error');
-    const ok = await showConfirm(`确认根据当前金额重算选中的 ${selectedCodes.size} 支基金的份额吗？`);
-    if (!ok) return;
+    if (!await confirmBatchOperation('重算份额', selectedCodes.size)) return;
 
     const { myFunds } = await storage.get(['myFunds']);
     const funds = myFunds || {};
@@ -1313,8 +1368,7 @@ async function batchClearPositions() {
 // 4. 批量删除
 async function batchDeleteFunds() {
     if (selectedCodes.size === 0) return;
-    const ok = await showConfirm(`确定要删除选中的 ${selectedCodes.size} 支基金吗？该操作不可恢复！`, '危险操作');
-    if (!ok) return;
+    if (!await confirmBatchOperation('删除', selectedCodes.size, '\n该操作不可恢复！', true)) return;
 
     const { myFunds } = await storage.get(['myFunds']);
     const funds = myFunds || {};
@@ -1756,7 +1810,7 @@ async function openFundEditor(existingCode = null) {
                     const l = await fetchLiveInfo(c);
                     if (l && l.prevPrice > 0) {
                         currentNav = l.prevPrice;
-                        showToast(`已获取最新净值: ${currentNav} `, 'info', 2000);
+                        // 删除 toast，改为静默更新
                         // 如果此时有金额没份额，顺手算一下
                         if (amtInput.value && !shareInput.value) {
                             shareInput.value = (parseFloat(amtInput.value) / currentNav).toFixed(4);
