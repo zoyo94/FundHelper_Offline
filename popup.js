@@ -354,7 +354,7 @@ async function backupFundsData() {
  */
 function _applySettlementLoop(funds, settlements, todayStr, skipUnchanged = false) {
     let updatedCount = 0;
-    for (const { code, price, prevPriceDate, acNetValue, prevTradingDayPrice, prevTradingDayDate, dividendList } of settlements) {
+    for (const { code, price, prevPriceDate, acNetValue, prevTradingDayPrice, prevTradingDayDate, prevPrevTradingDayPrice, prevPrevTradingDayDate, dividendList } of settlements) {
         const item = funds[code];
         if (!item || price <= 0) continue;
 
@@ -428,19 +428,32 @@ function _applySettlementLoop(funds, settlements, todayStr, skipUnchanged = fals
         }
 
         // ── 单日昨日收益 ────────────────────────────────────────────────────────
-        // 思路：prevPriceDate 距今 ≤ 3天（含跨周末）说明昨天有净值，prevTDP 是上一交易日净值
-        // 否则说明最新净值不是昨天的（停牌/净值迟发），昨日收益置 0
+        // prevPriceDate - prevTradingDayDate ≤ 3天：正常相邻交易日（含跨周末），可算昨日
+        // 若 prevTradingDayDate 当天有分红：
+        //   微众app算法 = shares × (price - (分红前一日净值 - 每份分红))
+        //   = shares × (price - prevPrevTDP)  其中 prevPrevTDP 是倒数第3条净值（分红前一日）
+        //   注：不能用 prevTDP + divPerShare，因为浮点加法结果不准确
+        // 若无分红：正常用 price - prevTDP
         let yesterdayProfit;
         if (prevTradingDayPrice > 0 && prevTradingDayDate && prevPriceDate) {
             const diffDays = Math.round(
                 (new Date(prevPriceDate) - new Date(prevTradingDayDate)) / 86400000
             );
-            // diffDays ≤ 3：prevTDP 是上一个交易日（含跨周末3天），可用
-            // diffDays > 3：中间有净值空缺，不是真正的"昨日"，置 0
             if (diffDays > 0 && diffDays <= 3) {
-                yesterdayProfit = shares > 0 ? round2(shares * (price - prevTradingDayPrice)) : 0;
+                // 检查 prevTradingDayDate 当天是否有分红
+                const hasDivOnPrevTD = dividendList && dividendList.some(d => d.date === prevTradingDayDate);
+                if (hasDivOnPrevTD && prevPrevTradingDayPrice > 0) {
+                    // 分红当天：微众app算法 = shares × (price - (前一日净值 - 每份分红))
+                    // 用整数运算避免浮点精度问题
+                    const divOnPrevTD = dividendList.find(d => d.date === prevTradingDayDate);
+                    const adjustedBase = (Math.round(prevPrevTradingDayPrice * 10000) - Math.round(divOnPrevTD.perShare * 10000)) / 10000;
+                    yesterdayProfit = shares > 0 ? round2(shares * (price - adjustedBase)) : 0;
+                    console.log(`[结算] ${code}: 分红昨日调整基准=${adjustedBase}(${prevPrevTradingDayDate}-${divOnPrevTD.perShare}), yesterdayProfit=${yesterdayProfit}`);
+                } else {
+                    yesterdayProfit = shares > 0 ? round2(shares * (price - prevTradingDayPrice)) : 0;
+                }
             } else {
-                yesterdayProfit = 0;
+                yesterdayProfit = 0; // 停牌/净值空缺，无有效昨日
             }
         } else {
             yesterdayProfit = 0;
@@ -492,6 +505,8 @@ async function manualSettlement() {
             acNetValue: live.acNetValue,
             prevTradingDayPrice: live.prevTradingDayPrice || 0,
             prevTradingDayDate: live.prevTradingDayDate || '',
+            prevPrevTradingDayPrice: live.prevPrevTradingDayPrice || 0,
+            prevPrevTradingDayDate: live.prevPrevTradingDayDate || '',
             dividendList: live.dividendList || []
         } : null;
     }).filter(Boolean);
@@ -558,6 +573,8 @@ async function autoSettlement(funds, fetchedData, todayStr) {
             acNetValue: live.acNetValue,
             prevTradingDayPrice: live.prevTradingDayPrice || 0,
             prevTradingDayDate: live.prevTradingDayDate || '',
+            prevPrevTradingDayPrice: live.prevPrevTradingDayPrice || 0,
+            prevPrevTradingDayDate: live.prevPrevTradingDayDate || '',
             dividendList: live.dividendList || []
         }));
     const updatedCount = _applySettlementLoop(funds, settlements, todayStr, true);
@@ -805,13 +822,15 @@ async function fetchLiveInfo(code) {
                     const netWorthData = JSON.parse(netWorthMatch[1]);
                     if (netWorthData && netWorthData.length >= 2) {
                         const latest = netWorthData[netWorthData.length - 1];
-                        const prev = netWorthData[netWorthData.length - 2]; // 真正的前一交易日
+                        const prev = netWorthData[netWorthData.length - 2]; // 前一交易日
+                        const prevPrev = netWorthData.length >= 3 ? netWorthData[netWorthData.length - 3] : null; // 前两个交易日
                         const gsz = parseFloat(latest.y) || 0;
                         const dwjz = gsz;
                         const dateStr = latest.x ? timestampToDate(latest.x) : '';
-                        // 前一交易日净值（用于精确计算单日 yesterdayProfit，避免跨日累计）
                         const prevTradingDayPrice = parseFloat(prev.y) || 0;
                         const prevTradingDayDate = prev.x ? timestampToDate(prev.x) : '';
+                        const prevPrevTradingDayPrice = prevPrev ? (parseFloat(prevPrev.y) || 0) : 0;
+                        const prevPrevTradingDayDate = prevPrev ? (prevPrev.x ? timestampToDate(prevPrev.x) : '') : '';
 
                         // 检测分红信息（检查最近30条数据）
                         const dividendList = [];
@@ -853,17 +872,21 @@ async function fetchLiveInfo(code) {
                             price: gsz,
                             prevPrice: dwjz,
                             prevPriceDate: dateStr,
-                            prevTradingDayPrice,  // 前一交易日净值（用于精确单日收益）
+                            prevTradingDayPrice,
                             prevTradingDayDate,
+                            prevPrevTradingDayPrice,  // 前两个交易日净值（分红场景用）
+                            prevPrevTradingDayDate,
                             acNetValue,
-                            dividendList: dividendList,  // 返回分红列表
+                            dividendList,
                             isFallback: true
                         };
                         if (mainResult) {
                             mainResult.acNetValue = acNetValue;
-                            mainResult.dividendList = dividendList;  // 合并分红列表
+                            mainResult.dividendList = dividendList;
                             mainResult.prevTradingDayPrice = prevTradingDayPrice;
                             mainResult.prevTradingDayDate = prevTradingDayDate;
+                            mainResult.prevPrevTradingDayPrice = prevPrevTradingDayPrice;
+                            mainResult.prevPrevTradingDayDate = prevPrevTradingDayDate;
                             return mainResult;
                         }
                         return fallbackResult;
