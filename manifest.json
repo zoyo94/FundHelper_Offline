@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "支付宝基金收益助手",
-  "version": "1.4",
+  "version": "1.6",
   "description": "实时计算基金今日收益，支持OCR识别与手动录入",
   "permissions": [
     "storage"
