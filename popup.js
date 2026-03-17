@@ -354,7 +354,7 @@ async function backupFundsData() {
  */
 function _applySettlementLoop(funds, settlements, todayStr, skipUnchanged = false) {
     let updatedCount = 0;
-    for (const { code, price, prevPriceDate, acNetValue, prevTradingDayPrice, prevTradingDayDate } of settlements) {
+    for (const { code, price, prevPriceDate, acNetValue, prevTradingDayPrice, prevTradingDayDate, dividendList } of settlements) {
         const item = funds[code];
         if (!item || price <= 0) continue;
 
@@ -404,26 +404,46 @@ function _applySettlementLoop(funds, settlements, todayStr, skipUnchanged = fals
         const totalDividend = hasDividend ? round2(shares * dividendPerShare) : 0;
 
         // ── 总区间收益（用于累计 holdProfit）────────────────────────────────
+        // 优先用累计净值差（已含分红），其次用单位净值差+手动补回区间内分红
         let totalPeriodProfit;
         if (hasDividend && acNetValue && baseAcNet) {
+            // acNetValue 可用：累计净值差已包含分红，直接用
             totalPeriodProfit = round2(shares * (acNetValue - baseAcNet));
         } else {
-            totalPeriodProfit = shares > 0 ? round2(shares * (price - basePrice)) : 0;
+            // acNetValue 不可用：单位净值差会漏掉分红，从 dividendList 补回
+            // 找出 savedPrevDate 之后、prevPriceDate 之前（含）的所有分红
+            const savedPrevDStr = item.savedPrevDate || '';
+            let dividendCompensation = 0;
+            if (dividendList && dividendList.length > 0) {
+                for (const div of dividendList) {
+                    if (div.date > savedPrevDStr && div.date <= (prevPriceDate || todayStr)) {
+                        dividendCompensation = round2(dividendCompensation + shares * div.perShare);
+                    }
+                }
+            }
+            totalPeriodProfit = round2(shares * (price - basePrice) + dividendCompensation);
+            if (dividendCompensation !== 0) {
+                console.log(`[结算] ${code}: 补回区间分红 ${dividendCompensation}元 (${savedPrevDStr}→${prevPriceDate})`);
+            }
         }
 
-        // ── 单日昨日收益（仅最后一个交易日的净值差）────────────────────────
-        // 优先使用接口返回的前一交易日净值（prevTradingDayPrice），
-        // 这样即使中间跳过了几天，yesterdayProfit 始终只反映最后一天的变动。
-        // 净值不变时结果为 0，也是正确的。
-        // 若接口未返回该字段（场内/期货），则退化为区间收益。
+        // ── 单日昨日收益 ────────────────────────────────────────────────────────
+        // 思路：prevPriceDate 距今 ≤ 3天（含跨周末）说明昨天有净值，prevTDP 是上一交易日净值
+        // 否则说明最新净值不是昨天的（停牌/净值迟发），昨日收益置 0
         let yesterdayProfit;
-        if (prevTradingDayPrice && prevTradingDayPrice > 0) {
-            // 有前一交易日净值：精确计算单日收益（净值不变则为 0，正确）
-            yesterdayProfit = shares > 0 ? round2(shares * (price - prevTradingDayPrice)) : 0;
-            console.log(`[结算] ${code}: 单日收益=${yesterdayProfit} (${prevTradingDayDate}→${prevPriceDate}: ${prevTradingDayPrice}→${price}), 区间总收益=${totalPeriodProfit}`);
+        if (prevTradingDayPrice > 0 && prevTradingDayDate && prevPriceDate) {
+            const diffDays = Math.round(
+                (new Date(prevPriceDate) - new Date(prevTradingDayDate)) / 86400000
+            );
+            // diffDays ≤ 3：prevTDP 是上一个交易日（含跨周末3天），可用
+            // diffDays > 3：中间有净值空缺，不是真正的"昨日"，置 0
+            if (diffDays > 0 && diffDays <= 3) {
+                yesterdayProfit = shares > 0 ? round2(shares * (price - prevTradingDayPrice)) : 0;
+            } else {
+                yesterdayProfit = 0;
+            }
         } else {
-            // 无前一交易日净值（场内/期货）：退化为区间收益
-            yesterdayProfit = totalPeriodProfit;
+            yesterdayProfit = 0;
         }
 
         // ── 红利再投：增加份额 ────────────────────────────────────────────────
@@ -470,8 +490,9 @@ async function manualSettlement() {
             price: live.prevPrice,
             prevPriceDate: live.prevPriceDate,
             acNetValue: live.acNetValue,
-            prevTradingDayPrice: live.prevTradingDayPrice || 0,  // 前一交易日净值
-            prevTradingDayDate: live.prevTradingDayDate || ''
+            prevTradingDayPrice: live.prevTradingDayPrice || 0,
+            prevTradingDayDate: live.prevTradingDayDate || '',
+            dividendList: live.dividendList || []
         } : null;
     }).filter(Boolean);
     const updatedCount = _applySettlementLoop(funds, settlements, getToday(), false);
@@ -535,8 +556,9 @@ async function autoSettlement(funds, fetchedData, todayStr) {
             price: live.prevPrice,
             prevPriceDate: live.prevPriceDate,
             acNetValue: live.acNetValue,
-            prevTradingDayPrice: live.prevTradingDayPrice || 0,  // 前一交易日净值
-            prevTradingDayDate: live.prevTradingDayDate || ''
+            prevTradingDayPrice: live.prevTradingDayPrice || 0,
+            prevTradingDayDate: live.prevTradingDayDate || '',
+            dividendList: live.dividendList || []
         }));
     const updatedCount = _applySettlementLoop(funds, settlements, todayStr, true);
 
@@ -778,7 +800,7 @@ async function fetchLiveInfo(code) {
             if (extData && extData.includes('fS_name')) {
                 const nameMatch = extData.match(/fS_name\s*=\s*"([^"]+)"/);
                 const name = nameMatch ? nameMatch[1] : `[场外备用]${cleanCode}`;
-                const netWorthMatch = extData.match(/Data_netWorthTrend\s*=\s*(\[.*?\])\s*;/);
+                const netWorthMatch = extData.match(/Data_netWorthTrend\s*=\s*(\[[\s\S]*?\])\s*;/);
                 if (netWorthMatch) {
                     const netWorthData = JSON.parse(netWorthMatch[1]);
                     if (netWorthData && netWorthData.length >= 2) {
@@ -811,7 +833,7 @@ async function fetchLiveInfo(code) {
 
                         // 提取累计净值（用于准确计算收益）
                         let acNetValue = null;
-                        const acMatch = extData.match(/Data_ACWorthTrend\s*=\s*(\[.*?\]);/);
+                        const acMatch = extData.match(/Data_ACWorthTrend\s*=\s*(\[[\s\S]*?\]);/);
                         if (acMatch) {
                             try {
                                 const acData = JSON.parse(acMatch[1]);
@@ -961,7 +983,46 @@ async function _loadDataImpl() {
         }
     }
 
-    // 2. 自动结算逻辑
+    // 2. 先检测分红（在自动结算之前）
+    for (const { code, live } of fetchedData) {
+        if (live && live.dividendList && live.dividendList.length > 0) {
+            const item = funds[code];
+            if (!item) continue;
+
+            for (const dividend of live.dividendList) {
+                const divDate = dividend.date;
+
+                // 关键判断：只处理"添加日期之后"的分红
+                if (item.addedDate && divDate < item.addedDate) {
+                    continue;
+                }
+
+                // 检查是否已经记录过这次分红
+                const existingDiv = item.pendingAdjustments?.find(
+                    adj => isDividendType(adj.type) && adj.targetDate === divDate
+                );
+                if (!existingDiv && item.shares > 0) {
+                    // 自动创建分红记录（默认现金分红）
+                    const totalDividend = round2(item.shares * dividend.perShare);
+                    if (!item.pendingAdjustments) item.pendingAdjustments = [];
+                    item.pendingAdjustments.push({
+                        type: 'dividend',
+                        dividendAmount: totalDividend,
+                        perShare: dividend.perShare,
+                        dividendNavPrice: dividend.navPrice,
+                        targetDate: divDate,
+                        orderDate: getToday(),
+                        status: 'pending',
+                        autoDetected: true
+                    });
+                    showToast(`🔔 检测到 ${code} 分红(${divDate})：每份${dividend.perShare}元，共${totalDividend}元（默认现金分红）`, 'info', 6000);
+                    dataChanged = true;
+                }
+            }
+        }
+    }
+
+    // 3. 自动结算逻辑（在分红检测之后）
     if (lastSettlementDate !== todayStr && !lastSettlementDate?.startsWith('ROLLBACK_')) {
         const needsSettlement = fetchedData.some(({ code, live }) => {
             if (!live || live.prevPrice <= 0) return false;
@@ -974,46 +1035,10 @@ async function _loadDataImpl() {
         }
     }
 
-    // 3. 处理数据 & 自动确认份额
+    // 4. 处理数据 & 自动确认份额
     for (const { code, live } of fetchedData) {
         if (live && live.prevPrice > 0) {
             const item = funds[code];
-
-            // --- 新增：自动检测分红 ---
-            if (live.dividendList && live.dividendList.length > 0) {
-                for (const dividend of live.dividendList) {
-                    const divDate = dividend.date;
-
-                    // 关键判断：只处理"添加日期之后"的分红
-                    // 如果分红日期早于添加日期，说明是添加前的历史分红，不处理
-                    if (item.addedDate && divDate < item.addedDate) {
-                        // 这是添加前的历史分红，忽略
-                        continue;
-                    }
-
-                    // 检查是否已经记录过这次分红
-                    const existingDiv = item.pendingAdjustments?.find(
-                        adj => isDividendType(adj.type) && adj.targetDate === divDate
-                    );
-                    if (!existingDiv && item.shares > 0) {
-                        // 自动创建分红记录（默认现金分红）
-                        const totalDividend = round2(item.shares * dividend.perShare);
-                        if (!item.pendingAdjustments) item.pendingAdjustments = [];
-                        item.pendingAdjustments.push({
-                            type: 'dividend',  // 默认现金分红
-                            dividendAmount: totalDividend,
-                            perShare: dividend.perShare,
-                            dividendNavPrice: dividend.navPrice,  // 保存分红日净值（用于红利再投）
-                            targetDate: divDate,
-                            orderDate: getToday(),  // 检测日期
-                            status: 'pending',
-                            autoDetected: true
-                        });
-                        showToast(`🔔 检测到 ${code} 分红(${divDate})：每份${dividend.perShare}元，共${totalDividend}元（默认现金分红）`, 'info', 6000);
-                        dataChanged = true;
-                    }
-                }
-            }
 
             // --- A. 处理待确认份额（加仓/减仓/分红）---
             if (item.pendingAdjustments && item.pendingAdjustments.length > 0) {
