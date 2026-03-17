@@ -1038,7 +1038,7 @@ async function _loadDataImpl() {
                         status: 'pending',
                         autoDetected: true
                     });
-                    showToast(`🔔 检测到 ${code} 分红(${divDate})：每份${dividend.perShare}元，共${totalDividend}元（默认现金分红）`, 'info', 6000);
+                    showToast(`🔔 ${code}(${live.name || code}) 检测到分红\n日期：${divDate}  净值：${dividend.navPrice}\n每份：${dividend.perShare}元  共：${totalDividend}元（默认现金分红）`, 'info', 8000);
                     dataChanged = true;
                 }
             }
@@ -1111,7 +1111,7 @@ async function _loadDataImpl() {
                             }
                             adj.status = 'confirmed';
                             adj.confirmedDate = todayStr;
-                            showToast(`✅ ${code} 现金分红已确认 (${adj.dividendAmount}元已计入累计收益)`, 'success');
+                            showToast(`✅ ${code} 现金分红已确认\n日期：${adj.targetDate || '-'}  净值：${adj.dividendNavPrice || '-'}\n共：${adj.dividendAmount}元已计入累计收益`, 'success', 6000);
                             dataChanged = true;
                         } else if (adj.type === 'dividend_reinvest') {
                             // 红利再投：份额增加，累计收益不变
