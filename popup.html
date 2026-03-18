@@ -283,6 +283,28 @@
             color: #c8d8f0;
         }
 
+        .dividend-badge {
+            font-size: 10px;
+            color: #fff;
+            background: #fa8c16;
+            padding: 2px 6px;
+            border-radius: 3px;
+            display: inline-block;
+            margin-left: 6px;
+            border: 1px solid #ff9c6e;
+            font-weight: 600;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
+        }
+
         /* 份额列（小窗口隐藏） */
         .sortable {
             cursor: pointer;

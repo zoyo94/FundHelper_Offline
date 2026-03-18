@@ -1,3 +1,15 @@
+// ==================== 配置常量 ====================
+const CONFIG = {
+    BATCH_SIZE: 10,              // API 并发批大小
+    API_TIMEOUT: 8000,           // API 请求超时（ms）
+    BATCH_DELAY: 100,            // 批次间延迟（ms）
+    TRADING_CUTOFF_HOUR: 15,     // 交易截止时间（小时）
+    TOAST_SHORT: 1500,           // 短 toast 时长（ms）
+    TOAST_NORMAL: 3000,          // 普通 toast 时长（ms）
+    TOAST_LONG: 5000,            // 长 toast 时长（ms）
+    DEBOUNCE_DELAY: 800,         // 防抖延迟（ms）
+};
+
 // ==================== 全局状态 ====================
 let currentFundsData = [];
 let sortField = 'todayProfit'; // 默认排序字段
@@ -109,10 +121,49 @@ function formatDateTimeForFile(date = new Date()) {
 }
 
 /**
+ * 计算分红到账日期（D+2，遇周末顺延到周一）
+ * @param {string} dividendDate - 分红日期 YYYY-MM-DD
+ * @returns {string} 到账日期 YYYY-MM-DD
+ */
+function calculateDividendArrivalDate(dividendDate) {
+    const d = new Date(dividendDate);
+    d.setDate(d.getDate() + 2); // D+2
+
+    // 如果到账日是周六(6)，顺延2天到周一
+    // 如果到账日是周日(0)，顺延1天到周一
+    const dayOfWeek = d.getDay();
+    if (dayOfWeek === 6) {
+        d.setDate(d.getDate() + 2);
+    } else if (dayOfWeek === 0) {
+        d.setDate(d.getDate() + 1);
+    }
+
+    return formatDate(d);
+}
+
+/**
  * 时间戳转日期字符串 YYYY-MM-DD
  */
 function timestampToDate(timestamp) {
     return formatDate(new Date(timestamp));
+}
+
+/**
+ * 防抖函数
+ * @param {Function} func - 要防抖的函数
+ * @param {number} wait - 等待时间（毫秒）
+ * @returns {Function} 防抖后的函数
+ */
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
 }
 
 /**
@@ -217,7 +268,7 @@ const notificationCenter = {
  * 显示底部 Toast 提示（同时添加到通知中心）
  * 优化：确保 toast 元素正确移除，防止内存泄漏
  */
-function showToast(msg, type = 'info', duration = 3000) {
+function showToast(msg, type = 'info', duration = CONFIG.TOAST_NORMAL) {
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.textContent = msg;
@@ -429,29 +480,14 @@ function _applySettlementLoop(funds, settlements, todayStr, skipUnchanged = fals
 
         // ── 单日昨日收益 ────────────────────────────────────────────────────────
         // prevPriceDate - prevTradingDayDate ≤ 3天：正常相邻交易日（含跨周末），可算昨日
-        // 若 prevTradingDayDate 当天有分红：
-        //   微众app算法 = shares × (price - (分红前一日净值 - 每份分红))
-        //   = shares × (price - prevPrevTDP)  其中 prevPrevTDP 是倒数第3条净值（分红前一日）
-        //   注：不能用 prevTDP + divPerShare，因为浮点加法结果不准确
-        // 若无分红：正常用 price - prevTDP
+        // 直接用净值差计算，NAV已自动反映分红影响（分红日NAV会下跌相应金额）
         let yesterdayProfit;
         if (prevTradingDayPrice > 0 && prevTradingDayDate && prevPriceDate) {
             const diffDays = Math.round(
                 (new Date(prevPriceDate) - new Date(prevTradingDayDate)) / 86400000
             );
             if (diffDays > 0 && diffDays <= 3) {
-                // 检查 prevTradingDayDate 当天是否有分红
-                const hasDivOnPrevTD = dividendList && dividendList.some(d => d.date === prevTradingDayDate);
-                if (hasDivOnPrevTD && prevPrevTradingDayPrice > 0) {
-                    // 分红当天：微众app算法 = shares × (price - (前一日净值 - 每份分红))
-                    // 用整数运算避免浮点精度问题
-                    const divOnPrevTD = dividendList.find(d => d.date === prevTradingDayDate);
-                    const adjustedBase = (Math.round(prevPrevTradingDayPrice * 10000) - Math.round(divOnPrevTD.perShare * 10000)) / 10000;
-                    yesterdayProfit = shares > 0 ? round2(shares * (price - adjustedBase)) : 0;
-                    console.log(`[结算] ${code}: 分红昨日调整基准=${adjustedBase}(${prevPrevTradingDayDate}-${divOnPrevTD.perShare}), yesterdayProfit=${yesterdayProfit}`);
-                } else {
-                    yesterdayProfit = shares > 0 ? round2(shares * (price - prevTradingDayPrice)) : 0;
-                }
+                yesterdayProfit = shares > 0 ? round2(shares * (price - prevTradingDayPrice)) : 0;
             } else {
                 yesterdayProfit = 0; // 停牌/净值空缺，无有效昨日
             }
@@ -988,21 +1024,20 @@ async function _loadDataImpl() {
     const results = [];
     const todayStr = getToday();
 
-    // 1. 获取行情数据 - 优化：批量并发请求（每批10个）
-    const BATCH_SIZE = 10;
+    // 1. 获取行情数据 - 优化：批量并发请求
     const fetchedData = [];
-    for (let i = 0; i < codes.length; i += BATCH_SIZE) {
-        const batch = codes.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < codes.length; i += CONFIG.BATCH_SIZE) {
+        const batch = codes.slice(i, i + CONFIG.BATCH_SIZE);
         const batchResults = await Promise.all(
             batch.map(code =>
-                withTimeout(fetchLiveInfo(code), 8000, { name: '[超时]' + code, rate: 0, price: 0, prevPrice: 0 })
+                withTimeout(fetchLiveInfo(code), CONFIG.API_TIMEOUT, { name: '[超时]' + code, rate: 0, price: 0, prevPrice: 0 })
                     .then(live => ({ code, live }))
             )
         );
         fetchedData.push(...batchResults);
         // 批次间短暂延迟，避免请求过于密集
-        if (i + BATCH_SIZE < codes.length) {
-            await new Promise(r => setTimeout(r, 100));
+        if (i + CONFIG.BATCH_SIZE < codes.length) {
+            await new Promise(r => setTimeout(r, CONFIG.BATCH_DELAY));
         }
     }
 
@@ -1027,19 +1062,31 @@ async function _loadDataImpl() {
                 if (!existingDiv && item.shares > 0) {
                     // 自动创建分红记录（默认现金分红）
                     const totalDividend = round2(item.shares * dividend.perShare);
+                    const arrivalDate = calculateDividendArrivalDate(divDate);
                     if (!item.pendingAdjustments) item.pendingAdjustments = [];
+
+                    // 如果到账日 < 今天，说明已经到账，直接创建为 confirmed 状态
+                    const isArrived = arrivalDate < todayStr;
+
                     item.pendingAdjustments.push({
                         type: 'dividend',
                         dividendAmount: totalDividend,
                         perShare: dividend.perShare,
                         dividendNavPrice: dividend.navPrice,
-                        targetDate: divDate,
+                        dividendDate: divDate,  // 分红日期
+                        targetDate: arrivalDate,  // 到账日期（D+1，遇周末顺延）
                         orderDate: getToday(),
-                        status: 'pending',
+                        status: isArrived ? 'confirmed' : 'pending',
+                        confirmedDate: isArrived ? todayStr : undefined,
                         autoDetected: true
                     });
+
                     // 改为只在通知中心记录，不弹 toast
-                    notificationCenter.add(`检测到 ${code} 分红：${divDate}，每份${dividend.perShare}元，共${totalDividend}元`, 'info');
+                    if (isArrived) {
+                        notificationCenter.add(`检测到 ${code} 分红：${divDate}，每份${dividend.perShare}元，共${totalDividend}元（已到账）`, 'success');
+                    } else {
+                        notificationCenter.add(`检测到 ${code} 分红：${divDate}，每份${dividend.perShare}元，共${totalDividend}元，预计${arrivalDate}到账`, 'info');
+                    }
                     dataChanged = true;
                 }
             }
@@ -1076,7 +1123,7 @@ async function _loadDataImpl() {
             if (item.pendingAdjustments && item.pendingAdjustments.length > 0) {
                 for (const adj of item.pendingAdjustments) {
                     if (adj.status === 'confirmed') continue;
-                    if (todayStr >= adj.targetDate) {
+                    if (todayStr > adj.targetDate) {
                         if (adj.type === 'add') {
                             const actualRate = (adj.feeRate || 0) / 100;
                             const price = live.prevPrice;
@@ -2163,6 +2210,17 @@ function renderTable() {
         nameSpan.className = 'fund-name';
         nameSpan.title = item.name;
         nameSpan.textContent = item.name;
+        // 检查是否有待确认的分红
+        const hasPendingDividend = item.pendingAdjustments && item.pendingAdjustments.some(
+            adj => (adj.type === 'dividend' || adj.type === 'dividend_reinvest') && adj.status === 'pending'
+        );
+        if (hasPendingDividend) {
+            const dividendBadge = document.createElement('span');
+            dividendBadge.className = 'dividend-badge';
+            dividendBadge.textContent = '分红';
+            dividendBadge.title = '该基金有待确认的分红，数据可能不准确';
+            tdName.appendChild(dividendBadge);
+        }
         const groupSpan = document.createElement('span');
         groupSpan.className = 'group-tag';
         groupSpan.dataset.code = item.code;
@@ -2307,9 +2365,23 @@ function renderTable() {
             openFundEditor(code);
         }
     };
-    // 绑定可编辑单元格事件
+    // 绑定可编辑单元格事件（使用防抖优化）
+    const debouncedSave = debounce(async (code, field, val) => {
+        const { myFunds } = await storage.get(['myFunds']);
+        const funds = myFunds || {};
+        if (funds[code]) {
+            if (funds[code][field] === val) return;
+            funds[code][field] = val;
+            const localItem = currentFundsData.find(f => f.code === code);
+            if (localItem) localItem[field] = val;
+            await storage.set({ myFunds: funds });
+            showToast('已保存', 'success', CONFIG.TOAST_SHORT);
+            renderTable();
+        }
+    }, CONFIG.DEBOUNCE_DELAY);
+
     elements.tableBody.querySelectorAll('.editable-cell').forEach(cell => {
-        cell.onblur = async () => {
+        cell.onblur = () => {
             const code = cell.dataset.code;
             const field = cell.dataset.field;
             const valStr = cell.textContent.trim();
@@ -2319,17 +2391,7 @@ function renderTable() {
                 renderTable(); // 恢复显示值，无需重新请求网络
                 return;
             }
-            const { myFunds } = await storage.get(['myFunds']);
-            const funds = myFunds || {};
-            if (funds[code]) {
-                if (funds[code][field] === val) return;
-                funds[code][field] = val;
-                const localItem = currentFundsData.find(f => f.code === code);
-                if (localItem) localItem[field] = val;
-                await storage.set({ myFunds: funds });
-                showToast('已保存', 'success', 1500);
-                renderTable();
-            }
+            debouncedSave(code, field, val);
         };
         cell.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); cell.blur(); } };
     });
