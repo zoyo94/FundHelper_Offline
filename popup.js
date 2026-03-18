@@ -1221,12 +1221,27 @@ async function _loadDataImpl() {
                 todayProfit = null;
             }
             const totalProfit = round2((item.holdProfit || 0) + (todayProfit || 0));
-            // --- D. 构造结果集 ---
+
+            // --- D. 计算待确认分红金额（pending 状态的分红） ---
+            let pendingDividendAmount = 0;
+            if (item.pendingAdjustments && item.pendingAdjustments.length > 0) {
+                item.pendingAdjustments.forEach(adj => {
+                    if (isDividendType(adj.type) && adj.status === 'pending') {
+                        pendingDividendAmount += adj.dividendAmount || 0;
+                    }
+                });
+            }
+
+            // --- E. 构造结果集 ---
+            // 分红期间：持仓金额和昨日收益需要加上待确认分红
+            const displayAmount = round2((item.amount || 0) + pendingDividendAmount);
+            const displayYesterdayProfit = round2((item.yesterdayProfit || 0) + pendingDividendAmount);
+
             results.push({
                 code,
                 name: live.name,
-                amount: item.amount || 0,
-                yesterdayProfit: item.yesterdayProfit || 0,
+                amount: displayAmount,
+                yesterdayProfit: displayYesterdayProfit,
                 group: item.group || '默认',
                 rate: live.rate,
                 prevPrice: live.prevPrice || 0,
@@ -1241,7 +1256,8 @@ async function _loadDataImpl() {
                 acNetValue: live.acNetValue || null,
                 prevTradingDayPrice: live.prevTradingDayPrice || 0,
                 prevTradingDayDate: live.prevTradingDayDate || '',
-                pendingAdjustments: item.pendingAdjustments
+                pendingAdjustments: item.pendingAdjustments,
+                pendingDividendAmount  // 用于调试和显示
             });
         }
     }
