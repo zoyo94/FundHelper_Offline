@@ -303,6 +303,17 @@ Background 会自动添加必需的请求头。
 
 ## 最近更新
 
+### v1.7.2 bug修复（2026-03-20）
+- 🔧 **Chrome Storage API错误处理**：添加 `chrome.runtime.lastError` 检查，防止Promise永久pending
+- 🔧 **数值格式化函数安全性**：为 `round2()`、`round6()`、`formatProfit()` 添加类型检查和默认值处理
+- 🔧 **日期计算健壮性**：`calculateDividendArrivalDate()` 增加输入验证和fallback逻辑
+- 🔧 **API数据解析改进**：新浪API数据解析增加数据验证，防止解析无效数据
+- 🔧 **基础价格计算优化**：修复除零错误和undefined值处理，确保价格计算安全
+- 🔧 **分红数据验证**：为分红列表数组操作添加结构验证，防止无效数据导致错误
+- 🔧 **统一错误处理**：为 `_loadDataImpl()` 添加comprehensive错误捕获和用户反馈
+- 🔧 **通用错误包装器**：新增 `withErrorHandling()` 函数，标准化异常处理流程
+- ✅ **整体稳定性提升**：9个关键bug修复，大幅提升应用健壮性和错误恢复能力
+
 ### v1.7.1 修复（2026-03-18）
 - 🐛 简化昨日收益计算逻辑，移除分红特殊处理
 - 💡 统一使用净值差计算：`shares × (price - prevTradingDayPrice)`

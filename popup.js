@@ -61,38 +61,66 @@ let elements = {};  // populated in DOMContentLoaded
 // ==================== 工具函数 ====================
 
 /**
- * 统一的 storage 访问层（Promise 化）
+ * 统一的 storage 访问层（Promise 化，带错误处理）
  */
 const storage = {
     async get(keys) {
-        return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.get(keys, (result) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(`Storage get error: ${chrome.runtime.lastError.message}`));
+                } else {
+                    resolve(result);
+                }
+            });
+        });
     },
     async set(data) {
-        return new Promise(resolve => chrome.storage.local.set(data, resolve));
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.set(data, () => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(`Storage set error: ${chrome.runtime.lastError.message}`));
+                } else {
+                    resolve();
+                }
+            });
+        });
     }
 };
 
 /**
- * 数值格式化工具（保留 2 位小数）
+ * 数值格式化工具（保留 2 位小数，带类型检查）
  */
 function round2(num) {
+    if (typeof num !== 'number' || isNaN(num)) {
+        console.warn('round2: 输入不是有效数字:', num);
+        return 0;
+    }
     return parseFloat(num.toFixed(2));
 }
 
 /**
- * 数值格式化工具（保留 6 位小数，用于份额计算）
+ * 数值格式化工具（保留 6 位小数，用于份额计算，带类型检查）
  */
 function round6(num) {
+    if (typeof num !== 'number' || isNaN(num)) {
+        console.warn('round6: 输入不是有效数字:', num);
+        return 0;
+    }
     return parseFloat(num.toFixed(6));
 }
 
 /**
- * 格式化收益显示（带正负号，保留 2 位小数）
+ * 格式化收益显示（带正负号，保留 2 位小数，带类型检查）
  * @param {number} num - 数值
  * @param {string} suffix - 后缀（如 '%'）
  * @returns {string} 格式化后的字符串
  */
 function formatProfit(num, suffix = '') {
+    if (typeof num !== 'number' || isNaN(num)) {
+        console.warn('formatProfit: 输入不是有效数字:', num);
+        return `+0.00${suffix}`;
+    }
     return `${num >= 0 ? '+' : ''}${num.toFixed(2)}${suffix}`;
 }
 
@@ -134,7 +162,17 @@ function formatDateTimeForFile(date = new Date()) {
  * @returns {string} 到账日期 YYYY-MM-DD
  */
 function calculateDividendArrivalDate(dividendDate) {
+    if (!dividendDate || typeof dividendDate !== 'string') {
+        console.error('calculateDividendArrivalDate: 无效的分红日期:', dividendDate);
+        return getToday(); // 返回今天作为fallback
+    }
+
     const d = new Date(dividendDate);
+    if (isNaN(d.getTime())) {
+        console.error('calculateDividendArrivalDate: 无法解析的日期格式:', dividendDate);
+        return getToday(); // 返回今天作为fallback
+    }
+
     d.setDate(d.getDate() + 2); // D+2
 
     // 如果到账日是周六(6)，顺延2天到周一
@@ -171,6 +209,28 @@ function debounce(func, wait) {
         };
         clearTimeout(timeout);
         timeout = setTimeout(later, wait);
+    };
+}
+
+/**
+ * 通用错误处理包装器
+ * @param {Function} fn - 要包装的异步函数
+ * @param {string} context - 错误上下文描述
+ * @returns {Function} 包装后的函数
+ */
+function withErrorHandling(fn, context) {
+    return async function(...args) {
+        try {
+            return await fn.apply(this, args);
+        } catch (error) {
+            console.error(`[${context}] 操作失败:`, error);
+            showToast(`${context}失败: ${error.message}`, 'error');
+
+            // 将错误信息添加到通知中心
+            notificationCenter.add(`${context}时发生错误: ${error.message}`, 'error');
+
+            return null; // 返回默认值，避免后续代码崩溃
+        }
     };
 }
 
@@ -435,7 +495,16 @@ async function backupFundsData() {
  */
 function detectDividendAndProfit(fund, priceUpdate, shares) {
     const { price, acNetValue, prevPriceDate, dividendList } = priceUpdate;
-    const basePrice = fund.savedPrevPrice || (shares > 0 ? (fund.amount / shares) : price);
+
+    // 安全的基础价格计算：确保不会出现除零或undefined错误
+    let basePrice = fund.savedPrevPrice;
+    if (!basePrice && shares > 0 && fund.amount > 0) {
+        basePrice = fund.amount / shares;
+    }
+    if (!basePrice || basePrice <= 0) {
+        basePrice = price; // fallback到当前价格
+    }
+
     const baseAcNet = fund.savedAcNetValue || null;
     const savedPrevDate = fund.savedPrevDate || '';
 
@@ -452,9 +521,9 @@ function detectDividendAndProfit(fund, priceUpdate, shares) {
         }
     }
     // 2. 兜底方案：累计净值不可用时，从分红列表补回分红金额
-    else if (dividendList && dividendList.length > 0) {
+    else if (dividendList && Array.isArray(dividendList) && dividendList.length > 0) {
         for (const div of dividendList) {
-            if (div.date > savedPrevDate && div.date <= (prevPriceDate || '')) {
+            if (div && div.date && div.perShare && div.date > savedPrevDate && div.date <= (prevPriceDate || '')) {
                 dividendPerShare = round6(dividendPerShare + div.perShare);
             }
         }
@@ -513,7 +582,14 @@ function _applySettlementLoop(funds, priceUpdates, todayStr, skipUnchanged = fal
             continue;
         }
 
-        const basePrice = item.savedPrevPrice || (shares > 0 ? (item.amount / shares) : price);
+        // 安全的基础价格计算：确保不会出现除零或undefined错误
+        let basePrice = item.savedPrevPrice;
+        if (!basePrice && shares > 0 && item.amount > 0) {
+            basePrice = item.amount / shares;
+        }
+        if (!basePrice || basePrice <= 0) {
+            basePrice = price; // fallback到当前价格
+        }
         const baseAcNet = item.savedAcNetValue || null;
 
         // 净值无变化时：仍需更新 yesterdayProfit=0 和 savedPrevPrice/Date，
@@ -1036,17 +1112,23 @@ async function fetchLiveInfo(code) {
             const url = `https://hq.sinajs.cn/list=${p}${cleanCode}`;
             // proxyFetchSina 内部已经有日志了，这里不需要重复加
             const data = await proxyFetchSina(url);
-            if (data && data.split(',').length > 10) {
+            if (data && typeof data === 'string') {
                 const parts = data.split(',');
-                const cur = parseFloat(parts[3]) || 0;
-                const pre = parseFloat(parts[2]) || 0;
-                const rate = pre !== 0 ? round2((cur - pre) / pre * 100) : 0;
-                return {
-                    name: '[场]' + (parts[0] || cleanCode),
-                    rate: rate,
-                    price: cur,
-                    prevPrice: pre
-                };
+                if (parts.length > 10) {
+                    const cur = parseFloat(parts[3]);
+                    const pre = parseFloat(parts[2]);
+
+                    // 验证解析出的数值是否有效
+                    if (!isNaN(cur) && !isNaN(pre) && cur > 0 && pre > 0) {
+                        const rate = round2((cur - pre) / pre * 100);
+                        return {
+                            name: '[场]' + (parts[0] || cleanCode),
+                            rate: rate,
+                            price: cur,
+                            prevPrice: pre
+                        };
+                    }
+                }
             }
         } catch (e) {
             console.warn(`场内基金解析失败 ${cleanCode}:`, e);
@@ -1057,18 +1139,22 @@ async function fetchLiveInfo(code) {
         const url = `https://hq.sinajs.cn/list=nf_${cleanCode.toUpperCase()}`;
         // proxyFetchSina 内部已经有日志了
         const fut = await proxyFetchSina(url);
-        if (fut) {
+        if (fut && typeof fut === 'string') {
             const parts = fut.split(',');
             if (parts.length > 10) {
-                const cur = parseFloat(parts[8]) || 0;
-                const pre = parseFloat(parts[5]) || 0;
-                const rate = pre !== 0 ? round2((cur - pre) / pre * 100) : 0;
-                return {
-                    name: '[期]' + (parts[0] || cleanCode),
-                    rate: rate,
-                    price: cur,
-                    prevPrice: pre
-                };
+                const cur = parseFloat(parts[8]);
+                const pre = parseFloat(parts[5]);
+
+                // 验证解析出的数值是否有效
+                if (!isNaN(cur) && !isNaN(pre) && cur > 0 && pre > 0) {
+                    const rate = round2((cur - pre) / pre * 100);
+                    return {
+                        name: '[期]' + (parts[0] || cleanCode),
+                        rate: rate,
+                        price: cur,
+                        prevPrice: pre
+                    };
+                }
             }
         }
     } catch (e) {
@@ -1105,9 +1191,10 @@ async function loadData() {
 }
 
 async function _loadDataImpl() {
-    clearSelection();
-    elements.status.innerText = '同步行情中...';
-    apiLogger.reset();
+    try {
+        clearSelection();
+        elements.status.innerText = '同步行情中...';
+        apiLogger.reset();
 
     const { myFunds, lastSettlementDate } = await storage.get(['myFunds', 'lastSettlementDate']);
     let funds = myFunds || {};
@@ -1145,6 +1232,12 @@ async function _loadDataImpl() {
             if (!item) continue;
 
             for (const dividend of live.dividendList) {
+                // 验证分红对象结构
+                if (!dividend || !dividend.date || typeof dividend.perShare !== 'number') {
+                    console.warn('跳过无效的分红记录:', dividend);
+                    continue;
+                }
+
                 const divDate = dividend.date;
 
                 // 关键判断：只处理"添加日期之后"的分红
@@ -1414,6 +1507,16 @@ async function _loadDataImpl() {
     renderTable();
     lastUpdateTime = new Date().toLocaleTimeString();
     elements.status.innerText = `最后更新: ${lastUpdateTime}`;
+    } catch (error) {
+        console.error('[_loadDataImpl] 数据加载失败:', error);
+        showToast(`数据加载失败: ${error.message}`, 'error');
+        elements.status.innerText = '数据加载失败，请重试';
+
+        // 确保在错误情况下也显示一个基本的空表格
+        if (allFundsData.length === 0) {
+            renderTable();
+        }
+    }
 }
 
 // ==================== 批量操作核心逻辑 ====================

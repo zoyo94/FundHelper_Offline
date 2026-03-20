@@ -186,21 +186,41 @@ FundHelper_Offline/
 
 ### 代码优化亮点
 
-#### 1. 统一的 Storage 访问层
+#### 1. 统一的 Storage 访问层（带错误处理）
 ```javascript
 const storage = {
     async get(keys) {
-        return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.get(keys, (result) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(`Storage get error: ${chrome.runtime.lastError.message}`));
+                } else {
+                    resolve(result);
+                }
+            });
+        });
     },
     async set(data) {
-        return new Promise(resolve => chrome.storage.local.set(data, resolve));
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.set(data, () => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(`Storage set error: ${chrome.runtime.lastError.message}`));
+                } else {
+                    resolve();
+                }
+            });
+        });
     }
 };
 ```
 
-#### 2. 数值格式化工具
+#### 2. 数值格式化工具（带类型检查）
 ```javascript
 function round2(num) {
+    if (typeof num !== 'number' || isNaN(num)) {
+        console.warn('round2: 输入不是有效数字:', num);
+        return 0;
+    }
     return parseFloat(num.toFixed(2));
 }
 ```
@@ -271,7 +291,7 @@ function round2(num) {
 {
   "manifest_version": 3,
   "name": "FundHelper Offline",
-  "version": "1.4",
+  "version": "1.7.2",
   "permissions": [
     "storage",           // 本地存储
     "unlimitedStorage"   // 无限存储空间
@@ -338,6 +358,37 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
 ---
 
 ## 📝 更新日志
+
+### v1.7.2 (2026-03-20) - 稳定性大幅提升
+- 🔧 **Chrome Storage API错误处理**：添加完善的错误捕获，防止数据操作失败
+- 🔧 **数值格式化安全性**：为所有数值处理函数添加类型检查，防止NaN错误
+- 🔧 **日期计算健壮性**：分红到账日期计算增加输入验证和异常处理
+- 🔧 **API数据解析改进**：新浪API数据解析增加严格验证，避免解析无效数据
+- 🔧 **价格计算优化**：修复除零错误和undefined值处理，确保计算安全
+- 🔧 **分红数据验证**：为分红列表操作添加结构验证，防止数据异常
+- 🔧 **统一错误处理**：为核心数据加载函数添加完整的错误捕获和用户反馈
+- 🔧 **错误处理框架**：新增通用错误包装器，标准化异常处理流程
+- ✅ **整体稳定性**：修复9个关键bug，大幅提升应用健壮性和错误恢复能力
+
+### v1.7.1 (2026-03-18)
+- 🐛 简化昨日收益计算逻辑，移除分红特殊处理
+- 💡 统一使用净值差计算：`shares × (price - prevTradingDayPrice)`
+- 📝 NAV已自动反映分红影响，无需额外调整
+
+### v1.7 (2026-03-17) - 用户体验优化
+- ✨ **合并交易确认通知**：多笔待确认交易合并显示，避免通知轰炸
+- 🔇 **分红检测静默处理**：改为只在通知中心记录，不弹长时间toast
+- ⚡ **简化编辑流程**：删除冗余的净值获取提示，只在保存时反馈
+- 🔧 **统一批量操作确认**：提取通用确认函数，改善用户体验
+- 🐛 **修复分红双重计算**：智能检查结算日期，避免分红被重复计入或漏掉
+
+### v1.6 (2026-03-17) - 代码优化
+- 🛠️ `round6(num)` - 份额计算（保留6位小数）
+- 🎨 `formatProfit(num, suffix)` - 收益格式化（自动添加正负号）
+- ⏰ `formatTime(date)` - 时间格式化 HH:MM
+- 📁 `formatDateTimeForFile(date)` - 文件名时间格式
+- 🔧 代码简化：统一使用工具函数，优化38处重复代码
+- 🐛 分红逻辑修复：调整执行顺序，分红检测在自动结算之前
 
 ### v1.4 (2026-03-12)
 - ✨ 新增走势数据持久化，刷新页面不丢失
