@@ -69,15 +69,22 @@ const storage = {
 
 - **Storage 访问**：使用 `storage.get()` / `storage.set()`（禁止直接用 `chrome.storage.local`）
 - **数值格式化**：
-  - 使用 `round2(num)` 处理所有金额（保留 2 位小数）
-  - 使用 `round6(num)` 处理所有份额（保留 6 位小数）
-  - 使用 `formatProfit(num, suffix)` 格式化收益显示（自动添加正负号）
+  - 使用 `round2(num)` 处理所有金额（保留 2 位小数，带类型检查）
+  - 使用 `round6(num)` 处理所有份额（保留 6 位小数，带类型检查）
+  - 使用 `formatProfit(num, suffix)` 格式化收益显示（自动添加正负号，带类型检查）
 - **日期时间格式化**：
   - 使用 `getToday()` 获取 YYYY-MM-DD 格式字符串
   - 使用 `formatDate(date)` 格式化日期为 YYYY-MM-DD
   - 使用 `formatTime(date)` 格式化时间为 HH:MM
   - 使用 `formatDateTimeForFile(date)` 格式化为文件名格式 YYYYMMDD_HHMM
-- **用户反馈**：使用 `showToast(msg, type)` 显示通知
+  - 使用 `calculateDividendArrivalDate(divDate)` 计算分红到账日期（D+2工作日，遇周末顺延）
+- **分红相关**：
+  - 使用 `isDividendType(type)` 判断是否为分红类型（'dividend' 或 'dividend_reinvest'）
+- **错误处理**：
+  - 使用 `withErrorHandling(fn, context)` 包装异步函数，提供统一错误处理
+  - 使用 `showToast(msg, type)` 显示用户通知
+- **通知中心**：
+  - 使用 `notificationCenter.add(msg, type)` 添加通知记录
 
 ### 全面使用 Async/Await
 
@@ -97,22 +104,37 @@ chrome.storage.local.get(['myFunds'], (result) => { ... });
 {
   "005827": {
     amount: 10000.00,              // 当前持仓金额
-    shares: 9523.81,               // 当前持有份额
-    holdProfit: 1234.56,           // 累计收益
-    yesterdayProfit: 123.45,       // 昨日收益
+    shares: 9523.81,               // 当前持有份额 (保留6位小数)
+    holdProfit: 1234.56,           // 累计收益 (历史总盈亏)
+    yesterdayProfit: 123.45,       // 昨日收益 (上次结算的单日收益)
     group: "股票型",                // 分组名称
-    savedPrevPrice: 1.0500,        // 上次结算净值
+    dividendMode: "cash",          // 分红方式: "cash"(现金分红) | "reinvest"(红利再投)
+    savedPrevPrice: 1.0500,        // 上次结算净值 (结算基准价格)
     savedPrevDate: "2026-03-11",   // 上次结算日期
+    savedAcNetValue: 1.0520,       // 上次结算累计净值 (用于分红检测)
+    addedDate: "2026-03-01",       // 资产添加日期 (用于过滤历史分红)
     pendingAdjustments: [          // T+1/T+2 待确认交易
       {
-        type: "add",               // "add" 或 "remove"
+        type: "add",               // "add"(加仓) | "remove"(减仓) | "dividend"(分红) | "dividend_reinvest"(红利再投)
         amount: 1000,              // 买入金额（加仓时）
         shares: 100,               // 卖出份额（减仓时）
         feeRate: 0.15,             // 费率 %
         targetDate: "2026-03-13",  // 确认日期
         orderDate: "2026-03-12",   // 下单日期
         orderNav: 1.0500,          // 下单净值
-        status: "pending"          // "pending" 或 "confirmed"
+        status: "pending",         // "pending" 或 "confirmed"
+
+        // 分红专有字段
+        dividendAmount: 50.25,     // 分红金额 (总额)
+        perShare: 0.0053,          // 每份分红 (元/份)
+        dividendNavPrice: 1.0500,  // 分红日净值
+        dividendDate: "2026-03-10", // 分红日期 (权益登记日)
+        autoDetected: true,        // 自动检测标记
+
+        // 确认后添加的字段
+        confirmedPrice: 1.0520,    // 确认时净值
+        confirmedShares: 952.38,   // 确认份额 (加仓时) 或再投份额 (红利再投时)
+        confirmedDate: "2026-03-13" // 实际确认日期
       }
     ]
   }
@@ -378,15 +400,23 @@ Background 会自动添加必需的请求头。
 
 - [ ] Popup 打开时无控制台错误
 - [ ] 关闭/重开 popup 后数据持久化
+- [ ] Storage 操作异常时有错误提示（不会静默失败）
+- [ ] 数值格式化函数对非数字输入安全处理
+- [ ] API 返回无效数据时不会导致解析错误
 - [ ] 结算计算正确（特别是分红场景）
 - [ ] 分红检测在自动结算之前执行
 - [ ] 分红不会被误判为亏损
+- [ ] 分红数据结构验证正常工作
+- [ ] 加仓/减仓/分红的 T+1/T+2 确认机制正常
+- [ ] 红利再投和现金分红模式切换正常
+- [ ] 通知中心正确记录各类操作和错误
 - [ ] OCR 批量添加正常工作（如有修改）
 - [ ] 走势数据刷新后保留（如有修改）
 - [ ] Background 代理新浪 API 正常（如有修改）
 - [ ] 多选和批量操作正常
 - [ ] Toast 通知正确显示
 - [ ] Modal 对话框正确 resolve
+- [ ] 错误情况下应用不会崩溃，有友好提示
 
 ## 常见问题排查
 

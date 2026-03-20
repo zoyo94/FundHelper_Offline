@@ -244,27 +244,96 @@ function round2(num) {
 ```javascript
 {
   "005827": {
-    "amount": 10000.00,              // 持仓金额
-    "shares": 9523.81,               // 持有份额
-    "holdProfit": 1234.56,           // 累计收益
-    "yesterdayProfit": 123.45,       // 昨日收益
+    "amount": 10000.00,              // 当前持仓金额
+    "shares": 9523.81,               // 当前持有份额 (保留6位小数)
+    "holdProfit": 1234.56,           // 累计收益 (历史总盈亏)
+    "yesterdayProfit": 123.45,       // 昨日收益 (上次结算的单日收益)
     "group": "股票型",                // 分组名称
-    "savedPrevPrice": 1.0500,        // 上次结算净值
+    "dividendMode": "cash",          // 分红方式: "cash"(现金分红) | "reinvest"(红利再投)
+    "savedPrevPrice": 1.0500,        // 上次结算净值 (结算基准价格)
     "savedPrevDate": "2026-03-11",   // 上次结算日期
-    "pendingAdjustments": [          // 待确认交易
+    "savedAcNetValue": 1.0520,       // 上次结算累计净值 (用于分红检测)
+    "addedDate": "2026-03-01",       // 资产添加日期 (用于过滤历史分红)
+    "pendingAdjustments": [          // 待确认交易记录
       {
-        "type": "add",               // 交易类型: add/remove
+        // 加仓记录
+        "type": "add",               // 交易类型
         "amount": 1000,              // 买入金额
-        "feeRate": 0.15,             // 费率
-        "targetDate": "2026-03-13",  // 确认日期
+        "feeRate": 0.15,             // 申购费率 (%)
+        "targetDate": "2026-03-13",  // 确认日期 (T+1/T+2)
         "orderDate": "2026-03-12",   // 下单日期
-        "orderNav": 1.0500,          // 下单净值
-        "status": "pending"          // 状态: pending/confirmed
+        "orderNav": 1.0500,          // 下单时净值
+        "status": "pending",         // 状态: "pending" | "confirmed"
+        "confirmedPrice": 1.0520,    // 确认时净值 (确认后)
+        "confirmedShares": 952.38,   // 确认份额 (确认后)
+        "confirmedDate": "2026-03-13" // 确认日期 (确认后)
+      },
+      {
+        // 减仓记录
+        "type": "remove",
+        "shares": 500,               // 赎回份额
+        "feeRate": 0.5,              // 赎回费率 (%)
+        "targetDate": "2026-03-15",
+        "orderDate": "2026-03-14",
+        "orderNav": 1.0600,
+        "status": "pending"
+      },
+      {
+        // 分红记录 (自动检测)
+        "type": "dividend",
+        "dividendAmount": 50.25,     // 分红金额 (总额)
+        "perShare": 0.0053,          // 每份分红 (元/份)
+        "dividendNavPrice": 1.0500,  // 分红日净值
+        "dividendDate": "2026-03-10", // 分红日期 (权益登记日)
+        "targetDate": "2026-03-12",  // 到账日期 (D+2工作日)
+        "orderDate": "2026-03-11",   // 记录日期
+        "status": "pending",
+        "autoDetected": true,        // 自动检测标记
+        "confirmedDate": "2026-03-12" // 确认到账日期 (确认后)
+      },
+      {
+        // 红利再投记录
+        "type": "dividend_reinvest",
+        "dividendAmount": 30.15,
+        "perShare": 0.0032,
+        "dividendNavPrice": 1.0480,
+        "dividendDate": "2026-02-28",
+        "targetDate": "2026-03-02",
+        "status": "confirmed",
+        "autoDetected": true,
+        "confirmedDate": "2026-03-02",
+        "reinvestShares": 28.77      // 再投资份额 (确认后)
       }
     ]
   }
 }
 ```
+
+### pendingAdjustments 交易类型详解
+
+#### 1. 加仓 (type: "add")
+- `amount`: 买入金额
+- `feeRate`: 申购费率 (%)
+- `orderNav`: 下单时净值 (参考)
+- 确认后自动增加 `shares` 和 `amount`
+
+#### 2. 减仓 (type: "remove")
+- `shares`: 赎回份额
+- `feeRate`: 赎回费率 (%)
+- `orderNav`: 下单时净值 (参考)
+- 确认后自动减少 `shares` 和 `amount`，扣减手续费
+
+#### 3. 现金分红 (type: "dividend")
+- `dividendAmount`: 分红总金额
+- `perShare`: 每份分红金额
+- `dividendDate`: 权益登记日 (分红日)
+- `targetDate`: 到账日期 (D+2工作日，遇周末顺延)
+- `autoDetected`: 是否为系统自动检测
+
+#### 4. 红利再投 (type: "dividend_reinvest")
+- 同现金分红字段
+- `reinvestShares`: 再投资增加的份额
+- 确认后自动增加 `shares`
 
 ### fundHistoryData 数据格式
 
