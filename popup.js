@@ -124,6 +124,91 @@ function formatProfit(num, suffix = '') {
     return `${num >= 0 ? '+' : ''}${num.toFixed(2)}${suffix}`;
 }
 
+let fundDetailFitPage = false;
+let fundDetailResizeObserver = null;
+
+function resizeFundDetailCharts() {
+    const overlay = document.getElementById('fundDetailOverlay');
+    if (!overlay || !overlay.classList.contains('visible')) return;
+
+    const detailCanvas = document.getElementById('detailChart');
+    if (detailCanvas && detailCanvas.dataset.code && detailCanvas.dataset.currentPrice && detailCanvas.dataset.basePrice) {
+        let points = [];
+        try {
+            points = JSON.parse(detailCanvas.dataset.chartPoints || '[]');
+        } catch (e) {
+            points = [];
+        }
+        drawChart(
+            detailCanvas.dataset.code,
+            Number(detailCanvas.dataset.currentPrice) || 0,
+            Number(detailCanvas.dataset.basePrice) || 0,
+            points
+        );
+    }
+
+    const perfCanvas = document.getElementById('perfChart');
+    if (perfCanvas && perfCanvas.dataset.prices && perfCanvas.dataset.dates) {
+        let prices = [];
+        let dates = [];
+        try {
+            prices = JSON.parse(perfCanvas.dataset.prices || '[]');
+            dates = JSON.parse(perfCanvas.dataset.dates || '[]');
+        } catch (e) {
+            prices = [];
+            dates = [];
+        }
+        if (prices.length > 0 && dates.length > 0) {
+            drawPerfChart(perfCanvas, prices, dates, perfCanvas.dataset.isUp === 'true');
+        }
+    }
+}
+
+function applyFundDetailSize() {
+    const box = document.querySelector('.fund-detail-box');
+    const fitBtn = document.getElementById('fundDetailFitBtn');
+    if (!box) return;
+
+    box.classList.toggle('fit-page', fundDetailFitPage);
+    if (fitBtn) fitBtn.textContent = fundDetailFitPage ? '恢复默认' : '贴合页面';
+
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => resizeFundDetailCharts());
+    });
+}
+
+function toggleFundDetailFitPage() {
+    fundDetailFitPage = !fundDetailFitPage;
+    applyFundDetailSize();
+}
+
+function observeFundDetailLayout() {
+    const box = document.querySelector('.fund-detail-box');
+    if (!box || typeof ResizeObserver === 'undefined') return;
+
+    if (fundDetailResizeObserver) {
+        fundDetailResizeObserver.disconnect();
+    }
+
+    fundDetailResizeObserver = new ResizeObserver(() => {
+        requestAnimationFrame(() => resizeFundDetailCharts());
+    });
+    fundDetailResizeObserver.observe(box);
+}
+
+window.addEventListener('resize', () => {
+    resizeFundDetailCharts();
+});
+
+function syncFundDetailLayout() {
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            resizeFundDetailCharts();
+            requestAnimationFrame(() => resizeFundDetailCharts());
+        });
+    });
+}
+
 /**
  * 获取今天日期 YYYY-MM-DD
  */
@@ -446,6 +531,17 @@ function _setFooter(btns) {
         btn.onclick = onClick;
         elements.modalFooter.appendChild(btn);
     });
+}
+
+function showHtmlModal(title, html, footerBtns = null) {
+    elements.modalTitle.textContent = title;
+    elements.modalMsg.onclick = null;
+    elements.modalMsg.innerHTML = html;
+    elements.modalInput.style.display = 'none';
+    _setFooter(footerBtns || [
+        { text: '关闭', cls: 'modal-btn-cancel', onClick: _closeModal }
+    ]);
+    elements.modalOverlay.classList.add('visible');
 }
 
 // ==================== 撤销结算功能 ====================
@@ -898,9 +994,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 基金详情弹窗关闭按钮
     const fundDetailClose = document.getElementById('fundDetailClose');
+    const fundDetailFitBtn = document.getElementById('fundDetailFitBtn');
     const fundDetailOverlay = document.getElementById('fundDetailOverlay');
     if (fundDetailClose) {
         fundDetailClose.onclick = closeFundDetail;
+    }
+    if (fundDetailFitBtn) {
+        fundDetailFitBtn.onclick = toggleFundDetailFitPage;
     }
     if (fundDetailOverlay) {
         fundDetailOverlay.onclick = (e) => {
@@ -3551,6 +3651,8 @@ async function openFundDetail(code) {
     const content = document.getElementById('fundDetailContent');
 
     overlay.classList.add('visible');
+    observeFundDetailLayout();
+    applyFundDetailSize();
     content.innerHTML = '<div class="detail-loading">加载中...</div>';
 
     try {
@@ -3588,7 +3690,7 @@ async function openFundDetail(code) {
 
         // 构建详情页面
         let html = `
-            <div style="padding: 16px 20px 0; background: #0a1525;">
+            <div style="padding: 18px 16px 0; background: #0a1525;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
                    <div style="display:flex; flex-direction:column; gap:2px;">
                       <div class="fund-detail-title" style="font-size:18px; color:#e8f0ff; font-weight:700;">${live.name}</div>
@@ -3601,7 +3703,7 @@ async function openFundDetail(code) {
                 </div>
 
                 <!-- 核心数据看板：Row 1 (净值与涨幅) -->
-                <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-bottom:15px; border-bottom: 1px solid #1e3a5f; padding-bottom: 15px;">
+                <div style="display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:16px; margin-bottom:18px; border-bottom: 1px solid #1e3a5f; padding-bottom: 18px;">
                     <div class="detail-info-item">
                         <span class="detail-info-label">单位净值</span>
                         <span class="detail-info-value bold">${unitValue.toFixed(4)}</span>
@@ -3625,34 +3727,34 @@ async function openFundDetail(code) {
                 </div>
 
                 <!-- 核心数据看板：Row 2 (收益情况) -->
-                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; padding-bottom:10px;">
+                <div style="display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:16px; padding-bottom:14px;">
                     <div class="detail-info-item">
                         <span class="detail-info-label">持仓金额</span>
-                        <span class="detail-info-value hero">¥${holdAmount.toFixed(2)}</span>
+                        <span class="detail-info-value hero">${holdAmount.toFixed(2)}</span>
                     </div>
                     <div class="detail-info-item">
                         <span class="detail-info-label">当日预估收益</span>
                         <span class="detail-info-value hero ${todayProfit >= 0 ? upClass : downClass}">
-                            ${formatProfit(todayProfit)}¥
+                            ${formatProfit(todayProfit)}
                         </span>
                     </div>
                     <div class="detail-info-item">
                         <span class="detail-info-label">持有收益</span>
                         <span class="detail-info-value hero ${holdProfit >= 0 ? upClass : downClass}">
-                            ${formatProfit(holdProfit)}¥
+                            ${formatProfit(holdProfit)}
                         </span>
                     </div>
                 </div>
             </div>
 
             <!-- 实时走势图 -->
-            <div class="detail-chart-section" style="padding: 0 20px 15px; margin-top:-5px;">
+            <div class="detail-chart-section" style="padding: 0 16px 24px; margin-top:-5px;">
                 <div style="font-size:11px;color:#4a6a90;margin-bottom:8px; display:flex; justify-content:space-between;">
                     <span>📈 今日估值走势 (${getToday()})</span>
                     <span style="font-size:10px; opacity:0.6;">09:30 - 15:00</span>
                 </div>
                 <div style="position:relative;">
-                    <canvas id="detailChart" style="width:100%;height:150px;display:block;"></canvas>
+                    <canvas id="detailChart" style="width:100%;height:220px;display:block;"></canvas>
                     <div id="chartTooltip" style="display:none;position:absolute;background:rgba(10,21,37,0.9);border:1px solid #1e3a5f;border-radius:6px;padding:6px 10px;pointer-events:none;min-width:120px;"></div>
                 </div>
             </div>
@@ -3691,7 +3793,17 @@ async function openFundDetail(code) {
                 pts = [{ time: '09:30', rate: 0 }, { time: nowT, rate }];
             }
             // canvas 须等 DOM 渲染完成后再绘制
-            requestAnimationFrame(() => drawChart(code, estimateValue, unitValue, pts));
+            requestAnimationFrame(() => {
+                const detailCanvas = document.getElementById('detailChart');
+                if (detailCanvas) {
+                    detailCanvas.dataset.code = code;
+                    detailCanvas.dataset.currentPrice = String(estimateValue || 0);
+                    detailCanvas.dataset.basePrice = String(unitValue || 0);
+                    detailCanvas.dataset.chartPoints = JSON.stringify(pts || []);
+                }
+                drawChart(code, estimateValue, unitValue, pts);
+                syncFundDetailLayout();
+            });
         })();
 
         // ② 用已有的 live 数据直接计算昨日涨幅，无需重复请求 pingzhongdata
@@ -3717,12 +3829,15 @@ async function openFundDetail(code) {
                 tab.classList.add('active');
                 const tabName = tab.dataset.tab;
                 document.getElementById(`tab${tabName.charAt(0).toUpperCase() + tabName.slice(1)}`).classList.add('active');
+                syncFundDetailLayout();
             });
         });
 
         // 异步加载重仓股和业绩数据
         loadHoldings(code);
-        loadPerformance(code);
+        loadPerformance(code).finally(() => {
+            syncFundDetailLayout();
+        });
 
     } catch (err) {
         content.innerHTML = `<div class="detail-error">加载失败: ${err.message}</div>`;
@@ -3742,8 +3857,8 @@ function drawChart(code, currentPrice, basePrice, chartPoints) {
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    const width = rect.width || canvas.offsetWidth || 400;
-    const height = rect.height || canvas.offsetHeight || 180;
+    const width = rect.width || canvas.parentElement?.clientWidth || canvas.offsetWidth || 400;
+    const height = rect.height || canvas.offsetHeight || 220;
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
@@ -4037,26 +4152,49 @@ async function loadPerformance(code) {
     const container = document.getElementById('tabPerformance');
     if (!container) return;
 
+    _performanceState[code] = {
+        period: '1M',
+        periodLabel: getPerformancePeriodLabel('1M'),
+        fundData: []
+    };
+
     // 先显示周期按钮框架
     container.innerHTML = `
         <div style="padding: 14px 0 10px;">
             <div id="perfPeriodBtns" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
-                ${['1M', '3M', '6M', '1Y', '3Y', 'LY'].map((p, i) => {
-        const labels = { '1M': '近1月', '3M': '近3月', '6M': '近6月', '1Y': '近1年', '3Y': '近3年', 'LY': '成立来' };
-        return `<button class="perf-btn${i === 0 ? ' active' : ''}" data-period="${p}"
+                ${['1M', '3M', '6M', '1Y', '3Y', 'LY'].map((p, i) => `
+                    <button class="perf-btn${i === 0 ? ' active' : ''}" data-period="${p}"
                         style="padding:5px 12px;border-radius:16px;border:1px solid #1e3a5f;font-size:12px;
                         cursor:pointer;background:${i === 0 ? '#1890ff' : '#0d1b2e'};color:${i === 0 ? '#fff' : '#4a6a90'};transition:all 0.2s;">
-                        ${labels[p]}
-                    </button>`;
-    }).join('')}
+                        ${getPerformancePeriodLabel(p)}
+                    </button>
+                `).join('')}
             </div>
             <div id="perfSummary" style="text-align:right;font-size:12px;color:#4a6a90;margin-bottom:8px;">加载中...</div>
             <div style="position:relative;">
-                <canvas id="perfChart" style="width:100%;height:130px;display:block;"></canvas>
+                <canvas id="perfChart" style="width:100%;height:220px;display:block;"></canvas>
                 <div id="perfChartTooltip" style="display:none;position:absolute;background:rgba(10,21,37,0.9);border:1px solid #1e3a5f;border-radius:6px;padding:6px 10px;pointer-events:none;min-width:120px;z-index:100;"></div>
+            </div>
+            <div class="perf-nav-section">
+                <div class="perf-nav-header">
+                    <span class="perf-nav-title">历史净值</span>
+                    <span id="perfMoreLink" class="modal-link" style="display:none;">更多</span>
+                </div>
+                <div id="perfNavPreview" class="perf-nav-preview">
+                    <div class="perf-nav-empty">加载中...</div>
+                </div>
             </div>
         </div>
     `;
+
+    const moreLink = document.getElementById('perfMoreLink');
+    if (moreLink) {
+        moreLink.onclick = () => {
+            const state = _performanceState[code];
+            if (!state || !Array.isArray(state.fundData) || state.fundData.length === 0) return;
+            showPerformanceNavListModal(code, state.periodLabel, state.fundData);
+        };
+    }
 
     // 默认加载近1月
     loadPerformancePeriod(code, '1M');
@@ -4078,6 +4216,37 @@ async function loadPerformance(code) {
 // 历史净值内存缓存：{ code: { date: 'YYYY-MM-DD', data: [{date, price}] } }
 // 每次打开详情页时有效，同一只基金切换周期无需重复请求
 const _netValueCache = {};
+const _performanceState = {};
+
+function getPerformancePeriodLabel(period) {
+    return { '1M': '近1月', '3M': '近3月', '6M': '近6月', '1Y': '近1年', '3Y': '近3年', 'LY': '成立来' }[period] || period;
+}
+
+function renderPerformanceNavPreview(list) {
+    if (!Array.isArray(list) || list.length === 0) {
+        return '<div class="perf-nav-empty">暂无历史净值</div>';
+    }
+    return list.map(item => `
+        <div class="perf-nav-row">
+            <span class="perf-nav-date">${item.date}</span>
+            <span class="perf-nav-price">${item.price.toFixed(4)}</span>
+        </div>
+    `).join('');
+}
+
+function showPerformanceNavListModal(code, periodLabel, fundData) {
+    if (!Array.isArray(fundData) || fundData.length === 0) {
+        showToast('暂无历史净值数据', 'error');
+        return;
+    }
+    const rows = [...fundData].reverse().map(item => `
+        <div class="perf-nav-row full">
+            <span class="perf-nav-date">${item.date}</span>
+            <span class="perf-nav-price">${item.price.toFixed(4)}</span>
+        </div>
+    `).join('');
+    showHtmlModal(`${code} ${periodLabel}历史净值`, `<div class="perf-nav-modal-list">${rows}</div>`);
+}
 
 /**
  * 具体加载某个周期的业绩图表
@@ -4085,7 +4254,15 @@ const _netValueCache = {};
 async function loadPerformancePeriod(code, period) {
     const summary = document.getElementById('perfSummary');
     const canvas = document.getElementById('perfChart');
+    const preview = document.getElementById('perfNavPreview');
+    const moreLink = document.getElementById('perfMoreLink');
     if (!canvas || !summary) return;
+
+    const periodLabel = getPerformancePeriodLabel(period);
+    if (_performanceState[code]) {
+        _performanceState[code].period = period;
+        _performanceState[code].periodLabel = periodLabel;
+    }
 
     // 根据周期计算开始日期
     const endDate = new Date();
@@ -4099,6 +4276,8 @@ async function loadPerformancePeriod(code, period) {
 
     try {
         summary.textContent = '加载中...';
+        if (preview) preview.innerHTML = '<div class="perf-nav-empty">加载中...</div>';
+        if (moreLink) moreLink.style.display = 'none';
 
         // 优先从缓存里裁剪，避免重复请求相同基金的数据
         const cached = _netValueCache[code];
@@ -4116,8 +4295,14 @@ async function loadPerformancePeriod(code, period) {
         }
 
         if (!fundData || fundData.length === 0) {
+            if (_performanceState[code]) _performanceState[code].fundData = [];
             summary.textContent = '暂无数据';
+            if (preview) preview.innerHTML = '<div class="perf-nav-empty">暂无历史净值</div>';
             return;
+        }
+
+        if (_performanceState[code]) {
+            _performanceState[code].fundData = [...fundData];
         }
 
         const prices = fundData.map(p => p.price);
@@ -4127,19 +4312,27 @@ async function loadPerformancePeriod(code, period) {
         const totalRate = ((lastPrice - firstPrice) / firstPrice * 100).toFixed(2);
         const isUp = lastPrice >= firstPrice;
 
-        summary.innerHTML = `<span style="color:#8aacce;">近${{ '1M': '1月', '3M': '3月', '6M': '6月', '1Y': '1年', '3Y': '3年', 'LY': '成立' }[period] || period}涨跌幅</span>
-            <span style="font-weight:bold;color:${isUp ? '#ff7875' : '#73d13d'};">${isUp ? '+' : ''}${totalRate}%</span>`;
+        summary.innerHTML = `<span style="color:#8aacce;">${periodLabel}涨跌幅</span>
+            <span style="font-weight:bold;color:${isUp ? '#ff7875' : '#73d13d'};">${totalRate}%</span>`;
+
+        const recentList = [...fundData].reverse().slice(0, 6);
+        if (preview) preview.innerHTML = renderPerformanceNavPreview(recentList);
+        if (moreLink) moreLink.style.display = fundData.length > recentList.length ? 'inline' : 'none';
 
         // 绘制图表
-        const dpr = window.devicePixelRatio || 1;
-        const canvasWidth = canvas.offsetWidth || canvas.parentElement?.offsetWidth || 360;
-        const canvasHeight = 130;
-        canvas.style.width = canvasWidth + 'px';
+        const canvasHeight = 220;
+        canvas.style.width = '100%';
         canvas.style.height = canvasHeight + 'px';
+        canvas.dataset.prices = JSON.stringify(prices);
+        canvas.dataset.dates = JSON.stringify(dates);
+        canvas.dataset.isUp = String(isUp);
         drawPerfChart(canvas, prices, dates, isUp);
+        syncFundDetailLayout();
 
     } catch (err) {
+        if (_performanceState[code]) _performanceState[code].fundData = [];
         summary.textContent = '加载失败';
+        if (preview) preview.innerHTML = '<div class="perf-nav-empty">加载失败</div>';
         console.error('[loadPerformancePeriod] 业绩数据加载失败:', err);
     }
 }
@@ -4150,9 +4343,8 @@ async function loadPerformancePeriod(code, period) {
 function drawPerfChart(canvas, prices, dates, isUp) {
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
-    // 优先用 style.width（由调用方强制设置），再 fallback
-    const width = parseInt(canvas.style.width) || canvas.getBoundingClientRect().width || canvas.parentElement?.offsetWidth || 360;
-    const height = parseInt(canvas.style.height) || canvas.getBoundingClientRect().height || 130;
+    const width = canvas.parentElement?.clientWidth || canvas.getBoundingClientRect().width || canvas.parentElement?.offsetWidth || canvas.offsetWidth || 360;
+    const height = canvas.getBoundingClientRect().height || parseInt(canvas.style.height) || canvas.offsetHeight || 220;
 
     canvas.width = width * dpr;
     canvas.height = height * dpr;
@@ -4173,58 +4365,110 @@ function drawPerfChart(canvas, prices, dates, isUp) {
     const toX = i => pad.left + (cw / Math.max(prices.length - 1, 1)) * i;
     const toY = r => pad.top + ch * (1 - (r - minR) / range);
 
-    // 背景
-    ctx.fillStyle = '#111f35';
-    ctx.fillRect(0, 0, width, height);
+    const renderChart = (hoverIndex = null) => {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // 网格线
-    ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
-    for (let i = 0; i <= 3; i++) {
-        const y = pad.top + (ch / 3) * i;
-        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
-    }
+        // 背景
+        ctx.fillStyle = '#111f35';
+        ctx.fillRect(0, 0, width, height);
 
-    // 0 轴基准线（虚线）
-    const zeroY = toY(0);
-    if (zeroY >= pad.top && zeroY <= pad.top + ch) {
-        ctx.strokeStyle = 'rgba(100,140,180,0.5)'; ctx.setLineDash([4, 4]);
-        ctx.beginPath(); ctx.moveTo(pad.left, zeroY); ctx.lineTo(pad.left + cw, zeroY); ctx.stroke();
-        ctx.setLineDash([]);
-    }
+        // 网格线
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 3; i++) {
+            const y = pad.top + (ch / 3) * i;
+            ctx.beginPath();
+            ctx.moveTo(pad.left, y);
+            ctx.lineTo(pad.left + cw, y);
+            ctx.stroke();
+        }
 
-    // 面积图填充
-    const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
-    gradient.addColorStop(0, isUp ? 'rgba(255,120,117,0.3)' : 'rgba(115,209,61,0.3)');
-    gradient.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.moveTo(toX(0), zeroY);
-    returns.forEach((r, i) => ctx.lineTo(toX(i), toY(r)));
-    ctx.lineTo(toX(returns.length - 1), zeroY);
-    ctx.closePath(); ctx.fill();
+        // 0 轴基准线（虚线）
+        const zeroY = toY(0);
+        if (zeroY >= pad.top && zeroY <= pad.top + ch) {
+            ctx.strokeStyle = 'rgba(100,140,180,0.5)';
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(pad.left, zeroY);
+            ctx.lineTo(pad.left + cw, zeroY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
 
-    // 折线
-    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    returns.forEach((r, i) => { if (i === 0) ctx.moveTo(toX(i), toY(r)); else ctx.lineTo(toX(i), toY(r)); });
-    ctx.stroke();
+        // 面积图填充
+        const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
+        gradient.addColorStop(0, isUp ? 'rgba(255,120,117,0.3)' : 'rgba(115,209,61,0.3)');
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.moveTo(toX(0), zeroY);
+        returns.forEach((r, i) => ctx.lineTo(toX(i), toY(r)));
+        ctx.lineTo(toX(returns.length - 1), zeroY);
+        ctx.closePath();
+        ctx.fill();
 
-    // Y 轴标签（涨跌幅%）
-    ctx.fillStyle = '#4a6a90'; ctx.font = '10px Inter'; ctx.textAlign = 'right';
-    for (let i = 0; i <= 3; i++) {
-        const r = maxR - (range / 3) * i;
-        ctx.fillText(formatProfit(r, '%'), pad.left - 4, pad.top + (ch / 3) * i + 4);
-    }
+        // 折线
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        returns.forEach((r, i) => {
+            if (i === 0) ctx.moveTo(toX(i), toY(r));
+            else ctx.lineTo(toX(i), toY(r));
+        });
+        ctx.stroke();
 
-    // X 轴标签（首、中、尾，格式 MM-DD）
-    ctx.textAlign = 'center'; ctx.fillStyle = '#4a6a90';
-    const fmtD = s => s ? s.slice(5) : '';
-    if (dates.length > 0) {
-        const mid = Math.floor(dates.length / 2);
-        ctx.fillText(fmtD(dates[0]), toX(0), height - 8);
-        ctx.fillText(fmtD(dates[mid]), toX(mid), height - 8);
-        ctx.fillText(fmtD(dates[dates.length - 1]), toX(dates.length - 1), height - 8);
-    }
+        // hover 辅助线和高亮点
+        if (hoverIndex !== null && hoverIndex >= 0 && hoverIndex < returns.length) {
+            const hoverX = toX(hoverIndex);
+            const hoverY = toY(returns[hoverIndex]);
+            ctx.strokeStyle = 'rgba(105,177,255,0.65)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(hoverX, pad.top);
+            ctx.lineTo(hoverX, pad.top + ch);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(pad.left, hoverY);
+            ctx.lineTo(pad.left + cw, hoverY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = '#0a1525';
+            ctx.beginPath();
+            ctx.arc(hoverX, hoverY, 4.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(hoverX, hoverY, 4.5, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // Y 轴标签（涨跌幅%）
+        ctx.fillStyle = '#4a6a90';
+        ctx.font = '10px Inter';
+        ctx.textAlign = 'right';
+        for (let i = 0; i <= 3; i++) {
+            const r = maxR - (range / 3) * i;
+            ctx.fillText(formatProfit(r, '%'), pad.left - 4, pad.top + (ch / 3) * i + 4);
+        }
+
+        // X 轴标签（首、中、尾，格式 MM-DD）
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#4a6a90';
+        const fmtD = s => s ? s.slice(5) : '';
+        if (dates.length > 0) {
+            const mid = Math.floor(dates.length / 2);
+            ctx.fillText(fmtD(dates[0]), toX(0), height - 8);
+            ctx.fillText(fmtD(dates[mid]), toX(mid), height - 8);
+            ctx.fillText(fmtD(dates[dates.length - 1]), toX(dates.length - 1), height - 8);
+        }
+    };
+
+    renderChart();
 
     // Tooltip 交互
     canvas._chartPoints = returns;
@@ -4235,6 +4479,7 @@ function drawPerfChart(canvas, prices, dates, isUp) {
         const x = e.clientX - rect.left;
         if (x < pad.left || x > pad.left + cw) {
             tooltip.style.display = 'none';
+            renderChart();
             return;
         }
         let idx = 0, minDist = Infinity;
@@ -4243,6 +4488,7 @@ function drawPerfChart(canvas, prices, dates, isUp) {
             const d = Math.abs(px - x);
             if (d < minDist) { minDist = d; idx = i; }
         });
+        renderChart(idx);
         const r = returns[idx];
         const date = dates[idx];
         const p = prices[idx];
@@ -4261,6 +4507,7 @@ function drawPerfChart(canvas, prices, dates, isUp) {
     canvas.onmouseleave = () => {
         const t = document.getElementById('perfChartTooltip');
         if (t) t.style.display = 'none';
+        renderChart();
     };
 }
 
@@ -4306,5 +4553,11 @@ async function fetchStockPrices(codes) {
 function closeFundDetail() {
     const overlay = document.getElementById('fundDetailOverlay');
     overlay.classList.remove('visible');
+    if (fundDetailResizeObserver) {
+        fundDetailResizeObserver.disconnect();
+        fundDetailResizeObserver = null;
+    }
+    fundDetailFitPage = false;
+    applyFundDetailSize();
 }
 // getCodeByName 和 OCR 双模式解析已整合至上方 _parseOCRText / _runOCR 函数

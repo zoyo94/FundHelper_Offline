@@ -407,7 +407,7 @@
             position: fixed;
             inset: 0;
             background: rgba(0, 0, 0, 0.65);
-            z-index: 10000;
+            z-index: 10003;
             display: none;
             align-items: center;
             justify-content: center;
@@ -975,7 +975,7 @@
             display: none;
             justify-content: center;
             align-items: center;
-            padding: 20px;
+            padding: 12px;
         }
 
         .fund-detail-overlay.visible {
@@ -983,9 +983,9 @@
         }
 
         .fund-detail-box {
-            width: 90%;
-            max-width: 480px;
-            max-height: 90vh;
+            width: 92%;
+            max-width: 800px;
+            max-height: min(88vh, 760px);
             background: #0a1525;
             border: 1px solid #1e3a5f;
             border-radius: 12px;
@@ -995,6 +995,12 @@
             flex-direction: column;
         }
 
+        .fund-detail-box.fit-page {
+            width: calc(100vw - 24px);
+            max-width: 1400px;
+            max-height: calc(100vh - 24px);
+        }
+
         .fund-detail-header {
             padding: 16px 20px;
             background: #111f35;
@@ -1002,6 +1008,30 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+        }
+
+        .fund-detail-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .fund-detail-fit-btn {
+            cursor: pointer;
+            font-size: 12px;
+            color: #8aacce;
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid #2a4a72;
+            background: rgba(13, 27, 46, 0.85);
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .fund-detail-fit-btn:hover {
+            color: #e8f0ff;
+            border-color: #4b78a8;
+            background: rgba(24, 144, 255, 0.12);
         }
 
         .fund-detail-title {
@@ -1182,7 +1212,7 @@
         .detail-chart-section {
             background: #0a1525;
             margin: 0;
-            padding: 0 20px 20px;
+            padding: 0 16px 24px;
         }
 
         .detail-loading {
@@ -1227,11 +1257,79 @@
         .detail-tab-content {
             display: none;
             background: #111f35;
-            padding: 15px 20px 20px;
+            padding: 18px 16px 24px;
         }
 
         .detail-tab-content.active {
             display: block;
+        }
+
+        .perf-nav-section {
+            margin-top: 14px;
+            padding: 12px 14px;
+            border: 1px solid #1e3a5f;
+            border-radius: 10px;
+            background: rgba(13, 27, 46, 0.55);
+        }
+
+        .perf-nav-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .perf-nav-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #c8d8f0;
+        }
+
+        .perf-nav-preview,
+        .perf-nav-modal-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .perf-nav-modal-list {
+            max-height: 320px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .perf-nav-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 10px;
+            border: 1px solid rgba(30, 58, 95, 0.9);
+            border-radius: 8px;
+            background: rgba(17, 31, 53, 0.9);
+        }
+
+        .perf-nav-row.full {
+            padding: 9px 12px;
+        }
+
+        .perf-nav-date {
+            font-size: 12px;
+            color: #8aacce;
+        }
+
+        .perf-nav-price {
+            font-size: 13px;
+            font-weight: 700;
+            color: #e8f0ff;
+        }
+
+        .perf-nav-empty {
+            padding: 14px 0;
+            text-align: center;
+            font-size: 12px;
+            color: #4a6a90;
         }
 
         .detail-error {
@@ -1521,7 +1619,10 @@
         <div class="fund-detail-box">
             <div class="fund-detail-header">
                 <div class="fund-detail-title" id="fundDetailTitle">基金详情</div>
-                <div class="fund-detail-close" id="fundDetailClose">✕</div>
+                <div class="fund-detail-actions">
+                    <div class="fund-detail-fit-btn" id="fundDetailFitBtn" title="贴合页面大小">贴合页面</div>
+                    <div class="fund-detail-close" id="fundDetailClose">✕</div>
+                </div>
             </div>
             <div class="fund-detail-content" id="fundDetailContent" style="position:relative;">
                 <div class="detail-loading">加载中...</div>
