@@ -591,10 +591,12 @@ function _applySettlementLoop(funds, priceUpdates, todayStr, skipUnchanged = fal
             basePrice = price; // fallback到当前价格
         }
         const baseAcNet = item.savedAcNetValue || null;
+        const savedPrevDate = item.savedPrevDate || '';
+        const isNewTradingDate = !!(prevPriceDate && (!savedPrevDate || prevPriceDate > savedPrevDate));
 
-        // 净值无变化时：仍需更新 yesterdayProfit=0 和 savedPrevPrice/Date，
-        // 避免下次结算把多日收益累加进来，同时保证"昨日收益"显示 0 而非陈旧数据。
-        if (skipUnchanged && Math.abs(price - basePrice) < CONSTANTS.PRICE_EPSILON) {
+        // 只有“同一交易日且净值未变”时，自动结算才可直接跳过并写 0。
+        // 如果交易日已经推进，即使净值恰好相同，也要继续走后面的昨日收益计算逻辑。
+        if (skipUnchanged && !isNewTradingDate && Math.abs(price - basePrice) < CONSTANTS.PRICE_EPSILON) {
             funds[code].yesterdayProfit = 0;
             funds[code].savedPrevPrice = price;
             funds[code].savedPrevDate = prevPriceDate || todayStr;
@@ -613,17 +615,18 @@ function _applySettlementLoop(funds, priceUpdates, todayStr, skipUnchanged = fal
         const totalDividend = hasDividend ? round2(shares * dividendPerShare) : 0;
 
         // ── 单日昨日收益 ────────────────────────────────────────────────────────
-        // prevPriceDate - prevTradingDayDate ≤ 3天：正常相邻交易日（含跨周末），可算昨日
-        // 直接用净值差计算，NAV已自动反映分红影响（分红日NAV会下跌相应金额）
+        // 只要接口能提供上一笔有效净值，就按该净值差计算“昨日收益”。
+        // 某些基金会因为停牌/节假日/接口缺口导致上一笔净值日期早于上一个自然日，
+        // 此时仍应展示最近一个有效交易日对应的收益，而不是直接归 0。
         let yesterdayProfit;
         if (prevTradingDayPrice > 0 && prevTradingDayDate && prevPriceDate) {
             const diffDays = Math.round(
                 (new Date(prevPriceDate) - new Date(prevTradingDayDate)) / 86400000
             );
-            if (diffDays > 0 && diffDays <= CONSTANTS.SETTLEMENT_GRACE_DAYS) {
+            if (diffDays > 0) {
                 yesterdayProfit = shares > 0 ? round2(shares * (price - prevTradingDayPrice)) : 0;
             } else {
-                yesterdayProfit = 0; // 停牌/净值空缺，无有效昨日
+                yesterdayProfit = 0; // 日期异常，避免倒序数据误算
             }
         } else {
             yesterdayProfit = 0;
@@ -733,9 +736,15 @@ async function autoSettlement(funds, fetchedData, todayStr) {
     };
     await storage.set({ backupFunds: backupData });
 
-    // 将 fetchedData 转换为 _applySettlementLoop 所需格式
+    // 仅结算净值日期真正前进的基金，避免周末/同一交易日的接口波动误触发结算
     const settlements = fetchedData
-        .filter(({ live }) => live && live.prevPrice > 0)
+        .filter(({ code, live }) => {
+            if (!live || live.prevPrice <= 0 || !live.prevPriceDate) return false;
+            const fund = funds[code];
+            if (!fund) return false;
+            const savedPrevDate = fund.savedPrevDate || '';
+            return !savedPrevDate || live.prevPriceDate > savedPrevDate;
+        })
         .map(({ code, live }) => ({
             code,
             price: live.prevPrice,
@@ -1284,12 +1293,15 @@ async function _loadDataImpl() {
     }
 
     // 3. 自动结算逻辑（在分红检测之后）
-    if (lastSettlementDate !== todayStr && !lastSettlementDate?.startsWith('ROLLBACK_')) {
+    // 修复：ROLLBACK_ 只阻止撤销当天的自动结算，不影响后续日期
+    const isRollbackToday = lastSettlementDate === `ROLLBACK_${todayStr}`;
+    if (lastSettlementDate !== todayStr && !isRollbackToday) {
         const needsSettlement = fetchedData.some(({ code, live }) => {
-            if (!live || live.prevPrice <= 0) return false;
+            if (!live || live.prevPrice <= 0 || !live.prevPriceDate) return false;
             const fund = funds[code];
-            if (!fund.savedPrevPrice) return false;
-            return Math.abs(live.prevPrice - fund.savedPrevPrice) > CONSTANTS.PRICE_EPSILON;
+            if (!fund) return false;
+            const savedPrevDate = fund.savedPrevDate || '';
+            return !savedPrevDate || live.prevPriceDate > savedPrevDate;
         });
         if (needsSettlement) {
             await autoSettlement(funds, fetchedData, todayStr);
