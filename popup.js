@@ -4590,15 +4590,12 @@ async function fetchStockPrices(codes) {
  */
 function closeFundDetail() {
     const overlay = document.getElementById('fundDetailOverlay');
-    const box = document.querySelector('.fund-detail-box');
-    const fitBtn = document.getElementById('fundDetailFitBtn');
     if (overlay) overlay.classList.remove('visible');
     if (fundDetailResizeObserver) {
         fundDetailResizeObserver.disconnect();
         fundDetailResizeObserver = null;
     }
     fundDetailFitPage = false;
-    if (box) box.classList.remove('fit-page');
-    if (fitBtn) fitBtn.textContent = '贴合页面';
+    applyFundDetailSize();
 }
 // getCodeByName 和 OCR 双模式解析已整合至上方 _parseOCRText / _runOCR 函数
