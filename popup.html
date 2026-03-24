@@ -1071,15 +1071,6 @@
             border-radius: 3px;
         }
 
-        /* 顶部信息网格：三列结构 */
-        .detail-info-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 16px;
-            padding: 20px;
-            background: #0a1525;
-        }
-
         .detail-info-item {
             display: flex;
             flex-direction: column;
@@ -1349,9 +1340,9 @@
 
         /* 主球体 */
         .fab-main {
-            width: 50px;
-            height: 50px;
-            background: #1890ff;
+            width: 52px;
+            height: 52px;
+            background: linear-gradient(135deg, #1890ff 0%, #3aa0ff 100%);
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -1359,56 +1350,82 @@
             color: white;
             font-size: 24px;
             cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
         }
 
         .fab-main:hover {
-            transform: scale(1.1);
+            transform: translateY(-1px) scale(1.04);
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
         }
 
         .fab-main.active {
-            transform: rotate(45deg);
-            background: #ff4d4f;
+            transform: rotate(18deg);
+            filter: brightness(1.06);
         }
 
         /* 菜单项 */
         .fab-menu {
             position: absolute;
-            bottom: 60px;
+            bottom: 66px;
             right: 0;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
+            min-width: 190px;
+            padding: 10px;
+            background: rgba(10, 23, 40, 0.92);
+            border: 1px solid rgba(58, 90, 130, 0.6);
+            border-radius: 18px;
+            box-shadow: 0 14px 32px rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(10px);
             pointer-events: none;
             opacity: 0;
-            transform: translateY(20px);
-            transition: all 0.3s ease;
+            transform: translateY(12px) scale(0.98);
+            transform-origin: bottom right;
+            transition: opacity 0.2s ease, transform 0.2s ease;
         }
 
         .fab-menu.show {
             pointer-events: auto;
             opacity: 1;
-            transform: translateY(0);
+            transform: translateY(0) scale(1);
         }
 
         .fab-item {
+            min-height: 38px;
             white-space: nowrap;
-            background: #111f35;
-            border: 1px solid #2a4a72;
-            padding: 8px 16px;
-            border-radius: 20px;
+            background: linear-gradient(180deg, #132742 0%, #0f2037 100%);
+            border: 1px solid #28496f;
+            padding: 9px 14px;
+            border-radius: 12px;
             cursor: pointer;
             font-size: 13px;
-            color: #c8d8f0;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
-            transition: all 0.15s;
+            color: #d2e3fb;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+            transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 8px;
+            text-align: left;
         }
 
         .fab-item:hover {
-            background: #1a2f50;
-            color: #69b1ff;
-            border-color: #1890ff;
+            background: linear-gradient(180deg, #183254 0%, #142845 100%);
+            color: #8dc5ff;
+            border-color: #3a7fbd;
+            transform: translateX(-2px);
+        }
+
+        .fab-item .fab-icon {
+            width: 18px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .fab-item .fab-label {
+            flex: 1;
         }
 
         /* 选中行高亮（文件管理器风格） */
@@ -1535,17 +1552,18 @@
 
     <div class="fab-container">
         <div class="fab-menu" id="fabMenu">
-            <button class="fab-item" id="fabSelectAll">☑️ 全选 / 取消全选</button>
-            <button class="fab-item" id="fabAdd">➕ 添加资产</button>
-            <button class="fab-item" id="fabOCRBatch">📷 图片识别批量添加</button>
-            <button class="fab-item" id="fabBatchCalc">🔄 批量重算份额</button>
-            <button class="fab-item" id="fabBatchDel">🗑 批量删除</button>
-            <button class="fab-item" id="fabSettlement">📅 触发日结算</button>
-            <button class="fab-item" id="fabRollback" style="display:none;">↩ 撤销日结算</button>
-            <button class="fab-item" id="fabBatchGroup">📁 批量修改分组</button>
-            <button class="fab-item" id="fabBatchClear">🧹 批量清空持仓</button> <button class="fab-item" id="fabExport">📤
-                导出数据</button>
-            <button class="fab-item" id="fabImport">📥 导入数据</button>
+            <button class="fab-item" id="fabSelectAll"><span class="fab-icon">☑️</span><span class="fab-label">全选 / 取消全选</span></button>
+            <button class="fab-item" id="fabAdd"><span class="fab-icon">➕</span><span class="fab-label">添加资产</span></button>
+            <button class="fab-item" id="fabOCRBatch"><span class="fab-icon">📷</span><span class="fab-label">图片识别批量添加</span></button>
+            <button class="fab-item" id="fabBatchCalc"><span class="fab-icon">🔄</span><span class="fab-label">批量重算份额</span></button>
+            <button class="fab-item" id="fabBatchDel"><span class="fab-icon">🗑</span><span class="fab-label">批量删除</span></button>
+            <button class="fab-item" id="fabSettlement"><span class="fab-icon">📅</span><span class="fab-label">触发日结算</span></button>
+            <button class="fab-item" id="fabRollback" style="display:none;"><span class="fab-icon">↩</span><span class="fab-label">撤销日结算</span></button>
+            <button class="fab-item" id="fabBatchGroup"><span class="fab-icon">📁</span><span class="fab-label">批量修改分组</span></button>
+            <button class="fab-item" id="fabBatchClear"><span class="fab-icon">🧹</span><span class="fab-label">批量清空持仓</span></button>
+            <button class="fab-item" id="fabExport"><span class="fab-icon">📤</span><span class="fab-label">导出当前数据</span></button>
+            <button class="fab-item" id="fabExportBackup"><span class="fab-icon">🗂</span><span class="fab-label">导出备份数据</span></button>
+            <button class="fab-item" id="fabImport"><span class="fab-icon">📥</span><span class="fab-label">导入数据</span></button>
         </div>
         <div class="fab-main" id="fabMain">
             <span>⚡</span>
@@ -1626,7 +1644,6 @@
             </div>
             <div class="fund-detail-content" id="fundDetailContent" style="position:relative;">
                 <div class="detail-loading">加载中...</div>
-                <div class="detail-chart-tooltip" id="chartTooltip"></div>
             </div>
         </div>
     </div>

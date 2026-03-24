@@ -202,10 +202,8 @@ window.addEventListener('resize', () => {
 
 function syncFundDetailLayout() {
     requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-            resizeFundDetailCharts();
-            requestAnimationFrame(() => resizeFundDetailCharts());
-        });
+        resizeFundDetailCharts();
+        requestAnimationFrame(() => resizeFundDetailCharts());
     });
 }
 
@@ -553,6 +551,12 @@ async function checkBackup() {
     }
 }
 
+function cloneData(data) {
+    return typeof structuredClone === 'function'
+        ? structuredClone(data)
+        : JSON.parse(JSON.stringify(data));
+}
+
 // ==================== 1. 新增：统一的备份函数 ====================
 /**
  * 执行结算前，先备份当前数据（每天只备份首次结算前的数据）
@@ -564,7 +568,6 @@ async function backupFundsData() {
     const funds = myFunds || {};
     if (Object.keys(funds).length === 0) return;
 
-    // 检查是否已经备份过今天的数据
     if (backupFunds && backupFunds.backupDate === todayStr) {
         console.log('[Backup] 今天已备份过，跳过');
         return;
@@ -573,10 +576,10 @@ async function backupFundsData() {
     const backupData = {
         version: '1.0',
         exportDate: new Date().toISOString(),
-        backupDate: todayStr,  // 记录备份日期
+        backupDate: todayStr,
         lastUpdateDate: lastUpdateDate || getToday(),
-        lastDayProfits: lastDayProfits || {},
-        myFunds: funds
+        lastDayProfits: cloneData(lastDayProfits || {}),
+        myFunds: cloneData(funds)
     };
     await storage.set({ backupFunds: backupData });
     console.log('[Backup] 数据已备份（首次）:', backupData);
@@ -808,10 +811,9 @@ async function rollbackSettlement() {
     if (!ok) return;
 
     await storage.set({
-        myFunds: backupFunds.myFunds,
-        lastDayProfits: backupFunds.lastDayProfits || {},
-        lastSettlementDate: 'ROLLBACK_' + getToday(), // 标记为已撤回，阻止自动结算
-        backupFunds: null
+        myFunds: cloneData(backupFunds.myFunds),
+        lastDayProfits: cloneData(backupFunds.lastDayProfits || {}),
+        lastSettlementDate: 'ROLLBACK_' + getToday() // 标记为已撤回，阻止自动结算
     });
     showToast('✅ 已撤销结算，数据已恢复！今日不再自动结算，如需结算请手动触发。', 'success', 5000);
     checkBackup();
@@ -823,14 +825,7 @@ async function autoSettlement(funds, fetchedData, todayStr) {
     console.log('[autoSettlement] 检测到净值更新，开始自动结算...');
     elements.status.innerText = '正在自动结算...';
 
-    // 备份原始数据 - 优化：使用 structuredClone 替代 JSON 深拷贝（更快且支持更多类型）
-    const backupData = {
-        version: '1.0',
-        exportDate: new Date().toISOString(),
-        backupDate: todayStr,  // 与 backupFundsData 保持一致，防止手动结算覆盖此备份
-        myFunds: structuredClone ? structuredClone(funds) : JSON.parse(JSON.stringify(funds))
-    };
-    await storage.set({ backupFunds: backupData });
+    await backupFundsData();
 
     // 仅结算净值日期真正前进的基金，避免周末/同一交易日的接口波动误触发结算
     const settlements = fetchedData
@@ -1334,6 +1329,11 @@ async function _loadDataImpl() {
         }
     }
 
+    const latestMarketPrevPriceDate = fetchedData.reduce((latest, { live }) => {
+        const date = live?.prevPriceDate || '';
+        return date > latest ? date : latest;
+    }, '');
+
     // 2. 先检测分红（在自动结算之前）
     for (const { code, live } of fetchedData) {
         if (live && live.dividendList && live.dividendList.length > 0) {
@@ -1393,9 +1393,10 @@ async function _loadDataImpl() {
     }
 
     // 3. 自动结算逻辑（在分红检测之后）
-    // 修复：ROLLBACK_ 只阻止撤销当天的自动结算，不影响后续日期
+    // 修复：同一天内如果有基金晚到更新，仍允许继续补结算；
+    // 只有“今日已执行撤销”时才整天禁止自动结算。
     const isRollbackToday = lastSettlementDate === `ROLLBACK_${todayStr}`;
-    if (lastSettlementDate !== todayStr && !isRollbackToday) {
+    if (!isRollbackToday) {
         const needsSettlement = fetchedData.some(({ code, live }) => {
             if (!live || live.prevPrice <= 0 || !live.prevPriceDate) return false;
             const fund = funds[code];
@@ -1531,7 +1532,12 @@ async function _loadDataImpl() {
             // --- E. 构造结果集 ---
             // 分红期间：持仓金额和昨日收益需要加上待确认分红
             const displayAmount = round2((item.amount || 0) + pendingDividendAmount);
-            const displayYesterdayProfit = round2((item.yesterdayProfit || 0) + pendingDividendAmount);
+            const hasFreshYesterdayProfit = !!(
+                item.savedPrevDate &&
+                item.savedPrevDate === (live.prevPriceDate || '') &&
+                item.savedPrevDate === latestMarketPrevPriceDate
+            );
+            const displayYesterdayProfit = round2(((hasFreshYesterdayProfit ? item.yesterdayProfit : 0) || 0) + pendingDividendAmount);
 
             results.push({
                 code,
@@ -1799,6 +1805,7 @@ function initFabMenu() {
     bind('fabSettlement', () => manualSettlement());
     bind('fabRollback', () => rollbackSettlement());
     bind('fabExport', exportFundsData);
+    bind('fabExportBackup', exportBackupFundsData);
     bind('fabImport', () => document.getElementById('importFile').click());
 }
 
@@ -2865,6 +2872,21 @@ async function removeFund(code) {
     }
 }
 
+function downloadJsonFile(data, fileName) {
+    const jsonStr = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, 100);
+}
+
 async function exportFundsData() {
     const { myFunds, lastUpdateDate, lastDayProfits } = await storage.get(['myFunds', 'lastUpdateDate', 'lastDayProfits']);
     const fundsData = myFunds || {};
@@ -2880,17 +2902,27 @@ async function exportFundsData() {
         myFunds: fundsData
     };
 
-    const jsonStr = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
     const fileName = `基金数据_${formatDateTimeForFile()}.json`;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    downloadJsonFile(exportData, fileName);
     showToast(`✅ 数据导出成功！文件名: ${fileName}`, 'success');
+}
+
+async function exportBackupFundsData() {
+    const { backupFunds } = await storage.get(['backupFunds']);
+    if (!backupFunds || !backupFunds.myFunds || Object.keys(backupFunds.myFunds).length === 0) {
+        showToast('暂无可导出的备份数据！', 'warning');
+        return;
+    }
+
+    const exportData = {
+        exportTime: new Date().toLocaleString(),
+        backupTime: backupFunds.exportDate || '',
+        ...backupFunds
+    };
+
+    const fileName = `基金备份数据_${formatDateTimeForFile()}.json`;
+    downloadJsonFile(exportData, fileName);
+    showToast(`✅ 备份数据导出成功！文件名: ${fileName}`, 'success');
 }
 
 
@@ -3970,7 +4002,6 @@ function drawChart(code, currentPrice, basePrice, chartPoints) {
     }
 
     // Tooltip 交互
-    canvas._chartPoints = points;
     canvas.onmousemove = (e) => {
         const tooltip = document.getElementById('chartTooltip');
         if (!tooltip) return;
@@ -4162,8 +4193,8 @@ async function loadPerformance(code) {
     container.innerHTML = `
         <div style="padding: 14px 0 10px;">
             <div id="perfPeriodBtns" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
-                ${['1M', '3M', '6M', '1Y', '3Y', 'LY'].map((p, i) => `
-                    <button class="perf-btn${i === 0 ? ' active' : ''}" data-period="${p}"
+                ${PERFORMANCE_PERIOD_ORDER.map((p, i) => `
+                    <button class="perf-btn" data-period="${p}"
                         style="padding:5px 12px;border-radius:16px;border:1px solid #1e3a5f;font-size:12px;
                         cursor:pointer;background:${i === 0 ? '#1890ff' : '#0d1b2e'};color:${i === 0 ? '#fff' : '#4a6a90'};transition:all 0.2s;">
                         ${getPerformancePeriodLabel(p)}
@@ -4203,11 +4234,9 @@ async function loadPerformance(code) {
     container.querySelectorAll('.perf-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             container.querySelectorAll('.perf-btn').forEach(b => {
-                b.style.background = '#0d1b2e'; b.style.color = '#4a6a90';
-                b.classList.remove('active');
+                b.style.background = b === btn ? '#1890ff' : '#0d1b2e';
+                b.style.color = b === btn ? '#fff' : '#4a6a90';
             });
-            btn.style.background = '#1890ff'; btn.style.color = '#fff';
-            btn.classList.add('active');
             loadPerformancePeriod(code, btn.dataset.period);
         });
     });
@@ -4218,8 +4247,18 @@ async function loadPerformance(code) {
 const _netValueCache = {};
 const _performanceState = {};
 
+const PERFORMANCE_PERIOD_ORDER = ['1M', '3M', '6M', '1Y', '3Y', 'LY'];
+const PERFORMANCE_PERIODS = {
+    '1M': { label: '近1月', months: 1 },
+    '3M': { label: '近3月', months: 3 },
+    '6M': { label: '近6月', months: 6 },
+    '1Y': { label: '近1年', months: 12 },
+    '3Y': { label: '近3年', months: 36 },
+    'LY': { label: '成立来' }
+};
+
 function getPerformancePeriodLabel(period) {
-    return { '1M': '近1月', '3M': '近3月', '6M': '近6月', '1Y': '近1年', '3Y': '近3年', 'LY': '成立来' }[period] || period;
+    return PERFORMANCE_PERIODS[period]?.label || period;
 }
 
 function renderPerformanceNavPreview(list) {
@@ -4267,9 +4306,9 @@ async function loadPerformancePeriod(code, period) {
     // 根据周期计算开始日期
     const endDate = new Date();
     const startDate = new Date();
-    const periodMap = { '1M': 1, '3M': 3, '6M': 6, '1Y': 12, '3Y': 36, 'LY': 360 };
-    startDate.setMonth(startDate.getMonth() - (periodMap[period] || 1));
+    const periodConfig = PERFORMANCE_PERIODS[period];
     if (period === 'LY') startDate.setFullYear(2000);
+    else startDate.setMonth(startDate.getMonth() - (periodConfig?.months || 1));
     const startStr = formatDate(startDate);
     const endStr = formatDate(endDate);
     const pageSize = period === 'LY' ? 500 : 200;
@@ -4471,7 +4510,6 @@ function drawPerfChart(canvas, prices, dates, isUp) {
     renderChart();
 
     // Tooltip 交互
-    canvas._chartPoints = returns;
     canvas.onmousemove = (e) => {
         const tooltip = document.getElementById('perfChartTooltip');
         if (!tooltip) return;
@@ -4552,12 +4590,15 @@ async function fetchStockPrices(codes) {
  */
 function closeFundDetail() {
     const overlay = document.getElementById('fundDetailOverlay');
-    overlay.classList.remove('visible');
+    const box = document.querySelector('.fund-detail-box');
+    const fitBtn = document.getElementById('fundDetailFitBtn');
+    if (overlay) overlay.classList.remove('visible');
     if (fundDetailResizeObserver) {
         fundDetailResizeObserver.disconnect();
         fundDetailResizeObserver = null;
     }
     fundDetailFitPage = false;
-    applyFundDetailSize();
+    if (box) box.classList.remove('fit-page');
+    if (fitBtn) fitBtn.textContent = '贴合页面';
 }
 // getCodeByName 和 OCR 双模式解析已整合至上方 _parseOCRText / _runOCR 函数
