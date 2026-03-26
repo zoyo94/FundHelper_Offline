@@ -8,11 +8,16 @@ const CONFIG = {
     TOAST_NORMAL: 3000,          // 普通 toast 时长（ms）
     TOAST_LONG: 5000,            // 长 toast 时长（ms）
     DEBOUNCE_DELAY: 800,         // 防抖延迟（ms）
+    AUTO_REFRESH_INTERVAL: 120000, // 默认自动刷新间隔（ms）
+    AUTO_REFRESH_OPTIONS: [30, 60, 120, 300],
+    AUTO_REFRESH_STORAGE_KEY: 'autoRefreshIntervalSeconds',
+    MARKET_BREADTH_TIMEOUT: 5000,  // 市场宽度请求超时（ms）
 };
 
 // ==================== 业务常量 ====================
 const CONSTANTS = {
     HISTORY_DAYS_LIMIT: 30,          // 历史数据天数限制
+    DAILY_PROFIT_HISTORY_LIMIT: 400, // 日收益历史保留天数
     PRICE_EPSILON: 0.0001,           // 价格比较精度阈值
     DIVIDEND_MIN_THRESHOLD: 0.0001,  // 分红最小阈值
     INTRADAY_CHART_START: '09:30',
@@ -32,6 +37,14 @@ let fundHistoryData = {}; // 存储基金历史估值数据 { code: { date: 'YYY
 let lastUpdateTime = ''; // 最后一次 loadData 完成的时间，用于选中状态切换后恢复显示
 let currentFundDetailCode = '';
 let currentFundDetailSessionId = 0;
+let profitCalendarViewMonth = '';
+let profitCalendarSelectedDate = '';
+let modalDismissHandler = null;
+let marketBreadthData = null;
+let autoRefreshIntervalMs = CONFIG.AUTO_REFRESH_INTERVAL;
+let nextAutoRefreshAt = 0;
+let refreshCountdownTimer = null;
+let unifiedRefreshPromise = null;
 
 function clearSelection() {
     selectedCodes.clear();
@@ -128,6 +141,16 @@ function formatProfit(num, suffix = '') {
         return `+0.00${suffix}`;
     }
     return `${num >= 0 ? '+' : ''}${num.toFixed(2)}${suffix}`;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[ch]));
 }
 
 let fundDetailFitPage = false;
@@ -494,9 +517,13 @@ const notificationCenter = {
             }
         };
 
+        setModalDismissHandler(_closeModal);
+        elements.modalOverlay.dataset.mode = '';
         elements.modalTitle.textContent = '通知中心';
         renderContent();
         elements.modalInput.style.display = 'none';
+        elements.modalInput.onkeydown = null;
+        elements.modalMsg.onclick = null;
         _setFooter([
             {
                 text: '清空', cls: 'modal-btn-danger', onClick: async () => {
@@ -555,9 +582,25 @@ function showToast(msg, type = 'info', duration = CONFIG.TOAST_NORMAL, silent = 
     if (!silent) notificationCenter.add(msg, type);
 }
 
+function setModalDismissHandler(handler = null) {
+    modalDismissHandler = typeof handler === 'function' ? handler : null;
+}
+
+function dismissModal() {
+    const handler = modalDismissHandler;
+    if (handler) {
+        handler();
+        return;
+    }
+    _closeModal();
+}
+
 function showAlert(msg, title = '提示') {
     return new Promise(resolve => {
-        _openModal(title, msg, false);
+        _openModal(title, msg, false, '', () => {
+            _closeModal();
+            resolve();
+        });
         _setFooter([
             { text: '确定', cls: 'modal-btn-ok', onClick: () => { _closeModal(); resolve(); } }
         ]);
@@ -566,7 +609,10 @@ function showAlert(msg, title = '提示') {
 
 function showConfirm(msg, title = '确认', danger = false) {
     return new Promise(resolve => {
-        _openModal(title, msg, false);
+        _openModal(title, msg, false, '', () => {
+            _closeModal();
+            resolve(false);
+        });
         _setFooter([
             { text: '取消', cls: 'modal-btn-cancel', onClick: () => { _closeModal(); resolve(false); } },
             { text: '确定', cls: danger ? 'modal-btn-danger' : 'modal-btn-ok', onClick: () => { _closeModal(); resolve(true); } }
@@ -576,12 +622,17 @@ function showConfirm(msg, title = '确认', danger = false) {
 
 function showPrompt(msg, defaultVal = '', title = '请输入') {
     return new Promise(resolve => {
-        _openModal(title, msg, true, defaultVal);
+        _openModal(title, msg, true, defaultVal, () => {
+            _closeModal();
+            resolve(null);
+        });
         const onOk = () => {
             const val = elements.modalInput.value;
             _closeModal();
             resolve(val);
         };
+        elements.modalOverlay.dataset.mode = '';
+        elements.modalMsg.onclick = null;
         elements.modalInput.onkeydown = (e) => { if (e.key === 'Enter') onOk(); };
         _setFooter([
             { text: '取消', cls: 'modal-btn-cancel', onClick: () => { _closeModal(); resolve(null); } },
@@ -591,7 +642,11 @@ function showPrompt(msg, defaultVal = '', title = '请输入') {
     });
 }
 
-function _openModal(title, msg, showInput, defaultVal = '') {
+function _openModal(title, msg, showInput, defaultVal = '', onDismiss = null) {
+    setModalDismissHandler(onDismiss);
+    elements.modalOverlay.dataset.mode = '';
+    elements.modalInput.onkeydown = null;
+    elements.modalMsg.onclick = null;
     elements.modalTitle.textContent = title;
     elements.modalMsg.textContent = msg;
     if (showInput) {
@@ -605,11 +660,12 @@ function _openModal(title, msg, showInput, defaultVal = '') {
 }
 
 function _closeModal() {
+    setModalDismissHandler(null);
     elements.modalOverlay.classList.remove('visible');
+    elements.modalOverlay.dataset.mode = '';
     elements.modalInput.onkeydown = null;
     elements.modalMsg.onclick = null; // 清空撤销等临时绑定，防止泄漏到下一个弹窗
 }
-
 function _setFooter(btns) {
     elements.modalFooter.innerHTML = '';
     btns.forEach(({ text, cls, onClick }) => {
@@ -622,6 +678,9 @@ function _setFooter(btns) {
 }
 
 function showHtmlModal(title, html, footerBtns = null) {
+    setModalDismissHandler(_closeModal);
+    elements.modalOverlay.dataset.mode = '';
+    elements.modalInput.onkeydown = null;
     elements.modalTitle.textContent = title;
     elements.modalMsg.onclick = null;
     elements.modalMsg.innerHTML = html;
@@ -691,7 +750,7 @@ function parseSettlementState(lastSettlementDate, autoSettlementBlockedDate) {
     };
 }
 
-function createBackupSnapshot({ myFunds, lastUpdateDate, lastDayProfits, lastSettlementDate, autoSettlementBlockedDate, backupFunds }) {
+function createBackupSnapshot({ myFunds, lastUpdateDate, lastDayProfits, lastSettlementDate, autoSettlementBlockedDate, backupFunds, dailyProfitHistory }) {
     return {
         // 这里先冻结一份快照，避免后续流程继续修改 funds / lastDayProfits 污染当天首份备份
         myFunds: cloneData(myFunds || {}),
@@ -699,7 +758,8 @@ function createBackupSnapshot({ myFunds, lastUpdateDate, lastDayProfits, lastSet
         lastDayProfits: cloneData(lastDayProfits || {}),
         lastSettlementDate,
         autoSettlementBlockedDate,
-        backupFunds
+        backupFunds,
+        dailyProfitHistory: cloneData(dailyProfitHistory || {})
     };
 }
 
@@ -717,6 +777,359 @@ function getBackupExportMetadata(backupFunds) {
         lastSettlementDate: backupFunds.lastSettlementDate || '',
         autoSettlementBlockedDate: backupFunds.autoSettlementBlockedDate || ''
     };
+}
+
+function normalizeDailyProfitHistory(history) {
+    if (!history || typeof history !== 'object' || Array.isArray(history)) return {};
+    const normalized = {};
+    const dates = Object.keys(history)
+        .filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date))
+        .sort();
+
+    const keptDates = dates.slice(-CONSTANTS.DAILY_PROFIT_HISTORY_LIMIT);
+    for (const date of keptDates) {
+        const entry = history[date] || {};
+        const byCodeRaw = entry.byCode && typeof entry.byCode === 'object' ? entry.byCode : {};
+        const byCode = {};
+        let totalProfit = 0;
+        for (const [code, value] of Object.entries(byCodeRaw)) {
+            const profit = round2(Number(value) || 0);
+            byCode[code] = profit;
+            totalProfit = round2(totalProfit + profit);
+        }
+        normalized[date] = {
+            totalProfit: typeof entry.totalProfit === 'number' && !Number.isNaN(entry.totalProfit)
+                ? round2(entry.totalProfit)
+                : totalProfit,
+            byCode
+        };
+    }
+    return normalized;
+}
+
+function recordDailyProfitHistory(history, funds, priceUpdates) {
+    const nextHistory = normalizeDailyProfitHistory(history);
+    const touchedDates = new Set();
+
+    for (const { code, price, prevPriceDate, acNetValue, dividendList } of priceUpdates) {
+        const settlementDate = prevPriceDate || '';
+        if (!settlementDate) continue;
+
+        const item = funds[code];
+        if (!item) continue;
+
+        let profit = 0;
+        if (price > 0) {
+            let shares = item.shares || 0;
+            if (shares <= 0 && item.amount > 0) {
+                const baseNav = item.savedPrevPrice || price;
+                shares = round6(item.amount / baseNav);
+            }
+
+            if (shares > 0) {
+                const { totalPeriodProfit } = detectDividendAndProfit(
+                    item,
+                    { price, acNetValue, prevPriceDate, dividendList },
+                    shares
+                );
+                profit = round2(totalPeriodProfit);
+            }
+        }
+
+        const existingEntry = nextHistory[settlementDate] || { totalProfit: 0, byCode: {} };
+        nextHistory[settlementDate] = {
+            totalProfit: existingEntry.totalProfit || 0,
+            byCode: {
+                ...(existingEntry.byCode || {}),
+                [code]: profit
+            }
+        };
+        touchedDates.add(settlementDate);
+    }
+
+    touchedDates.forEach(date => {
+        const entry = nextHistory[date] || { byCode: {} };
+        const byCode = {};
+        let totalProfit = 0;
+        for (const [code, value] of Object.entries(entry.byCode || {})) {
+            const roundedProfit = round2(Number(value) || 0);
+            byCode[code] = roundedProfit;
+            totalProfit = round2(totalProfit + roundedProfit);
+        }
+        nextHistory[date] = { totalProfit, byCode };
+    });
+
+    return normalizeDailyProfitHistory(nextHistory);
+}
+
+function buildProfitHistoryMonthGrid(monthKey) {
+    const [year, month] = (monthKey || getToday().slice(0, 7)).split('-').map(Number);
+    const firstDay = new Date(year, month - 1, 1);
+    const firstWeekday = (firstDay.getDay() + 6) % 7;
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const cells = [];
+
+    for (let i = 0; i < firstWeekday; i++) {
+        cells.push({ type: 'empty', key: `empty-${i}` });
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+        const date = `${monthKey}-${String(day).padStart(2, '0')}`;
+        cells.push({ type: 'day', date });
+    }
+    while (cells.length % 7 !== 0) {
+        cells.push({ type: 'empty', key: `tail-${cells.length}` });
+    }
+    return cells;
+}
+
+function shiftMonth(monthKey, delta) {
+    const [year, month] = (monthKey || getToday().slice(0, 7)).split('-').map(Number);
+    const next = new Date(year, month - 1 + delta, 1);
+    return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function getCurrentProfitCalendarContext() {
+    const filter = elements.groupFilter?.value || 'all';
+    const visibleItems = allFundsData.filter(item => filter === 'all' || item.group === filter);
+    const visibleCodes = new Set(visibleItems.map(item => item.code));
+    return {
+        filter,
+        title: filter === 'all' ? '全部收益日历' : `${filter} 收益日历`,
+        visibleItems,
+        visibleCodes
+    };
+}
+
+function getFilteredProfitHistory(history, filter) {
+    const normalized = normalizeDailyProfitHistory(history);
+    if (filter === 'all') return normalized;
+
+    const groupByCode = new Map(allFundsData.map(item => [item.code, item.group]));
+    const filtered = {};
+    for (const [date, entry] of Object.entries(normalized)) {
+        const byCode = {};
+        let totalProfit = 0;
+        for (const [code, profit] of Object.entries(entry.byCode || {})) {
+            if (groupByCode.get(code) !== filter) continue;
+            byCode[code] = profit;
+            totalProfit = round2(totalProfit + profit);
+        }
+        if (Object.keys(byCode).length > 0) {
+            filtered[date] = { totalProfit, byCode };
+        }
+    }
+    return filtered;
+}
+
+function getProfitCalendarMonthDates(history, monthKey) {
+    return Object.keys(history || {})
+        .filter(date => date.startsWith(`${monthKey}-`))
+        .sort();
+}
+
+function getProfitCalendarSelectedDate(history, monthKey, preferredDate = '') {
+    const monthDates = getProfitCalendarMonthDates(history, monthKey);
+    if (preferredDate && preferredDate.startsWith(`${monthKey}-`) && monthDates.includes(preferredDate)) {
+        return preferredDate;
+    }
+    return monthDates[monthDates.length - 1] || '';
+}
+
+function formatProfitCalendarMonth(monthKey) {
+    const [year, month] = (monthKey || getToday().slice(0, 7)).split('-');
+    return `${year}年${Number(month)}月`;
+}
+
+function formatProfitCalendarDate(dateStr) {
+    if (!dateStr) return '未选择日期';
+    const date = new Date(`${dateStr}T00:00:00`);
+    const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    const weekday = Number.isNaN(date.getTime()) ? '' : ` ${weekdays[date.getDay()]}`;
+    return `${dateStr}${weekday}`;
+}
+
+async function openProfitCalendar() {
+    const { dailyProfitHistory } = await storage.get(['dailyProfitHistory']);
+    const history = normalizeDailyProfitHistory(dailyProfitHistory);
+
+    const getMonthSummary = (filteredHistory, monthKey) => {
+        const monthDates = getProfitCalendarMonthDates(filteredHistory, monthKey);
+        const monthValues = monthDates.map(date => Math.abs(filteredHistory[date]?.totalProfit || 0));
+        return {
+            monthDates,
+            monthMaxAbs: Math.max(...monthValues, 1)
+        };
+    };
+
+    const render = () => {
+        const context = getCurrentProfitCalendarContext();
+        const filteredHistory = getFilteredProfitHistory(history, context.filter);
+        const allDates = Object.keys(filteredHistory).sort();
+        const latestDate = allDates[allDates.length - 1] || getToday();
+
+        if (!/^\d{4}-\d{2}$/.test(profitCalendarViewMonth)) {
+            profitCalendarViewMonth = latestDate.slice(0, 7);
+        }
+
+        const { monthDates, monthMaxAbs } = getMonthSummary(filteredHistory, profitCalendarViewMonth);
+
+        profitCalendarSelectedDate = getProfitCalendarSelectedDate(
+            filteredHistory,
+            profitCalendarViewMonth,
+            profitCalendarSelectedDate
+        );
+
+        const gridCells = buildProfitHistoryMonthGrid(profitCalendarViewMonth);
+        const codeMap = new Map(allFundsData.map(item => [item.code, item]));
+        const selectedEntry = profitCalendarSelectedDate
+            ? (filteredHistory[profitCalendarSelectedDate] || { totalProfit: 0, byCode: {} })
+            : { totalProfit: 0, byCode: {} };
+        const detailRows = Object.entries(selectedEntry.byCode || {})
+            .map(([code, profit]) => ({
+                code,
+                name: codeMap.get(code)?.name || code,
+                profit: round2(Number(profit) || 0)
+            }))
+            .sort((a, b) => Math.abs(b.profit) - Math.abs(a.profit) || a.code.localeCompare(b.code));
+
+        const weekdayHtml = ['一', '二', '三', '四', '五', '六', '日']
+            .map(day => `<div class="profit-calendar-weekday">${day}</div>`)
+            .join('');
+
+        const gridHtml = gridCells.map(cell => {
+            if (cell.type === 'empty') {
+                return '<div class="profit-calendar-cell empty"></div>';
+            }
+
+            const entry = filteredHistory[cell.date];
+            const hasData = !!entry && Object.keys(entry.byCode || {}).length > 0;
+            const totalProfit = round2(entry?.totalProfit || 0);
+            const isPositive = totalProfit > 0;
+            const isNegative = totalProfit < 0;
+            const alpha = hasData
+                ? (0.12 + Math.min(Math.abs(totalProfit) / monthMaxAbs, 1) * 0.2).toFixed(2)
+                : '0.16';
+
+            return `
+                <button
+                    type="button"
+                    class="profit-calendar-day-btn ${hasData ? 'has-data' : ''} ${isPositive ? 'positive' : ''} ${isNegative ? 'negative' : ''} ${cell.date === getToday() ? 'is-today' : ''} ${cell.date === profitCalendarSelectedDate ? 'is-selected' : ''}"
+                    data-calendar-date="${cell.date}"
+                    style="--calendar-alpha:${alpha};"
+                >
+                    <span class="profit-calendar-day-label">${Number(cell.date.slice(-2))}</span>
+                    <span class="profit-calendar-day-value">${hasData ? formatProfit(totalProfit) : '暂无'}</span>
+                </button>
+            `;
+        }).join('');
+
+        const detailHtml = detailRows.length > 0
+            ? `
+                <div class="profit-calendar-detail-list">
+                    ${detailRows.map(item => `
+                        <div class="profit-calendar-detail-row">
+                            <div class="profit-calendar-detail-name" title="${escapeHtml(item.name)} (${item.code})">
+                                ${escapeHtml(item.name)} (${item.code})
+                            </div>
+                            <div class="profit-calendar-detail-profit ${item.profit > 0 ? 'positive' : ''} ${item.profit < 0 ? 'negative' : ''}">
+                                ${formatProfit(item.profit)}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `
+            : `<div class="profit-calendar-detail-empty">${allDates.length === 0 ? '还没有日收益记录。完成一次自动或手动结算后会显示在这里。' : (monthDates.length === 0 ? '该月份暂无已记录收益。' : '当天暂无已记录收益。')}</div>`;
+
+        const detailHeaderDate = profitCalendarSelectedDate ? formatProfitCalendarDate(profitCalendarSelectedDate) : `${formatProfitCalendarMonth(profitCalendarViewMonth)} 暂无记录`;
+        const detailHeaderTotal = profitCalendarSelectedDate ? formatProfit(round2(selectedEntry.totalProfit || 0)) : '—';
+        const selectedCount = detailRows.length;
+        const detailBadgeText = !profitCalendarSelectedDate
+            ? '未选中日期'
+            : (selectedCount > 0 ? `${selectedCount} 项明细` : (monthDates.length === 0 ? '本月无记录' : '当日无明细'));
+        const detailBadgeClass = selectedEntry.totalProfit > 0 ? 'positive' : (selectedEntry.totalProfit < 0 ? 'negative' : '');
+
+        setModalDismissHandler(_closeModal);
+        elements.modalOverlay.dataset.mode = 'profit-calendar';
+        elements.modalTitle.textContent = context.title;
+        elements.modalInput.style.display = 'none';
+        elements.modalInput.onkeydown = null;
+        elements.modalMsg.innerHTML = `
+            <div class="profit-calendar-modal">
+                <div class="profit-calendar-toolbar">
+                    <div class="profit-calendar-caption">
+                        <div class="profit-calendar-title">${context.title}</div>
+                        <div class="profit-calendar-subtitle">按当前筛选查看每日结算收益分布</div>
+                        <div class="profit-calendar-meta">
+                            <div class="profit-calendar-meta-item">当前 ${context.visibleItems.length} 项</div>
+                            <div class="profit-calendar-meta-item">已记录 ${allDates.length} 个交易日</div>
+                        </div>
+                    </div>
+                    <div class="profit-calendar-nav">
+                        <button type="button" class="profit-calendar-nav-btn" data-calendar-nav="-1">‹</button>
+                        <div class="profit-calendar-month">${formatProfitCalendarMonth(profitCalendarViewMonth)}</div>
+                        <button type="button" class="profit-calendar-nav-btn" data-calendar-nav="1">›</button>
+                    </div>
+                </div>
+                <div class="profit-calendar-legend">
+                    <div class="profit-calendar-legend-item"><span class="profit-calendar-legend-dot positive"></span><span>盈利</span></div>
+                    <div class="profit-calendar-legend-item"><span class="profit-calendar-legend-dot negative"></span><span>亏损</span></div>
+                    <div class="profit-calendar-legend-item"><span class="profit-calendar-legend-dot neutral"></span><span>今日/选中高亮</span></div>
+                </div>
+                <div class="profit-calendar-weekdays">${weekdayHtml}</div>
+                <div class="profit-calendar-grid">${gridHtml}</div>
+                <div class="profit-calendar-detail">
+                    <div class="profit-calendar-detail-header">
+                        <div class="profit-calendar-detail-heading">
+                            <div class="profit-calendar-detail-date">${detailHeaderDate}</div>
+                            <div class="profit-calendar-detail-badge ${detailBadgeClass}">${detailBadgeText}</div>
+                        </div>
+                        <div class="profit-calendar-detail-summary">
+                            <div class="profit-calendar-detail-count">日收益合计</div>
+                            <div class="profit-calendar-detail-total ${selectedEntry.totalProfit > 0 ? 'positive' : ''} ${selectedEntry.totalProfit < 0 ? 'negative' : ''}">
+                                ${detailHeaderTotal}
+                            </div>
+                        </div>
+                    </div>
+                    ${detailHtml}
+                </div>
+            </div>
+        `;
+        _setFooter([
+            { text: '关闭', cls: 'modal-btn-cancel', onClick: _closeModal }
+        ]);
+        elements.modalOverlay.classList.add('visible');
+
+        elements.modalMsg.onclick = (event) => {
+            const navBtn = event.target.closest('[data-calendar-nav]');
+            if (navBtn) {
+                profitCalendarViewMonth = shiftMonth(profitCalendarViewMonth, Number(navBtn.dataset.calendarNav));
+                profitCalendarSelectedDate = '';
+                render();
+                return;
+            }
+
+            const dayBtn = event.target.closest('[data-calendar-date]');
+            if (dayBtn) {
+                profitCalendarSelectedDate = dayBtn.dataset.calendarDate;
+                render();
+            }
+        };
+    };
+
+    const initialContext = getCurrentProfitCalendarContext();
+    const initialFilteredHistory = getFilteredProfitHistory(history, initialContext.filter);
+    const initialDates = Object.keys(initialFilteredHistory).sort();
+    const initialLatestDate = initialDates[initialDates.length - 1] || getToday();
+    if (!/^\d{4}-\d{2}$/.test(profitCalendarViewMonth) || !initialDates.some(date => date.startsWith(`${profitCalendarViewMonth}-`))) {
+        profitCalendarViewMonth = initialLatestDate.slice(0, 7);
+    }
+    profitCalendarSelectedDate = getProfitCalendarSelectedDate(
+        initialFilteredHistory,
+        profitCalendarViewMonth,
+        profitCalendarSelectedDate
+    );
+
+    render();
 }
 
 function buildConfirmedTransactionsState() {
@@ -850,13 +1263,17 @@ function collectAutoSettlementEntries(funds, fetchedData) {
     return settlements;
 }
 
-async function saveSettlementState(funds, todayStr, autoSettlementBlockedDate = null) {
-    await storage.set({
+async function saveSettlementState(funds, todayStr, autoSettlementBlockedDate = null, dailyProfitHistory = null) {
+    const dataToSave = {
         myFunds: funds,
         lastSettlementDate: todayStr,
         autoSettlementBlockedDate,
         lastUpdateDate: todayStr
-    });
+    };
+    if (dailyProfitHistory) {
+        dataToSave.dailyProfitHistory = normalizeDailyProfitHistory(dailyProfitHistory);
+    }
+    await storage.set(dataToSave);
 }
 
 // ==================== 1. 新增：统一的备份函数 ====================
@@ -884,7 +1301,8 @@ async function backupFundsData(snapshot) {
         lastDayProfits: snapshot?.lastDayProfits || {},
         lastSettlementDate: settlementDate,
         autoSettlementBlockedDate: blockedDate,
-        myFunds: funds
+        myFunds: funds,
+        dailyProfitHistory: normalizeDailyProfitHistory(snapshot?.dailyProfitHistory)
     };
     await storage.set({ backupFunds: backupData });
     console.log('[Backup] 数据已备份（首次）:', backupData);
@@ -1047,13 +1465,14 @@ async function manualSettlement() {
     if (!ok) return;
 
     const todayStr = getToday();
-    const { myFunds, lastUpdateDate, lastDayProfits, lastSettlementDate, autoSettlementBlockedDate, backupFunds } = await storage.get([
+    const { myFunds, lastUpdateDate, lastDayProfits, lastSettlementDate, autoSettlementBlockedDate, backupFunds, dailyProfitHistory } = await storage.get([
         'myFunds',
         'lastUpdateDate',
         'lastDayProfits',
         'lastSettlementDate',
         'autoSettlementBlockedDate',
-        'backupFunds'
+        'backupFunds',
+        'dailyProfitHistory'
     ]);
     const funds = myFunds || {};
     const { blockedDate } = parseSettlementState(lastSettlementDate, autoSettlementBlockedDate);
@@ -1065,7 +1484,8 @@ async function manualSettlement() {
         lastDayProfits,
         lastSettlementDate,
         autoSettlementBlockedDate,
-        backupFunds
+        backupFunds,
+        dailyProfitHistory
     }));
     elements.status.innerText = '正在执行日结算...';
     const liveMap = new Map(allFundsData.map(f => [f.code, f]));
@@ -1074,9 +1494,10 @@ async function manualSettlement() {
         const settlement = buildSettlementEntry(code, liveMap.get(code));
         if (settlement) settlements.push(settlement);
     }
+    const nextDailyProfitHistory = recordDailyProfitHistory(dailyProfitHistory, funds, settlements);
     const updatedCount = _applySettlementLoop(funds, settlements, todayStr);
 
-    await saveSettlementState(funds, todayStr, blockedDate === todayStr ? todayStr : null);
+    await saveSettlementState(funds, todayStr, blockedDate === todayStr ? todayStr : null, nextDailyProfitHistory);
     showToast(`✅ 结算完成！已更新 ${updatedCount} 条`, 'success');
     checkBackup();
     loadData();
@@ -1104,6 +1525,7 @@ async function rollbackSettlement() {
         myFunds: cloneData(backupFunds.myFunds),
         lastUpdateDate: backupFunds.lastUpdateDate || '',
         lastDayProfits: cloneData(backupFunds.lastDayProfits || {}),
+        dailyProfitHistory: normalizeDailyProfitHistory(backupFunds.dailyProfitHistory),
         lastSettlementDate: settlementDate,
         autoSettlementBlockedDate: todayStr
     });
@@ -1118,8 +1540,9 @@ async function autoSettlement(funds, settlements, todayStr, backupSnapshot) {
     elements.status.innerText = '正在自动结算...';
 
     await backupFundsData(backupSnapshot);
+    const nextDailyProfitHistory = recordDailyProfitHistory(backupSnapshot?.dailyProfitHistory, funds, settlements);
     const updatedCount = _applySettlementLoop(funds, settlements, todayStr);
-    await saveSettlementState(funds, todayStr, null);
+    await saveSettlementState(funds, todayStr, null, nextDailyProfitHistory);
 
     if (updatedCount === 0) {
         console.log('[autoSettlement] 净值无变化，仅更新结算日期');
@@ -1180,7 +1603,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         tableBody: document.getElementById('fundTableBody'),
         status: document.getElementById('status'),
         fullscreenBtn: document.getElementById('fullscreenBtn'),
+        refreshControl: document.getElementById('refreshControl'),
         refreshBtn: document.getElementById('refreshBtn'),
+        refreshBtnText: document.getElementById('refreshBtnText'),
+        refreshBtnIcon: document.getElementById('refreshBtnIcon'),
+        refreshIntervalSelect: document.getElementById('refreshIntervalSelect'),
+        marketTicker: document.getElementById('marketTicker'),
+        marketTickerTrack: document.getElementById('marketTickerTrack'),
         notificationBtn: document.getElementById('notificationBtn'),
         totalAmount: document.getElementById('totalAmount'),
         totalTodayProfit: document.getElementById('totalTodayProfit'),
@@ -1197,6 +1626,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         toastContainer: document.getElementById('toastContainer'),
         batchGroupBtn: document.getElementById('batchGroupBtn'),
         batchClearBtn: document.getElementById('batchClearBtn'),
+        profitCalendarBtn: document.getElementById('profitCalendarBtn'),
     });
 
     // 初始化通知中心
@@ -1207,17 +1637,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (elements.batchClearBtn) elements.batchClearBtn.onclick = () => batchClearPositions();
     elements.exportBtn.onclick = exportFundsData;
     elements.importBtn.onclick = () => elements.importFile.click();
+    if (elements.profitCalendarBtn) elements.profitCalendarBtn.onclick = () => openProfitCalendar();
 
     // 绑定通知中心按钮
     if (elements.notificationBtn) {
         elements.notificationBtn.onclick = () => notificationCenter.show();
+    }
+    if (elements.modalOverlay) {
+        elements.modalOverlay.onclick = (e) => {
+            if (e.target === elements.modalOverlay) {
+                dismissModal();
+            }
+        };
     }
 
     const isPopup = chrome.extension.getViews({ type: 'popup' }).includes(window);
     if (!isPopup) document.body.classList.add('is-fullscreen');
 
     checkBackup();
-    loadData();
+    await restoreAutoRefreshInterval();
+    renderMarketBreadthTicker();
+    resetAutoRefreshCountdown();
+    ensureRefreshCountdownTimer();
+    triggerUnifiedRefresh('initial');
 
     elements.importFile.addEventListener('change', importFundsData);
     initFabMenu();
@@ -1225,11 +1667,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.fullscreenBtn.onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') });
 
     elements.refreshBtn.onclick = () => {
-        elements.refreshBtn.classList.add('spinning');
-        loadData().finally(() => {
-            setTimeout(() => elements.refreshBtn.classList.remove('spinning'), 500);
-        });
+        triggerUnifiedRefresh('manual');
     };
+    if (elements.refreshIntervalSelect) {
+        elements.refreshIntervalSelect.onchange = () => {
+            handleRefreshIntervalChange();
+        };
+    }
 
     elements.groupFilter.onchange = () => {
         clearSelection();
@@ -1540,6 +1984,231 @@ function withTimeout(promise, ms, fallback) {
     return Promise.race([promise, timer]);
 }
 
+function getMarketTickerContent(data) {
+    return `
+        <span class="market-ticker-item is-limit-up"><span class="market-ticker-label">涨停</span><span class="market-ticker-value">${data.limitUp}</span></span>
+        <span class="market-ticker-item is-up"><span class="market-ticker-label">涨</span><span class="market-ticker-value">${data.up}</span></span>
+        <span class="market-ticker-item is-down"><span class="market-ticker-label">跌</span><span class="market-ticker-value">${data.down}</span></span>
+        <span class="market-ticker-item is-limit-down"><span class="market-ticker-label">跌停</span><span class="market-ticker-value">${data.limitDown}</span></span>
+    `;
+}
+
+function renderMarketBreadthTicker(data = marketBreadthData, unavailable = false) {
+    if (!elements.marketTicker || !elements.marketTickerTrack) return;
+
+    if (!data) {
+        const text = unavailable ? '市场广度暂不可用' : '市场广度加载中...';
+        elements.marketTicker.classList.add('is-unavailable');
+        elements.marketTickerTrack.innerHTML = `
+            <div class="market-ticker-copy"><span class="market-ticker-empty">${text}</span></div>
+        `;
+        return;
+    }
+
+    const content = getMarketTickerContent(data);
+    elements.marketTicker.classList.remove('is-unavailable');
+    elements.marketTickerTrack.innerHTML = `
+        <div class="market-ticker-copy">${content}</div>
+    `;
+}
+
+function getAutoRefreshIntervalSeconds() {
+    return Math.max(1, Math.round(autoRefreshIntervalMs / 1000));
+}
+
+function syncRefreshIntervalSelect() {
+    if (!elements.refreshIntervalSelect) return;
+    elements.refreshIntervalSelect.value = String(getAutoRefreshIntervalSeconds());
+    elements.refreshIntervalSelect.disabled = Boolean(unifiedRefreshPromise);
+
+    if (elements.refreshControl) {
+        elements.refreshControl.classList.toggle('is-disabled', Boolean(unifiedRefreshPromise));
+    }
+}
+
+function updateRefreshButtonState() {
+    if (!elements.refreshBtn) return;
+
+    syncRefreshIntervalSelect();
+    const intervalSeconds = getAutoRefreshIntervalSeconds();
+    const isRefreshing = Boolean(unifiedRefreshPromise);
+    const remainingMs = isRefreshing
+        ? autoRefreshIntervalMs
+        : (nextAutoRefreshAt ? Math.max(0, nextAutoRefreshAt - Date.now()) : autoRefreshIntervalMs);
+    const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+    const progress = autoRefreshIntervalMs > 0 ? Math.max(0, Math.min(1, remainingMs / autoRefreshIntervalMs)) : 0;
+
+    if (elements.refreshControl) {
+        elements.refreshControl.classList.toggle('is-refreshing', isRefreshing);
+        elements.refreshControl.classList.toggle('is-low', !isRefreshing && progress <= 0.2);
+        elements.refreshControl.classList.toggle('is-medium', !isRefreshing && progress > 0.2 && progress <= 0.5);
+        elements.refreshControl.classList.toggle('is-empty', !isRefreshing && progress <= 0.02);
+        elements.refreshControl.style.setProperty('--refresh-progress', String(isRefreshing ? 1 : progress));
+    }
+
+    if (isRefreshing) {
+        elements.refreshBtn.classList.add('spinning');
+        elements.refreshBtn.title = `正在刷新行情（当前自动刷新 ${intervalSeconds} 秒）`;
+        elements.refreshBtn.setAttribute('aria-label', `正在刷新行情，当前自动刷新 ${intervalSeconds} 秒`);
+        if (elements.refreshBtnText) elements.refreshBtnText.textContent = '刷新中';
+        return;
+    }
+
+    elements.refreshBtn.classList.remove('spinning');
+    elements.refreshBtn.title = `刷新行情（${remainingSeconds} 秒后自动刷新，当前 ${intervalSeconds} 秒）`;
+    elements.refreshBtn.setAttribute('aria-label', `刷新行情，${remainingSeconds} 秒后自动刷新，当前自动刷新 ${intervalSeconds} 秒`);
+    if (elements.refreshBtnText) elements.refreshBtnText.textContent = `${remainingSeconds}s`;
+}
+
+function resetAutoRefreshCountdown() {
+    nextAutoRefreshAt = Date.now() + autoRefreshIntervalMs;
+    updateRefreshButtonState();
+}
+
+async function setAutoRefreshInterval(seconds, { silent = false, resetCountdown = true } = {}) {
+    const normalizedSeconds = Number(seconds);
+    if (!CONFIG.AUTO_REFRESH_OPTIONS.includes(normalizedSeconds)) {
+        return false;
+    }
+
+    autoRefreshIntervalMs = normalizedSeconds * 1000;
+    if (resetCountdown) {
+        resetAutoRefreshCountdown();
+    } else {
+        updateRefreshButtonState();
+    }
+
+    try {
+        await storage.set({ [CONFIG.AUTO_REFRESH_STORAGE_KEY]: normalizedSeconds });
+    } catch (error) {
+        console.warn('[refresh] 保存自动刷新间隔失败:', error);
+    }
+
+    if (!silent) {
+        showToast(`自动刷新已切换为 ${normalizedSeconds} 秒`, 'success', CONFIG.TOAST_SHORT);
+    }
+
+    return true;
+}
+
+async function restoreAutoRefreshInterval() {
+    try {
+        const result = await storage.get([CONFIG.AUTO_REFRESH_STORAGE_KEY]);
+        const savedSeconds = Number(result?.[CONFIG.AUTO_REFRESH_STORAGE_KEY]);
+        if (CONFIG.AUTO_REFRESH_OPTIONS.includes(savedSeconds)) {
+            autoRefreshIntervalMs = savedSeconds * 1000;
+        }
+    } catch (error) {
+        console.warn('[refresh] 读取自动刷新间隔失败:', error);
+    }
+
+    syncRefreshIntervalSelect();
+}
+
+async function handleRefreshIntervalChange() {
+    if (!elements.refreshIntervalSelect) return;
+
+    const changed = await setAutoRefreshInterval(elements.refreshIntervalSelect.value);
+    if (!changed) {
+        syncRefreshIntervalSelect();
+    }
+}
+
+function ensureRefreshCountdownTimer() {
+    if (refreshCountdownTimer) return;
+
+    refreshCountdownTimer = setInterval(() => {
+        updateRefreshButtonState();
+        if (!unifiedRefreshPromise && nextAutoRefreshAt && Date.now() >= nextAutoRefreshAt) {
+            triggerUnifiedRefresh('auto');
+        }
+    }, 1000);
+}
+
+async function fetchMarketBreadth() {
+    const quoteUrl = 'https://push2.eastmoney.com/api/qt/ulist.np/get?secids=1.000001,0.399001&ut=bd1d9ddb04089700cf9c27f6f7426281&invt=2&fields=f14,f12,f13,f104,f105,f106';
+    const changesUrl = 'https://push2ex.eastmoney.com/getStockCountChanges?type=4,8&ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wzchanges';
+
+    const [quoteData, changesData] = await Promise.all([
+        withTimeout(
+            fetch(quoteUrl)
+                .then(async res => {
+                    if (!res.ok) throw new Error(`quote HTTP ${res.status}`);
+                    return res.json();
+                })
+                .catch(() => null),
+            CONFIG.MARKET_BREADTH_TIMEOUT,
+            null
+        ),
+        withTimeout(
+            fetch(changesUrl)
+                .then(async res => {
+                    if (!res.ok) throw new Error(`changes HTTP ${res.status}`);
+                    return res.json();
+                })
+                .catch(() => null),
+            CONFIG.MARKET_BREADTH_TIMEOUT,
+            null
+        )
+    ]);
+
+    if (!quoteData || quoteData.rc !== 0 || !Array.isArray(quoteData.data?.diff)) {
+        throw new Error('上涨下跌家数接口不可用');
+    }
+    if (!changesData || changesData.rc !== 0 || !Array.isArray(changesData.data?.ydlist)) {
+        throw new Error('涨跌停家数接口不可用');
+    }
+
+    const up = quoteData.data.diff.reduce((sum, item) => sum + (Number(item.f104) || 0), 0);
+    const down = quoteData.data.diff.reduce((sum, item) => sum + (Number(item.f105) || 0), 0);
+    const limitUp = Number(changesData.data.ydlist.find(item => Number(item.t) === 4)?.ct) || 0;
+    const limitDown = Number(changesData.data.ydlist.find(item => Number(item.t) === 8)?.ct) || 0;
+
+    return { limitUp, up, down, limitDown };
+}
+
+async function refreshMarketBreadth() {
+    try {
+        const data = await fetchMarketBreadth();
+        marketBreadthData = data;
+        renderMarketBreadthTicker(data);
+        return data;
+    } catch (error) {
+        console.warn('[marketBreadth] 刷新失败:', error);
+        renderMarketBreadthTicker(marketBreadthData, !marketBreadthData);
+        return marketBreadthData;
+    }
+}
+
+async function triggerUnifiedRefresh(source = 'manual') {
+    if (unifiedRefreshPromise) {
+        return unifiedRefreshPromise;
+    }
+
+    console.log(`[refresh] 触发统一刷新: ${source}`);
+    unifiedRefreshPromise = (async () => {
+        updateRefreshButtonState();
+        await Promise.allSettled([
+            loadData(),
+            refreshMarketBreadth()
+        ]);
+        resetAutoRefreshCountdown();
+    })().finally(() => {
+        unifiedRefreshPromise = null;
+        updateRefreshButtonState();
+    });
+
+    updateRefreshButtonState();
+    return unifiedRefreshPromise;
+}
+
+window.addEventListener('beforeunload', () => {
+    if (refreshCountdownTimer) {
+        clearInterval(refreshCountdownTimer);
+        refreshCountdownTimer = null;
+    }
+});
+
 // ==================== 加载数据 ====================
 let _loadDataPromise = null; // 并发保护：使用 Promise 队列
 async function loadData() {
@@ -1567,14 +2236,16 @@ async function _loadDataImpl() {
         'lastSettlementDate',
         'lastDayProfits',
         'lastUpdateDate',
-        'autoSettlementBlockedDate'
+        'autoSettlementBlockedDate',
+        'dailyProfitHistory'
     ]);
     const {
         myFunds,
         lastSettlementDate,
         lastDayProfits,
         lastUpdateDate,
-        autoSettlementBlockedDate
+        autoSettlementBlockedDate,
+        dailyProfitHistory
     } = storageState;
     let funds = myFunds || {};
     const codes = Object.keys(funds);
@@ -1624,7 +2295,8 @@ async function _loadDataImpl() {
                 lastDayProfits,
                 lastSettlementDate,
                 autoSettlementBlockedDate,
-                backupFunds
+                backupFunds,
+                dailyProfitHistory
             });
             await autoSettlement(funds, autoSettlementEntries, todayStr, settlementSnapshot);
         }
@@ -1920,8 +2592,12 @@ async function clearPositions(codes) {
     const desc = isBatch
         ? `确认要清空选中 ${codeList.length} 支基金的持仓和份额吗？`
         : `确定要清空基金 [${codeList[0]}] 的持仓吗？`;
+    let resolveClearPositions = null;
 
-    _openModal(title, '', false);
+    _openModal(title, '', false, '', () => {
+        _closeModal();
+        resolveClearPositions?.(false);
+    });
     elements.modalMsg.innerHTML = `
         <p style="margin-bottom:10px;">${desc}</p>
         ${!isBatch ? '<p style="font-size:12px;color:#8aacce;margin-bottom:15px;">此操作将清空持仓金额和份额，但会保留“累计收益”。</p>' : ''}
@@ -1932,6 +2608,7 @@ async function clearPositions(codes) {
     `;
 
     const ok = await new Promise(resolve => {
+        resolveClearPositions = resolve;
         _setFooter([
             { text: '取消', cls: 'modal-btn-cancel', onClick: () => { _closeModal(); resolve(false); } },
             {
@@ -2100,7 +2777,14 @@ function updateGroupFilter() {
 function showFormModal(config) {
     return new Promise(resolve => {
         const { title, subTitle, fields, actionText = '保存' } = config;
+        setModalDismissHandler(() => {
+            _closeModal();
+            resolve(null);
+        });
+        elements.modalOverlay.dataset.mode = '';
         // 1. 设置标题和副标题
+        elements.modalInput.onkeydown = null;
+        elements.modalMsg.onclick = null;
         elements.modalTitle.textContent = title;
         // 构建内容区域
         let html = `<div class="form-header-sub">${subTitle || ''}</div>`;
@@ -2637,6 +3321,9 @@ async function showPendingTransactions(code) {
         return html;
     };
 
+    setModalDismissHandler(_closeModal);
+    elements.modalOverlay.dataset.mode = '';
+    elements.modalInput.onkeydown = null;
     elements.modalTitle.textContent = '交易记录';
     elements.modalMsg.innerHTML = renderList();
     elements.modalInput.style.display = 'none';
@@ -3108,18 +3795,19 @@ function downloadJsonFile(data, fileName) {
     }, 100);
 }
 
-function buildFundsExportData({ myFunds, lastUpdateDate, lastDayProfits, metadata = {} }) {
+function buildFundsExportData({ myFunds, lastUpdateDate, lastDayProfits, dailyProfitHistory, metadata = {} }) {
     return {
         exportTime: new Date().toLocaleString(),
         lastUpdateDate: lastUpdateDate || '',
         lastDayProfits: cloneData(lastDayProfits || {}),
+        dailyProfitHistory: normalizeDailyProfitHistory(dailyProfitHistory),
         myFunds: cloneData(myFunds || {}),
         ...metadata
     };
 }
 
 async function exportFundsData() {
-    const { myFunds, lastUpdateDate, lastDayProfits } = await storage.get(['myFunds', 'lastUpdateDate', 'lastDayProfits']);
+    const { myFunds, lastUpdateDate, lastDayProfits, dailyProfitHistory } = await storage.get(['myFunds', 'lastUpdateDate', 'lastDayProfits', 'dailyProfitHistory']);
     const fundsData = myFunds || {};
     if (Object.keys(fundsData).length === 0) {
         showToast('暂无可导出的基金数据！', 'warning');
@@ -3129,7 +3817,8 @@ async function exportFundsData() {
     const exportData = buildFundsExportData({
         myFunds: fundsData,
         lastUpdateDate,
-        lastDayProfits
+        lastDayProfits,
+        dailyProfitHistory
     });
 
     const fileName = `基金数据_${formatDateTimeForFile()}.json`;
@@ -3148,6 +3837,7 @@ async function exportBackupFundsData() {
         myFunds: backupFunds.myFunds,
         lastUpdateDate: backupFunds.lastUpdateDate,
         lastDayProfits: backupFunds.lastDayProfits,
+        dailyProfitHistory: backupFunds.dailyProfitHistory,
         metadata: getBackupExportMetadata(backupFunds)
     });
 
@@ -3212,6 +3902,7 @@ function importFundsData(event) {
             const dataToSave = { myFunds: migratedFunds };
             if (importData.lastUpdateDate) dataToSave.lastUpdateDate = importData.lastUpdateDate;
             if (importData.lastDayProfits) dataToSave.lastDayProfits = importData.lastDayProfits;
+            if (importData.dailyProfitHistory) dataToSave.dailyProfitHistory = normalizeDailyProfitHistory(importData.dailyProfitHistory);
             // 清除结算状态，让下次 loadData 重新触发自动结算检测
             dataToSave.lastSettlementDate = null;
             dataToSave.autoSettlementBlockedDate = null;
@@ -3743,11 +4434,23 @@ function openOCRBatchAdd() {
     document.body.appendChild(overlay);
     _ocrModalEl = overlay;
 
+    const closeOCRModal = () => {
+        overlay.remove();
+        _ocrModalEl = null;
+        _ocrItems = [];
+    };
+
+    overlay.onclick = (e) => {
+        if (e.target === overlay) {
+            closeOCRModal();
+        }
+    };
+
     // 直接渲染表格
     _renderOCRTable();
 
     // 绑定事件
-    overlay.querySelector('#_ocrClose').onclick = () => { overlay.remove(); _ocrModalEl = null; _ocrItems = []; };
+    overlay.querySelector('#_ocrClose').onclick = closeOCRModal;
 
     const fileInput = overlay.querySelector('#_ocrFile');
     overlay.querySelector('#_ocrPickBtn').onclick = () => fileInput.click();

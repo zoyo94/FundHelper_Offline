@@ -19,6 +19,8 @@
     "https://fund.eastmoney.com/*",
     "https://fundsuggest.eastmoney.com/*",
     "https://fundmobapi.eastmoney.com/*",
+    "https://push2.eastmoney.com/*",
+    "https://push2ex.eastmoney.com/*",
     "https://qt.gtimg.cn/*"
   ],
   "action": {
