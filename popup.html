@@ -266,7 +266,7 @@
             animation: spin 0.8s linear infinite;
         }
 
-        .refresh-control > * {
+        .refresh-control>* {
             position: relative;
             z-index: 1;
         }
@@ -293,6 +293,7 @@
         }
 
         @keyframes pulseGlow {
+
             0%,
             100% {
                 opacity: 1;
@@ -554,25 +555,34 @@
             white-space: normal;
             display: flex;
             flex-direction: column;
-            gap: 11px;
+            gap: 8px;
+        }
+
+        .profit-calendar-toolbar,
+        .profit-calendar-month-summary,
+        .profit-calendar-detail {
+            border: 1px solid #1e3a5f;
+            border-radius: 14px;
+            background: linear-gradient(180deg, rgba(15, 31, 52, 0.96), rgba(11, 24, 41, 0.96));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
         }
 
         .profit-calendar-toolbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 11px 13px;
-            border-radius: 16px;
-            border: 1px solid #1f3b5d;
-            background: linear-gradient(135deg, rgba(19, 39, 66, 0.96), rgba(13, 27, 46, 0.96));
-            box-shadow: 0 10px 24px rgba(7, 18, 34, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+            padding: 10px 12px;
         }
 
         .profit-calendar-caption {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .profit-calendar-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
             min-width: 0;
         }
 
@@ -581,32 +591,31 @@
             color: #f3f8ff;
             font-weight: 700;
             letter-spacing: 0.2px;
-        }
-
-        .profit-calendar-subtitle {
-            font-size: 11px;
-            color: #8cade0;
-            line-height: 1.45;
+            min-width: 0;
         }
 
         .profit-calendar-meta {
             display: flex;
             flex-wrap: wrap;
+            justify-content: flex-end;
             gap: 5px;
         }
 
-        .profit-calendar-meta-item {
+        .profit-calendar-meta-item,
+        .profit-calendar-detail-badge,
+        .profit-calendar-month-summary-days {
             display: inline-flex;
             align-items: center;
             min-height: 22px;
             padding: 0 8px;
             border-radius: 999px;
-            border: 1px solid rgba(64, 103, 148, 0.48);
-            background: rgba(10, 22, 38, 0.48);
+            border: 1px solid rgba(64, 103, 148, 0.42);
+            background: rgba(10, 22, 38, 0.42);
             color: #bfd6f5;
             font-size: 10px;
             font-weight: 600;
             letter-spacing: 0.15px;
+            white-space: nowrap;
         }
 
         .profit-calendar-legend {
@@ -620,6 +629,7 @@
         .profit-calendar-nav {
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 8px;
             flex-shrink: 0;
         }
@@ -627,9 +637,9 @@
         .profit-calendar-nav-btn {
             width: 32px;
             height: 32px;
-            border-radius: 11px;
-            border: 1px solid #31557f;
-            background: linear-gradient(180deg, #173152, #132742);
+            border-radius: 10px;
+            border: 1px solid #2a4a72;
+            background: #132742;
             color: #d6e4ff;
             font-size: 15px;
             cursor: pointer;
@@ -637,27 +647,39 @@
         }
 
         .profit-calendar-nav-btn:hover {
-            background: linear-gradient(180deg, #1d3a5f, #173152);
-            border-color: #4b79ad;
+            border-color: #4d80b7;
+            background: #173152;
+        }
+
+        .profit-calendar-nav-btn.close-btn {
+            margin-left: auto;
+            color: #ffb3b3;
+            background: rgba(129, 35, 35, 0.38);
+            border-color: rgba(200, 50, 50, 0.44);
+        }
+
+        .profit-calendar-nav-btn.close-btn:hover {
+            background: rgba(160, 40, 40, 0.45);
+            border-color: rgba(250, 100, 100, 0.55);
         }
 
         .profit-calendar-month {
-            min-width: 94px;
-            padding: 7px 11px;
+            min-width: 104px;
+            padding: 7px 12px;
             text-align: center;
             font-size: 13px;
             font-weight: 700;
             color: #f3f8ff;
-            border-radius: 12px;
-            background: rgba(10, 22, 38, 0.7);
-            border: 1px solid rgba(49, 85, 127, 0.5);
+            border-radius: 10px;
+            background: rgba(10, 22, 38, 0.66);
+            border: 1px solid rgba(42, 74, 114, 0.5);
         }
 
         .profit-calendar-weekdays,
         .profit-calendar-grid {
             display: grid;
             grid-template-columns: repeat(7, minmax(0, 1fr));
-            gap: 7px;
+            gap: 5px;
         }
 
         .profit-calendar-weekdays {
@@ -673,10 +695,10 @@
         }
 
         .profit-calendar-cell {
-            min-height: 58px;
-            border-radius: 12px;
-            border: 1px dashed rgba(42, 74, 114, 0.5);
-            background: rgba(10, 18, 30, 0.26);
+            min-height: 56px;
+            border-radius: 10px;
+            border: 1px dashed rgba(42, 74, 114, 0.42);
+            background: rgba(8, 14, 24, 0.18);
             padding: 6px;
             display: flex;
             flex-direction: column;
@@ -685,16 +707,16 @@
         }
 
         .profit-calendar-cell.empty {
-            background: rgba(8, 14, 24, 0.22);
-            min-height: 58px;
+            background: rgba(8, 14, 24, 0.14);
+            min-height: 56px;
         }
 
         .profit-calendar-day-btn {
             width: 100%;
-            min-height: 58px;
-            border: 1px solid rgba(42, 74, 114, 0.68);
-            border-radius: 12px;
-            background: linear-gradient(180deg, rgba(15, 31, 52, 0.98), rgba(11, 24, 41, 0.98));
+            min-height: 56px;
+            border: 1px solid rgba(42, 74, 114, 0.62);
+            border-radius: 10px;
+            background: linear-gradient(180deg, rgba(15, 31, 52, 0.96), rgba(11, 24, 41, 0.94));
             color: #c8d8f0;
             padding: 8px 8px 7px;
             display: flex;
@@ -710,21 +732,21 @@
         .profit-calendar-day-btn:hover {
             border-color: #4d80b7;
             transform: translateY(-1px);
-            box-shadow: 0 8px 18px rgba(6, 16, 30, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            box-shadow: 0 8px 18px rgba(6, 16, 30, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.05);
         }
 
         .profit-calendar-day-btn.is-today {
-            box-shadow: inset 0 0 0 1px rgba(24, 144, 255, 0.5), 0 0 0 1px rgba(24, 144, 255, 0.14);
+            box-shadow: inset 0 0 0 1px rgba(24, 144, 255, 0.45), 0 0 0 1px rgba(24, 144, 255, 0.12);
         }
 
         .profit-calendar-day-btn.is-selected {
             border-color: #91caff;
-            box-shadow: 0 0 0 1px rgba(145, 202, 255, 0.28), 0 10px 22px rgba(8, 24, 46, 0.24);
+            box-shadow: 0 0 0 1px rgba(145, 202, 255, 0.24), 0 8px 18px rgba(8, 24, 46, 0.2);
             transform: translateY(-1px);
         }
 
         .profit-calendar-day-btn.is-selected:hover {
-            box-shadow: 0 0 0 1px rgba(145, 202, 255, 0.32), 0 12px 24px rgba(8, 24, 46, 0.26);
+            box-shadow: 0 0 0 1px rgba(145, 202, 255, 0.3), 0 10px 20px rgba(8, 24, 46, 0.22);
         }
 
         .profit-calendar-day-btn:focus-visible {
@@ -732,11 +754,11 @@
         }
 
         .profit-calendar-day-btn.is-selected:not(.has-data) {
-            background: linear-gradient(180deg, rgba(21, 42, 69, 0.98), rgba(14, 30, 50, 0.98));
+            background: linear-gradient(180deg, rgba(21, 42, 69, 0.96), rgba(14, 30, 50, 0.94));
         }
 
         .profit-calendar-day-btn:not(.has-data):not(.is-selected) {
-            background: linear-gradient(180deg, rgba(14, 29, 48, 0.96), rgba(11, 24, 41, 0.94));
+            background: linear-gradient(180deg, rgba(14, 29, 48, 0.94), rgba(11, 24, 41, 0.92));
         }
 
         .profit-calendar-day-btn:not(.has-data) .profit-calendar-day-label {
@@ -752,13 +774,13 @@
         }
 
         .profit-calendar-day-btn.has-data.positive {
-            background: linear-gradient(180deg, rgba(27, 73, 19, var(--calendar-alpha, 0.16)), rgba(17, 43, 13, calc(var(--calendar-alpha, 0.16) + 0.08)));
-            border-color: rgba(149, 222, 100, 0.34);
+            background: linear-gradient(180deg, rgba(27, 73, 19, var(--calendar-alpha, 0.16)), rgba(17, 43, 13, calc(var(--calendar-alpha, 0.16) + 0.06)));
+            border-color: rgba(149, 222, 100, 0.3);
         }
 
         .profit-calendar-day-btn.has-data.negative {
-            background: linear-gradient(180deg, rgba(93, 29, 29, var(--calendar-alpha, 0.16)), rgba(54, 18, 18, calc(var(--calendar-alpha, 0.16) + 0.08)));
-            border-color: rgba(255, 163, 158, 0.34);
+            background: linear-gradient(180deg, rgba(93, 29, 29, var(--calendar-alpha, 0.16)), rgba(54, 18, 18, calc(var(--calendar-alpha, 0.16) + 0.06)));
+            border-color: rgba(255, 163, 158, 0.3);
         }
 
         .profit-calendar-day-label {
@@ -811,36 +833,6 @@
             background: #69b1ff;
         }
 
-        .profit-calendar-day-btn.has-data.positive {
-            background: linear-gradient(180deg, rgba(27, 73, 19, var(--calendar-alpha, 0.16)), rgba(17, 43, 13, calc(var(--calendar-alpha, 0.16) + 0.08)));
-            border-color: rgba(149, 222, 100, 0.34);
-        }
-
-        .profit-calendar-day-btn.has-data.negative {
-            background: linear-gradient(180deg, rgba(93, 29, 29, var(--calendar-alpha, 0.16)), rgba(54, 18, 18, calc(var(--calendar-alpha, 0.16) + 0.08)));
-            border-color: rgba(255, 163, 158, 0.34);
-        }
-
-        .profit-calendar-day-label {
-            font-size: 12px;
-            font-weight: 700;
-            color: #f3f8ff;
-        }
-
-        .profit-calendar-day-value {
-            font-size: 10px;
-            line-height: 1.35;
-            color: #d6e4ff;
-            word-break: break-word;
-        }
-
-        .profit-calendar-day-btn.has-data.positive .profit-calendar-day-value {
-            color: #c7f59f;
-        }
-
-        .profit-calendar-day-btn.has-data.negative .profit-calendar-day-value {
-            color: #ffc1c1;
-        }
 
         .profit-calendar-empty {
             padding: 24px 10px;
@@ -849,12 +841,46 @@
             font-size: 12px;
         }
 
+        .profit-calendar-month-summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 9px 12px;
+        }
+
+        .profit-calendar-month-summary-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #c8d8f0;
+            min-width: 0;
+            flex-wrap: wrap;
+        }
+
+        .profit-calendar-month-summary-total {
+            font-size: 16px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0.1px;
+            color: #c8d8f0;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .profit-calendar-month-summary-total.positive {
+            color: #95de64;
+        }
+
+        .profit-calendar-month-summary-total.negative {
+            color: #ff9c9c;
+        }
+
         .profit-calendar-detail {
-            border: 1px solid #1f3b5d;
-            border-radius: 16px;
-            padding: 11px 12px;
-            background: linear-gradient(180deg, rgba(16, 35, 59, 0.92), rgba(13, 27, 46, 0.96));
-            box-shadow: 0 10px 24px rgba(7, 18, 34, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+            margin-top: 0 !important;
+            padding: 10px 12px;
         }
 
         .profit-calendar-detail-header {
@@ -862,9 +888,9 @@
             justify-content: space-between;
             gap: 8px;
             align-items: baseline;
-            margin-bottom: 9px;
+            margin-bottom: 8px;
             padding-bottom: 8px;
-            border-bottom: 1px solid rgba(42, 74, 114, 0.48);
+            border-bottom: 1px solid rgba(42, 74, 114, 0.44);
         }
 
         .profit-calendar-detail-date {
@@ -876,20 +902,6 @@
         .profit-calendar-detail-total {
             font-size: 16px;
             font-weight: 700;
-        }
-
-        .profit-calendar-detail-badge {
-            display: inline-flex;
-            align-items: center;
-            min-height: 22px;
-            padding: 0 8px;
-            border-radius: 999px;
-            border: 1px solid rgba(64, 103, 148, 0.42);
-            background: rgba(10, 22, 38, 0.42);
-            color: #8cade0;
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 0.15px;
         }
 
         .profit-calendar-detail-badge.positive {
@@ -963,8 +975,8 @@
             gap: 8px;
             padding: 8px 10px;
             border-radius: 10px;
-            background: rgba(11, 28, 47, 0.9);
-            border: 1px solid rgba(42, 74, 114, 0.5);
+            background: rgba(11, 28, 47, 0.84);
+            border: 1px solid rgba(42, 74, 114, 0.42);
             font-size: 11px;
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
         }
@@ -991,15 +1003,33 @@
             color: #ff9c9c;
         }
 
+        #modalOverlay[data-mode="profit-calendar"] {
+            align-items: flex-start !important;
+            justify-content: center !important;
+            overflow-y: auto;
+            padding: 0 !important;
+            top: 0 !important;
+            bottom: 0 !important;
+        }
+
         #modalOverlay[data-mode="profit-calendar"] .modal-box {
             max-width: 580px;
-            width: min(580px, 94vw);
-            padding: 20px 20px 16px;
+            width: min(580px, 100vw);
+            min-height: auto;
+            padding: 0 !important;
+            margin: 0 auto !important;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+            background: transparent;
+            display: block;
         }
 
         #modalOverlay[data-mode="profit-calendar"] .modal-msg {
             color: inherit;
-            margin-bottom: 16px;
+            margin: 0 !important;
+            padding: 0 !important;
+            flex: initial;
         }
 
         @media (max-width: 520px) {
@@ -1036,7 +1066,7 @@
             }
 
             .profit-calendar-detail {
-                padding: 12px;
+                padding: 8px 10px;
             }
         }
 
@@ -1063,6 +1093,7 @@
         }
 
         @media (max-width: 380px) {
+
             .profit-calendar-weekdays,
             .profit-calendar-grid {
                 gap: 5px;
@@ -1085,37 +1116,19 @@
             }
         }
 
-        #modalOverlay[data-mode="profit-calendar"] .modal-footer {
-            justify-content: space-between;
-        }
-
-        #modalOverlay[data-mode="profit-calendar"] .modal-btn-cancel {
-            min-width: 88px;
-        }
-
-        #modalOverlay[data-mode="profit-calendar"] .modal-btn-ok,
-        #modalOverlay[data-mode="profit-calendar"] .modal-btn-cancel {
-            border-radius: 999px;
-        }
-
-        #modalOverlay[data-mode="profit-calendar"] .modal-title {
-            margin-bottom: 12px;
-        }
-
-        #modalOverlay[data-mode="profit-calendar"] .modal-title:empty {
-            display: none;
-        }
-
-        #modalOverlay[data-mode="profit-calendar"] .modal-box {
-            overflow: hidden;
+        #modalOverlay[data-mode="profit-calendar"] .modal-title,
+        #modalOverlay[data-mode="profit-calendar"] .modal-footer,
+        #modalOverlay[data-mode="profit-calendar"] .modal-input {
+            display: none !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
 
         #modalOverlay[data-mode="profit-calendar"] .modal-msg {
-            overflow: hidden;
-        }
-
-        #modalOverlay[data-mode="profit-calendar"] .modal-footer {
-            padding-top: 2px;
+            margin: 0 !important;
+            padding: 0 !important;
+            min-height: 0 !important;
         }
 
         #modalOverlay[data-mode="profit-calendar"] .modal-btn {
@@ -1168,6 +1181,8 @@
 
         #modalOverlay[data-mode="profit-calendar"] .profit-calendar-modal {
             overflow: hidden;
+            padding: 8px 8px 0;
+            box-sizing: border-box;
         }
 
         #modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-name {
@@ -1198,7 +1213,7 @@
             min-width: 0;
         }
 
-        #modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-header > * {
+        #modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-header>* {
             min-width: 0;
         }
 
@@ -1288,7 +1303,7 @@
             opacity: 0.72;
         }
 
-        #modalOverlay[data-mode="profit-calendar"] .profit-calendar-modal > * {
+        #modalOverlay[data-mode="profit-calendar"] .profit-calendar-modal>* {
             min-width: 0;
         }
 
@@ -1313,7 +1328,7 @@
             z-index: 1;
         }
 
-        #modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid > * {
+        #modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid>* {
             min-width: 0;
         }
 
@@ -1384,8 +1399,8 @@
             background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 42%);
         }
 
-        #modalOverlay[data-mode="profit-calendar"] .profit-calendar-toolbar > *,
-        #modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail > * {
+        #modalOverlay[data-mode="profit-calendar"] .profit-calendar-toolbar>*,
+        #modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail>* {
             position: relative;
             z-index: 1;
         }
@@ -1516,7 +1531,7 @@
             z-index: 0;
         }
 
-        #modalOverlay[data-mode="profit-calendar"] .profit-calendar-modal > * {
+        #modalOverlay[data-mode="profit-calendar"] .profit-calendar-modal>* {
             position: relative;
             z-index: 1;
         }
@@ -1540,6 +1555,7 @@
             padding-left: 2px;
             padding-right: 2px;
         }
+
         /* ===== 表格容器 ===== */
         .table-container {
             flex: 1;
@@ -1649,9 +1665,12 @@
         }
 
         @keyframes pulse {
-            0%, 100% {
+
+            0%,
+            100% {
                 opacity: 1;
             }
+
             50% {
                 opacity: 0.7;
             }
@@ -2928,18 +2947,30 @@
 
     <div class="fab-container">
         <div class="fab-menu" id="fabMenu">
-            <button class="fab-item" id="fabSelectAll"><span class="fab-icon">☑️</span><span class="fab-label">全选 / 取消全选</span></button>
-            <button class="fab-item" id="fabAdd"><span class="fab-icon">➕</span><span class="fab-label">添加资产</span></button>
-            <button class="fab-item" id="fabOCRBatch"><span class="fab-icon">📷</span><span class="fab-label">图片识别批量添加</span></button>
-            <button class="fab-item" id="fabBatchCalc"><span class="fab-icon">🔄</span><span class="fab-label">批量重算份额</span></button>
-            <button class="fab-item" id="fabBatchDel"><span class="fab-icon">🗑</span><span class="fab-label">批量删除</span></button>
-            <button class="fab-item" id="fabSettlement"><span class="fab-icon">📅</span><span class="fab-label">触发日结算</span></button>
-            <button class="fab-item" id="fabRollback" style="display:none;"><span class="fab-icon">↩</span><span class="fab-label">撤销日结算</span></button>
-            <button class="fab-item" id="fabBatchGroup"><span class="fab-icon">📁</span><span class="fab-label">批量修改分组</span></button>
-            <button class="fab-item" id="fabBatchClear"><span class="fab-icon">🧹</span><span class="fab-label">批量清空持仓</span></button>
-            <button class="fab-item" id="fabExport"><span class="fab-icon">📤</span><span class="fab-label">导出当前数据</span></button>
-            <button class="fab-item" id="fabExportBackup"><span class="fab-icon">🗂</span><span class="fab-label">导出备份数据</span></button>
-            <button class="fab-item" id="fabImport"><span class="fab-icon">📥</span><span class="fab-label">导入数据</span></button>
+            <button class="fab-item" id="fabSelectAll"><span class="fab-icon">☑️</span><span class="fab-label">全选 /
+                    取消全选</span></button>
+            <button class="fab-item" id="fabAdd"><span class="fab-icon">➕</span><span
+                    class="fab-label">添加资产</span></button>
+            <button class="fab-item" id="fabOCRBatch"><span class="fab-icon">📷</span><span
+                    class="fab-label">图片识别批量添加</span></button>
+            <button class="fab-item" id="fabBatchCalc"><span class="fab-icon">🔄</span><span
+                    class="fab-label">批量重算份额</span></button>
+            <button class="fab-item" id="fabBatchDel"><span class="fab-icon">🗑</span><span
+                    class="fab-label">批量删除</span></button>
+            <button class="fab-item" id="fabSettlement"><span class="fab-icon">📅</span><span
+                    class="fab-label">触发日结算</span></button>
+            <button class="fab-item" id="fabRollback" style="display:none;"><span class="fab-icon">↩</span><span
+                    class="fab-label">撤销日结算</span></button>
+            <button class="fab-item" id="fabBatchGroup"><span class="fab-icon">📁</span><span
+                    class="fab-label">批量修改分组</span></button>
+            <button class="fab-item" id="fabBatchClear"><span class="fab-icon">🧹</span><span
+                    class="fab-label">批量清空持仓</span></button>
+            <button class="fab-item" id="fabExport"><span class="fab-icon">📤</span><span
+                    class="fab-label">导出当前数据</span></button>
+            <button class="fab-item" id="fabExportBackup"><span class="fab-icon">🗂</span><span
+                    class="fab-label">导出备份数据</span></button>
+            <button class="fab-item" id="fabImport"><span class="fab-icon">📥</span><span
+                    class="fab-label">导入数据</span></button>
         </div>
         <div class="fab-main" id="fabMain">
             <span>⚡</span>
@@ -3002,8 +3033,8 @@
     <div id="toastContainer"></div>
 
     <!-- 通用 Modal 弹窗 -->
-    <div id="modalOverlay">
-        <div class="modal-box">
+    <div id="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true">
+        <div class="modal-box" role="document">
             <div class="modal-title" id="modalTitle">提示</div>
             <div class="modal-msg" id="modalMsg"></div>
             <input class="modal-input" id="modalInput" type="text" style="display:none;">
