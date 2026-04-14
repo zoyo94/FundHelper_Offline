@@ -1675,7 +1675,7 @@ async function manualSettlement() {
     const funds = myFunds || {};
     const { blockedDate } = parseSettlementState(lastSettlementDate, autoSettlementBlockedDate);
 
-    elements.status.innerText = '正在备份数据...';
+    elements.statusText.innerText = '正在备份数据...';
     await backupFundsData(createBackupSnapshot({
         myFunds: funds,
         lastUpdateDate,
@@ -1685,7 +1685,7 @@ async function manualSettlement() {
         backupFunds,
         dailyProfitHistory
     }));
-    elements.status.innerText = '正在执行日结算...';
+    elements.statusText.innerText = '正在执行日结算...';
     const liveMap = new Map(allFundsData.map(f => [f.code, f]));
     const settlements = [];
     for (const code of Object.keys(funds)) {
@@ -1736,7 +1736,7 @@ async function rollbackSettlement() {
 // ==================== 4. 自动结算部分（确保也有备份）====================
 async function autoSettlement(funds, settlements, todayStr, backupSnapshot) {
     console.log('[autoSettlement] 检测到净值更新，开始自动结算...');
-    elements.status.innerText = '正在自动结算...';
+    elements.statusText.innerText = '正在自动结算...';
 
     await backupFundsData(backupSnapshot);
     const dominantMarketPrevPriceDate = getDominantMarketPrevPriceDate(settlements.map(settlement => ({ live: settlement })));
@@ -1802,6 +1802,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         groupFilter: document.getElementById('groupFilter'),
         tableBody: document.getElementById('fundTableBody'),
         status: document.getElementById('status'),
+        statusText: document.getElementById('statusText'),
         fullscreenBtn: document.getElementById('fullscreenBtn'),
         refreshControl: document.getElementById('refreshControl'),
         refreshBtn: document.getElementById('refreshBtn'),
@@ -2468,7 +2469,7 @@ async function loadData() {
 async function _loadDataImpl() {
     try {
         clearSelection();
-        elements.status.innerText = '同步行情中...';
+        elements.statusText.innerText = '同步行情中...';
         apiLogger.reset();
 
         const storageState = await storage.get([
@@ -2555,7 +2556,7 @@ async function _loadDataImpl() {
                 if (pendingAdjustments.length > 0) {
                     for (const adj of pendingAdjustments) {
                         if (adj.status === 'confirmed') continue;
-                        if (todayStr > adj.targetDate) {
+                        if (todayStr >= adj.targetDate) {
                             if (adj.type === 'add') {
                                 const actualRate = (adj.feeRate || 0) / 100;
                                 const price = live.prevPrice;
@@ -2763,11 +2764,11 @@ async function _loadDataImpl() {
         updateGroupFilter();
         renderTable();
         lastUpdateTime = new Date().toLocaleTimeString();
-        elements.status.innerText = `最后更新: ${lastUpdateTime}`;
+        elements.statusText.innerText = `最后更新: ${lastUpdateTime}`;
     } catch (error) {
         console.error('[_loadDataImpl] 数据加载失败:', error);
         showToast(`数据加载失败: ${error.message}`, 'error');
-        elements.status.innerText = '数据加载失败，请重试';
+        elements.statusText.innerText = '数据加载失败，请重试';
 
         // 确保在错误情况下也显示一个基本的空表格
         if (allFundsData.length === 0) {
@@ -3388,14 +3389,14 @@ async function openFundEditor(existingCode = null) {
     const code = (existingCode || result.code).trim().toUpperCase();
     if (!code) { await showAlert('资产代码不能为空！'); return; }
 
-    elements.status.innerText = '正在保存...';
+    elements.statusText.innerText = '正在保存...';
 
     // 如果是新增，且没获取过行情，再确认一次
     if (!existingCode && !live) {
         live = await fetchLiveInfo(code);
         if (!live || live.name.includes('[未知]')) {
             const ok = await showConfirm(`未检索到代码 ${code} 的数据，是否强制保存？`, '提示', true);
-            if (!ok) { elements.status.innerText = '准备就绪'; return; }
+            if (!ok) { elements.statusText.innerText = '准备就绪'; return; }
         }
     }
 
@@ -3417,7 +3418,7 @@ async function openFundEditor(existingCode = null) {
 
     await storage.set({ myFunds: funds });
     showToast(`✅ ${code} 保存成功！金额${result.amount}元，份额${result.shares}份`, 'success');
-    elements.status.innerText = '准备就绪';
+    elements.statusText.innerText = '准备就绪';
     loadData();
 }
 
@@ -3652,11 +3653,11 @@ function hideCenterModal() {
 
 // ==================== 强制根据金额重新计算份额 ====================
 async function forceRecalculateShares(code) {
-    elements.status.innerText = '正在重新计算份额...';
+    elements.statusText.innerText = '正在重新计算份额...';
     const live = await fetchLiveInfo(code);
     if (!live || live.prevPrice <= 0) {
         await showAlert(`无法获取 ${code} 的有效净值，计算失败。`);
-        elements.status.innerText = '准备就绪';
+        elements.statusText.innerText = '准备就绪';
         return;
     }
 
@@ -3668,7 +3669,7 @@ async function forceRecalculateShares(code) {
 
         await storage.set({ myFunds: funds });
         showToast(`✅ ${code} 已按净值 ${live.prevPrice} 重算份额为 ${newShares} 份`, 'success');
-        elements.status.innerText = '准备就绪';
+        elements.statusText.innerText = '准备就绪';
         loadData();
     }
 }
@@ -4011,7 +4012,7 @@ function updateSelectionStatus() {
         );
         if (fabMain) fabMain.style.background = '#fa8c16';
     } else {
-        elements.status.innerText = lastUpdateTime ? `最后更新: ${lastUpdateTime}` : '准备就绪';
+        elements.statusText.innerText = lastUpdateTime ? `最后更新: ${lastUpdateTime}` : '准备就绪';
         if (fabMain) fabMain.style.background = '';
     }
 }

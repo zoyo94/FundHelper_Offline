@@ -305,10 +305,12 @@
         }
 
         .market-ticker {
-            padding: 6px 16px;
-            background: linear-gradient(180deg, rgba(17, 31, 53, 0.98), rgba(14, 27, 46, 0.98));
-            border-bottom: 1px solid #1e3a5f;
+            display: flex;
+            align-items: center;
             flex-shrink: 0;
+            background: transparent;
+            border: none;
+            padding: 0;
         }
 
         .market-ticker-track {
@@ -1702,12 +1704,18 @@
 
         /* ===== 状态栏 ===== */
         #status {
-            padding: 5px 14px;
+            padding: 5px 16px;
             font-size: 11px;
             color: #3a5a82;
             background: #0a1525;
             border-top: 1px solid #1e3a5f;
             flex-shrink: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            min-height: 28px;
+            box-sizing: border-box;
         }
 
         /* ===== Toast ===== */
@@ -2937,13 +2945,7 @@
         </div>
     </div>
 
-    <div id="marketTicker" class="market-ticker" title="全局 A 股涨跌家数">
-        <div id="marketTickerTrack" class="market-ticker-track">
-            <div class="market-ticker-copy">
-                <span class="market-ticker-empty">市场广度加载中...</span>
-            </div>
-        </div>
-    </div>
+
 
     <div class="fab-container">
         <div class="fab-menu" id="fabMenu">
@@ -3027,7 +3029,16 @@
         </table>
     </div>
 
-    <div id="status">准备就绪</div>
+    <div id="status">
+        <span id="statusText">准备就绪</span>
+        <div id="marketTicker" class="market-ticker" title="全局 A 股涨跌家数">
+            <div id="marketTickerTrack" class="market-ticker-track">
+                <div class="market-ticker-copy">
+                    <span class="market-ticker-empty">市场广度加载中...</span>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Toast 容器 -->
     <div id="toastContainer"></div>
