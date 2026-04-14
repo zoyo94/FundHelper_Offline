@@ -339,6 +339,15 @@ Background 会自动添加必需的请求头。
 
 ## 最近更新
 
+### v1.7.6 UI 体验优化（2026-04-14）
+- **收益日历视觉统一**：回归项目暗色 modal 体系，去掉独立视觉层级
+- **面板样式合并**：统一 toolbar/summary/detail 面板样式，共享边框渐变与内阴影
+- **Pill 样式复用**：合并 meta-item/detail-badge/summary-days 为统一 pill 样式
+- **布局优化**：去掉收益日历 modal 上下留白，改用 CSS mode 控制布局
+- **代码清理**：删除 JS 内联根样式覆写，移至 CSS scoped override
+- **基金详情精简**：删除正文重复标题，只保留 overlay 顶部标题
+- **文案优化**：精简收益日历文案与图标，减少视觉噪音
+
 ### 2026-03-24 结算与详情页优化
 - **交易日驱动昨日收益显示**：仅当 `savedPrevDate === live.prevPriceDate === latestMarketPrevPriceDate` 时才展示该基金的昨日收益，避免停更基金沿用旧值
 - **同日补结算**：自动结算不再被“今天已结算”整体拦住，只要基金的 `prevPriceDate` 真正推进就允许继续补结算

@@ -366,7 +366,7 @@ function round2(num) {
 {
   "manifest_version": 3,
   "name": "FundHelper Offline",
-  "version": "1.7.4",
+  "version": "1.7.6",
   "permissions": [
     "storage",           // 本地存储
     "unlimitedStorage"   // 无限存储空间
@@ -435,6 +435,15 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
 ---
 
 ## 📝 更新日志
+
+### v1.7.6 (2026-04-14) - UI 体验优化
+- 🎨 **收益日历视觉统一**：回归项目暗色 modal 体系，去掉独立视觉层级
+- 🧩 **面板样式合并**：统一 toolbar/summary/detail 面板样式，共享边框渐变与内阴影
+- 💊 **Pill 样式复用**：合并 meta-item/detail-badge/summary-days 为统一 pill 样式
+- 📐 **布局优化**：去掉收益日历 modal 上下留白，改用 CSS mode 控制布局
+- 🧹 **代码清理**：删除 JS 内联根样式覆写，移至 CSS scoped override
+- 📝 **基金详情精简**：删除正文重复标题，只保留 overlay 顶部标题
+- ✨ **文案优化**：精简收益日历文案与图标，减少视觉噪音
 
 ### v1.7.4 (2026-03-25) - 结算体验与详情页稳定性优化
 - 🔄 **昨日收益展示更稳**：按主流交易日判断昨日收益是否新鲜，避免个别停更或慢更新基金把有效收益误显示为 0
