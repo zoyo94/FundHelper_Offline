@@ -55,6 +55,7 @@
         }
 
         .header-actions {
+            position: relative;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -2827,7 +2828,103 @@
             background-color: rgba(255, 255, 255, 0.04);
         }
 
-        /* ===== 通知中心样式 ===== */
+        #columnConfigBtn {
+            cursor: pointer;
+            font-size: 15px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #a8c4e8;
+            padding: 4px 8px;
+            border-radius: 6px;
+            line-height: 1;
+            transition: background 0.2s, color 0.2s, border-color 0.2s;
+        }
+
+        #columnConfigBtn:hover,
+        #columnConfigBtn.active {
+            background: rgba(24, 144, 255, 0.25);
+            color: #69b1ff;
+            border-color: rgba(105, 177, 255, 0.35);
+        }
+
+        #columnConfigPanel {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            width: 220px;
+            max-height: min(420px, 70vh);
+            overflow-y: auto;
+            background: rgba(13, 27, 46, 0.98);
+            border: 1px solid #1e3a5f;
+            border-radius: 10px;
+            padding: 8px;
+            box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
+            z-index: 60;
+            display: none;
+        }
+
+        #columnConfigPanel.open {
+            display: block;
+        }
+
+        .column-config-title {
+            font-size: 11px;
+            color: #8fb3db;
+            margin: 2px 4px 8px;
+            letter-spacing: 0.2px;
+        }
+
+        .column-config-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 7px 8px;
+            border-radius: 7px;
+            color: #c8d8f0;
+            font-size: 12px;
+            transition: background 0.15s;
+        }
+
+        .column-config-item:hover {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .column-config-item.is-disabled {
+            opacity: 0.65;
+        }
+
+        .column-config-item-left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .column-config-hint {
+            font-size: 10px;
+            color: #6f8fb5;
+            white-space: nowrap;
+        }
+
+        .column-config-item input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            accent-color: #1890ff;
+            cursor: pointer;
+            margin: 0;
+            flex-shrink: 0;
+        }
+
+        .column-config-item input[type="checkbox"]:disabled {
+            cursor: not-allowed;
+        }
+
+        .col-user-hidden {
+            display: none !important;
+        }
+
+
         #notificationBtn {
             position: relative;
             cursor: pointer;
@@ -2941,6 +3038,8 @@
                     <option value="300">300s</option>
                 </select>
             </div>
+            <button id="columnConfigBtn" title="列显示设置" aria-label="列显示设置" aria-expanded="false">⚙️</button>
+            <div id="columnConfigPanel" role="dialog" aria-label="列显示设置"></div>
             <span id="fullscreenBtn" title="全屏查看">⛶</span>
         </div>
     </div>
@@ -3013,16 +3112,23 @@
         <table>
             <thead>
                 <tr>
-                    <th>序号</th>
-                    <th class="sortable" data-sort="code">代码</th>
-                    <th>名称/分组</th>
-                    <th class="sortable" data-sort="amount">持仓</th>
-                    <th class="sortable col-hide" data-sort="shares">份额</th>
-                    <th class="sortable col-hide" data-sort="prevPrice">净值</th>
-                    <th class="sortable" data-sort="yesterdayProfit">昨日收益</th>
-                    <th class="sortable" data-sort="todayProfit">估值收益</th>
-                    <th class="sortable" data-sort="holdProfit">累计收益</th>
-                    <th class="col-hide">操作</th>
+                    <th data-col="index">序号</th>
+                    <th class="sortable" data-sort="code" data-col="code">代码</th>
+                    <th data-col="name">名称/分组</th>
+                    <th class="sortable" data-sort="amount" data-col="amount">持仓</th>
+                    <th class="sortable col-hide" data-sort="shares" data-col="shares">份额</th>
+                    <th class="sortable col-hide" data-sort="prevPrice" data-col="nav">净值</th>
+                    <th class="col-hide" data-col="holdDays">持有天数</th>
+                    <th class="col-hide" data-col="w1">近1周</th>
+                    <th class="col-hide" data-col="m1">近1月</th>
+                    <th class="col-hide" data-col="m3">近3月</th>
+                    <th class="col-hide" data-col="m6">近6月</th>
+                    <th class="col-hide" data-col="y1">近1年</th>
+                    <th class="col-hide" data-col="ly">成立以来</th>
+                    <th class="sortable" data-sort="yesterdayProfit" data-col="yesterdayProfit">昨日收益</th>
+                    <th class="sortable" data-sort="todayProfit" data-col="todayProfit">估值收益</th>
+                    <th class="sortable" data-sort="holdProfit" data-col="holdProfit">累计收益</th>
+                    <th class="col-hide" data-col="actions">操作</th>
                 </tr>
             </thead>
             <tbody id="fundTableBody"></tbody>
@@ -3031,6 +3137,7 @@
 
     <div id="status">
         <span id="statusText">准备就绪</span>
+        <span id="selectionStatus" style="display:none;"></span>
         <div id="marketTicker" class="market-ticker" title="全局 A 股涨跌家数">
             <div id="marketTickerTrack" class="market-ticker-track">
                 <div class="market-ticker-copy">

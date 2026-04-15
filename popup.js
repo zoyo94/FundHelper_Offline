@@ -14,6 +14,8 @@ const CONFIG = {
     AUTO_REFRESH_PAUSE_HOUR: 15,
     AUTO_REFRESH_PAUSE_MINUTE: 30,
     MARKET_BREADTH_TIMEOUT: 5000,  // 市场宽度请求超时（ms）
+    COLUMN_VISIBILITY_STORAGE_KEY: 'columnVisibility',
+    PERF_DAILY_CACHE_STORAGE_KEY: 'fundPerfDailyCache'
 };
 
 // ==================== 业务常量 ====================
@@ -47,10 +49,192 @@ let autoRefreshIntervalMs = CONFIG.AUTO_REFRESH_INTERVAL;
 let nextAutoRefreshAt = 0;
 let refreshCountdownTimer = null;
 let unifiedRefreshPromise = null;
+// 持有天数 & 区间涨跌幅展示缓存（用于表格渲染）
+let fundPerfCache = {};
+// 区间涨跌幅日级持久化缓存（跨会话硬保留）
+let fundPerfDailyCacheByCode = {};
+let fundPerfDailyCacheLoaded = false;
+
+const TABLE_COLUMNS = [
+    { id: 'index', label: '序号', defaultVisible: true, required: true },
+    { id: 'code', label: '代码', defaultVisible: true, required: true },
+    { id: 'name', label: '名称/分组', defaultVisible: true, required: true },
+    { id: 'amount', label: '持仓', defaultVisible: true, required: true },
+    { id: 'shares', label: '份额', defaultVisible: true, fullscreenOnly: true },
+    { id: 'nav', label: '净值', defaultVisible: true, fullscreenOnly: true },
+    { id: 'holdDays', label: '持有天数', defaultVisible: true, fullscreenOnly: true },
+    { id: 'w1', label: '近1周', defaultVisible: true, fullscreenOnly: true },
+    { id: 'm1', label: '近1月', defaultVisible: true, fullscreenOnly: true },
+    { id: 'm3', label: '近3月', defaultVisible: true, fullscreenOnly: true },
+    { id: 'm6', label: '近6月', defaultVisible: true, fullscreenOnly: true },
+    { id: 'y1', label: '近1年', defaultVisible: true, fullscreenOnly: true },
+    { id: 'ly', label: '成立以来', defaultVisible: true, fullscreenOnly: true },
+    { id: 'yesterdayProfit', label: '昨日收益', defaultVisible: true },
+    { id: 'todayProfit', label: '估值收益', defaultVisible: true },
+    { id: 'holdProfit', label: '累计收益', defaultVisible: true },
+    { id: 'actions', label: '操作', defaultVisible: true, fullscreenOnly: true }
+];
+const TABLE_COLUMN_MAP = TABLE_COLUMNS.reduce((acc, col) => {
+    acc[col.id] = col;
+    return acc;
+}, {});
+const PERF_FIELDS = ['holdDays', 'w1', 'm1', 'm3', 'm6', 'y1', 'ly'];
+let columnVisibility = TABLE_COLUMNS.reduce((acc, col) => {
+    acc[col.id] = col.defaultVisible !== false;
+    return acc;
+}, {});
 
 function clearSelection() {
     selectedCodes.clear();
     lastClickedIndex = -1;
+}
+
+function normalizeColumnVisibility(rawVisibility = {}) {
+    const normalized = {};
+    TABLE_COLUMNS.forEach(col => {
+        const raw = rawVisibility?.[col.id];
+        normalized[col.id] = typeof raw === 'boolean' ? raw : (col.defaultVisible !== false);
+        if (col.required) {
+            normalized[col.id] = true;
+        }
+    });
+    return normalized;
+}
+
+function isColumnEffectivelyVisible(colId) {
+    const col = TABLE_COLUMN_MAP[colId];
+    if (!col) return true;
+    const preferVisible = columnVisibility[colId] !== false;
+    if (!preferVisible) return false;
+    if (col.fullscreenOnly && !document.body.classList.contains('is-fullscreen')) {
+        return false;
+    }
+    return true;
+}
+
+function setColumnVisibilityClass(el, colId) {
+    if (!el || !colId) return;
+    el.classList.toggle('col-user-hidden', !isColumnEffectivelyVisible(colId));
+}
+
+function applyColumnVisibilityToHeader() {
+    document.querySelectorAll('thead th[data-col]').forEach(th => {
+        setColumnVisibilityClass(th, th.dataset.col);
+    });
+}
+
+function closeColumnConfigPanel() {
+    const btn = elements.columnConfigBtn;
+    const panel = elements.columnConfigPanel;
+    if (!btn || !panel) return;
+    panel.classList.remove('open');
+    btn.classList.remove('active');
+    btn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleColumnConfigPanel() {
+    const btn = elements.columnConfigBtn;
+    const panel = elements.columnConfigPanel;
+    if (!btn || !panel) return;
+    const open = panel.classList.toggle('open');
+    btn.classList.toggle('active', open);
+    btn.setAttribute('aria-expanded', String(open));
+}
+
+function renderColumnConfigPanel() {
+    const panel = elements.columnConfigPanel;
+    if (!panel) return;
+
+    panel.replaceChildren();
+
+    const title = document.createElement('div');
+    title.className = 'column-config-title';
+    title.textContent = '列显示设置';
+    panel.appendChild(title);
+
+    TABLE_COLUMNS.forEach(col => {
+        const row = document.createElement('label');
+        row.className = `column-config-item${col.required ? ' is-disabled' : ''}`;
+
+        const left = document.createElement('span');
+        left.className = 'column-config-item-left';
+        const label = document.createElement('span');
+        label.textContent = col.label;
+        left.appendChild(label);
+
+        if (col.required) {
+            const hint = document.createElement('span');
+            hint.className = 'column-config-hint';
+            hint.textContent = '必显';
+            left.appendChild(hint);
+        } else if (col.fullscreenOnly) {
+            const hint = document.createElement('span');
+            hint.className = 'column-config-hint';
+            hint.textContent = '全屏';
+            left.appendChild(hint);
+        }
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = columnVisibility[col.id] !== false;
+        input.disabled = !!col.required;
+        input.dataset.col = col.id;
+
+        input.addEventListener('change', async () => {
+            columnVisibility[col.id] = input.checked;
+            columnVisibility = normalizeColumnVisibility(columnVisibility);
+            renderTable();
+            applyColumnVisibilityToHeader();
+            try {
+                await storage.set({ [CONFIG.COLUMN_VISIBILITY_STORAGE_KEY]: columnVisibility });
+            } catch (err) {
+                console.error('保存列配置失败:', err);
+                showToast('列配置保存失败', 'error');
+            }
+        });
+
+        row.appendChild(left);
+        row.appendChild(input);
+        panel.appendChild(row);
+    });
+}
+
+async function initColumnVisibility() {
+    try {
+        const stored = await storage.get([CONFIG.COLUMN_VISIBILITY_STORAGE_KEY]);
+        columnVisibility = normalizeColumnVisibility(stored[CONFIG.COLUMN_VISIBILITY_STORAGE_KEY] || {});
+    } catch (err) {
+        console.warn('读取列配置失败，使用默认配置:', err);
+        columnVisibility = normalizeColumnVisibility({});
+    }
+
+    renderColumnConfigPanel();
+    applyColumnVisibilityToHeader();
+
+    if (elements.columnConfigBtn) {
+        elements.columnConfigBtn.onclick = (e) => {
+            e.stopPropagation();
+            toggleColumnConfigPanel();
+        };
+    }
+
+    if (elements.columnConfigPanel) {
+        elements.columnConfigPanel.onclick = (e) => {
+            e.stopPropagation();
+        };
+    }
+
+    document.addEventListener('click', (e) => {
+        const panel = elements.columnConfigPanel;
+        const btn = elements.columnConfigBtn;
+        if (!panel || !btn || !panel.classList.contains('open')) return;
+        if (panel.contains(e.target) || btn.contains(e.target)) return;
+        closeColumnConfigPanel();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeColumnConfigPanel();
+    });
 }
 
 // --- 新增：API 日志控制器 ---
@@ -970,21 +1154,23 @@ function calculateYesterdayProfitValue(item, priceUpdate) {
 }
 
 function getDisplayedYesterdayProfitValue(baseProfit, pendingAdjustments) {
-    return round2((baseProfit || 0) + sumPendingDividendAmount(pendingAdjustments));
+    const manualPendingDividend = sumPendingManualDividendAmount(pendingAdjustments);
+    return round2((baseProfit || 0) + manualPendingDividend);
 }
 
 function getDisplayedFreshYesterdayProfitValue(item, live, dominantMarketPrevPriceDate = '') {
     const baseProfit = hasFreshYesterdayProfit(item, live, dominantMarketPrevPriceDate)
         ? round2(item?.yesterdayProfit || 0)
         : 0;
-    return getDisplayedYesterdayProfitValue(baseProfit, getPendingAdjustments(item));
+    const pendingAdjustments = getPendingAdjustments(item);
+    return getDisplayedYesterdayProfitValue(baseProfit, pendingAdjustments);
 }
 
 function calculateRecordedYesterdayProfitValue(item, priceUpdate, dominantMarketPrevPriceDate = '') {
     if (!item || !hasFreshYesterdayProfit(item, priceUpdate, dominantMarketPrevPriceDate)) {
         return 0;
     }
-    return calculateYesterdayProfitValue(item, priceUpdate);
+    return round2(item.yesterdayProfit || 0);
 }
 
 function recordDailyProfitHistory(history, funds, priceUpdates, dominantMarketPrevPriceDate = '') {
@@ -1175,7 +1361,7 @@ async function openProfitCalendar() {
                 name: codeMap.get(code)?.name || code,
                 profit: round2(Number(profit) || 0)
             }))
-            .sort((a, b) => Math.abs(b.profit) - Math.abs(a.profit) || a.code.localeCompare(b.code));
+            .sort((a, b) => b.profit - a.profit || a.code.localeCompare(b.code));
 
         const weekdayHtml = ['一', '二', '三', '四', '五', '六', '日']
             .map(day => `<div class="profit-calendar-weekday">${day}</div>`)
@@ -1387,6 +1573,30 @@ function addAutoDetectedDividend(item, code, dividend, todayStr) {
     return buildAutoDividendNotification(code, dividend, totalDividend, arrivalDate, isArrived);
 }
 
+function ensureAutoDetectedDividendEntry(item, code, dividend, todayStr, notify = false) {
+    if (!item || !dividend || !dividend.date || typeof dividend.perShare !== 'number' || !(dividend.perShare > 0)) {
+        return false;
+    }
+    const shares = Number(item.shares) || 0;
+    if (!(shares > 0)) {
+        return false;
+    }
+
+    const pendingAdjustments = ensurePendingAdjustments(item);
+    const existingDiv = pendingAdjustments.find(
+        adj => isDividendType(adj.type) && adj.autoDetected === true && adj.dividendDate === dividend.date
+    );
+    if (existingDiv) {
+        return false;
+    }
+
+    const notification = addAutoDetectedDividend(item, code, dividend, todayStr);
+    if (notify) {
+        notificationCenter.add(notification.message, notification.type);
+    }
+    return true;
+}
+
 function detectAutoDividends(funds, fetchedData, todayStr) {
     let dataChanged = false;
 
@@ -1394,7 +1604,6 @@ function detectAutoDividends(funds, fetchedData, todayStr) {
         if (!live?.dividendList?.length) continue;
         const item = funds[code];
         if (!item) continue;
-        const pendingAdjustments = ensurePendingAdjustments(item);
 
         for (const dividend of live.dividendList) {
             if (!dividend || !dividend.date || typeof dividend.perShare !== 'number') {
@@ -1407,12 +1616,7 @@ function detectAutoDividends(funds, fetchedData, todayStr) {
                 continue;
             }
 
-            const existingDiv = pendingAdjustments.find(
-                adj => isDividendType(adj.type) && adj.dividendDate === divDate
-            );
-            if (!existingDiv && item.shares > 0) {
-                const notification = addAutoDetectedDividend(item, code, dividend, todayStr);
-                notificationCenter.add(notification.message, notification.type);
+            if (ensureAutoDetectedDividendEntry(item, code, dividend, todayStr, true)) {
                 dataChanged = true;
             }
         }
@@ -1435,6 +1639,18 @@ function sumPendingDividendAmount(pendingAdjustments) {
         }, 0)
     );
 }
+
+function sumPendingManualDividendAmount(pendingAdjustments) {
+    return round2(
+        pendingAdjustments.reduce((total, adj) => {
+            if (isDividendType(adj.type) && adj.status === 'pending' && adj.autoDetected !== true) {
+                return total + (adj.dividendAmount || 0);
+            }
+            return total;
+        }, 0)
+    );
+}
+
 
 function shouldAutoSettleFund(fund, live, dominantMarketPrevPriceDate = '') {
     if (!fund || !live || live.prevPrice <= 0 || !live.prevPriceDate) {
@@ -1619,16 +1835,32 @@ function _applySettlementLoop(funds, priceUpdates, todayStr) {
         const dividendMode = item.dividendMode || 'cash'; // 'cash' | 'reinvest'
         const totalDividend = hasDividend ? round2(shares * dividendPerShare) : 0;
 
+        // 若结算层通过累计净值差识别到分红，但分红列表缺失导致未建单，
+        // 在此兜底补一条自动分红订单，保证“收益修正”和“交易记录”一致。
+        if (hasDividend && totalDividend > 0 && prevPriceDate) {
+            ensureAutoDetectedDividendEntry(item, code, {
+                date: prevPriceDate,
+                perShare: dividendPerShare,
+                navPrice: price
+            }, todayStr, false);
+        }
+
         // ── 单日昨日收益 ────────────────────────────────────────────────────────
         // 只要接口能提供上一笔有效净值，就按该净值差计算“昨日收益”。
         // 某些基金会因为停牌/节假日/接口缺口导致上一笔净值日期早于上一个自然日，
         // 此时仍应展示最近一个有效交易日对应的收益，而不是直接归 0。
-        const yesterdayProfit = calculateYesterdayProfitValue(item, {
+        let yesterdayProfit = calculateYesterdayProfitValue(item, {
             price,
             prevPriceDate,
             prevTradingDayPrice,
             prevTradingDayDate
         });
+
+        // 现金分红场景：昨日收益展示需要包含当日分红补偿，避免分红日出现误负值。
+        // 分红入账由交易确认流程处理，这里只修正“昨日收益”的当日展示值。
+        if (hasDividend && dividendMode === 'cash' && totalDividend > 0) {
+            yesterdayProfit = round2(yesterdayProfit + totalDividend);
+        }
 
         // ── 红利再投：增加份额 ────────────────────────────────────────────────
         if (hasDividend && dividendMode === 'reinvest' && price > 0) {
@@ -1686,15 +1918,34 @@ async function manualSettlement() {
         dailyProfitHistory
     }));
     elements.statusText.innerText = '正在执行日结算...';
-    const liveMap = new Map(allFundsData.map(f => [f.code, f]));
+
+    const codes = Object.keys(funds);
+    const fetchedData = [];
+    for (let i = 0; i < codes.length; i += CONFIG.BATCH_SIZE) {
+        const batch = codes.slice(i, i + CONFIG.BATCH_SIZE);
+        const batchResults = await fetchBatchLiveInfo(
+            batch,
+            CONFIG.API_TIMEOUT,
+            code => ({ name: `[超时]${code}`, rate: 0, price: 0, prevPrice: 0 })
+        );
+        fetchedData.push(...batchResults);
+        if (i + CONFIG.BATCH_SIZE < codes.length) {
+            await new Promise(resolve => setTimeout(resolve, CONFIG.BATCH_DELAY));
+        }
+    }
+
+    // 手动结算也必须先跑分红检测，确保交易记录里有自动分红单。
+    detectAutoDividends(funds, fetchedData, todayStr);
+
     const settlements = [];
-    for (const code of Object.keys(funds)) {
-        const settlement = buildSettlementEntry(code, liveMap.get(code));
+    for (const { code, live } of fetchedData) {
+        const settlement = buildSettlementEntry(code, live);
         if (settlement) settlements.push(settlement);
     }
-    const dominantMarketPrevPriceDate = getDominantMarketPrevPriceDate(settlements.map(settlement => ({ live: settlement })));
-    const { history: nextDailyProfitHistory } = recordDailyProfitHistory(dailyProfitHistory, funds, settlements, dominantMarketPrevPriceDate);
+
+    const dominantMarketPrevPriceDate = getDominantMarketPrevPriceDate(fetchedData);
     const updatedCount = _applySettlementLoop(funds, settlements, todayStr);
+    const { history: nextDailyProfitHistory } = recordDailyProfitHistory(dailyProfitHistory, funds, settlements, dominantMarketPrevPriceDate);
 
     await saveSettlementState(funds, todayStr, blockedDate === todayStr ? todayStr : null, nextDailyProfitHistory);
     showToast(`✅ 结算完成！已更新 ${updatedCount} 条`, 'success');
@@ -1740,8 +1991,8 @@ async function autoSettlement(funds, settlements, todayStr, backupSnapshot) {
 
     await backupFundsData(backupSnapshot);
     const dominantMarketPrevPriceDate = getDominantMarketPrevPriceDate(settlements.map(settlement => ({ live: settlement })));
-    const { history: nextDailyProfitHistory } = recordDailyProfitHistory(backupSnapshot?.dailyProfitHistory, funds, settlements, dominantMarketPrevPriceDate);
     const updatedCount = _applySettlementLoop(funds, settlements, todayStr);
+    const { history: nextDailyProfitHistory } = recordDailyProfitHistory(backupSnapshot?.dailyProfitHistory, funds, settlements, dominantMarketPrevPriceDate);
     await saveSettlementState(funds, todayStr, null, nextDailyProfitHistory);
 
     if (updatedCount === 0) {
@@ -1803,6 +2054,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         tableBody: document.getElementById('fundTableBody'),
         status: document.getElementById('status'),
         statusText: document.getElementById('statusText'),
+        selectionStatus: document.getElementById('selectionStatus'),
         fullscreenBtn: document.getElementById('fullscreenBtn'),
         refreshControl: document.getElementById('refreshControl'),
         refreshBtn: document.getElementById('refreshBtn'),
@@ -1812,6 +2064,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         marketTicker: document.getElementById('marketTicker'),
         marketTickerTrack: document.getElementById('marketTickerTrack'),
         notificationBtn: document.getElementById('notificationBtn'),
+        columnConfigBtn: document.getElementById('columnConfigBtn'),
+        columnConfigPanel: document.getElementById('columnConfigPanel'),
         totalAmount: document.getElementById('totalAmount'),
         totalTodayProfit: document.getElementById('totalTodayProfit'),
         totalTotalProfit: document.getElementById('totalTotalProfit'),
@@ -1857,6 +2111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     checkBackup();
     await restoreAutoRefreshInterval();
+    await initColumnVisibility();
     renderMarketBreadthTicker();
     resetAutoRefreshCountdown();
     ensureRefreshCountdownTimer();
@@ -2550,6 +2805,23 @@ async function _loadDataImpl() {
         for (const { code, live } of fetchedData) {
             if (live && live.prevPrice > 0) {
                 const item = funds[code];
+
+                // 兜底：若已检测到分红提示但交易记录里还没有对应自动分红单，则在渲染前补齐。
+                // 不重复发通知，仅保证 pendingAdjustments 与分红提示一致。
+                if (item && Array.isArray(live.dividendList) && live.dividendList.length > 0) {
+                    for (const dividend of live.dividendList) {
+                        if (!dividend || !dividend.date || typeof dividend.perShare !== 'number') {
+                            continue;
+                        }
+                        if (item.addedDate && dividend.date < item.addedDate) {
+                            continue;
+                        }
+                        if (ensureAutoDetectedDividendEntry(item, code, dividend, todayStr, false)) {
+                            dataChanged = true;
+                        }
+                    }
+                }
+
                 const pendingAdjustments = getPendingAdjustments(item);
 
                 // --- A. 处理待确认份额（加仓/减仓/分红）---
@@ -2651,7 +2923,9 @@ async function _loadDataImpl() {
                 const pendingDividendAmount = sumPendingDividendAmount(pendingAdjustments);
 
                 // --- E. 构造结果集 ---
-                // 分红期间：持仓金额和昨日收益需要加上待确认分红
+                // 分红期间：持仓金额展示包含待确认分红；昨日收益展示值会补回
+                // 1) 手动创建且待确认的分红；
+                // 2) 与当前 prevPriceDate 对应的自动检测分红（避免接口分红日出现误负值）。
                 const displayAmount = round2((item.amount || 0) + pendingDividendAmount);
                 const displayYesterdayProfit = getDisplayedFreshYesterdayProfitValue(item, live, dominantMarketPrevPriceDate);
 
@@ -2762,9 +3036,13 @@ async function _loadDataImpl() {
         }
 
         updateGroupFilter();
+        await hydrateFundPerfCache(funds, allFundsData.map(item => item.code));
         renderTable();
         lastUpdateTime = new Date().toLocaleTimeString();
         elements.statusText.innerText = `最后更新: ${lastUpdateTime}`;
+
+        // 后台静默拉取区间涨跌幅（不阻塞主流程）
+        fetchAllFundPerfData(funds);
     } catch (error) {
         console.error('[_loadDataImpl] 数据加载失败:', error);
         showToast(`数据加载失败: ${error.message}`, 'error');
@@ -3708,9 +3986,9 @@ function renderTable() {
             : formatProfit(item.todayProfit) + ' ';
         const tr = document.createElement('tr');
         tr.dataset.code = item.code;
-        _td(tr, String(index + 1));
+        _td(tr, String(index + 1), 'index');
         // -- 代码 --
-        _td(tr, item.code);
+        _td(tr, item.code, 'code');
         // -- 名称/分组 --
         const tdName = document.createElement('td');
         const nameSpan = document.createElement('span');
@@ -3734,11 +4012,15 @@ function renderTable() {
         groupSpan.textContent = item.group;
         tdName.appendChild(nameSpan);
         tdName.appendChild(groupSpan);
+        tdName.dataset.col = 'name';
+        setColumnVisibilityClass(tdName, 'name');
         tr.appendChild(tdName);
         // -- 持仓金额 (全屏和小屏都显示) --
         const tdAmount = document.createElement('td');
         tdAmount.className = 'editable-cell';
         tdAmount.contentEditable = 'true';
+        tdAmount.dataset.col = 'amount';
+        setColumnVisibilityClass(tdAmount, 'amount');
         tdAmount.dataset.field = 'amount';
         tdAmount.dataset.code = item.code;
         // 【修改】在金额后也添加设置图标 (解决小窗口看不到份额列的问题)
@@ -3762,6 +4044,8 @@ function renderTable() {
         // -- 份额 (全屏显示) --
         const tdShares = document.createElement('td');
         tdShares.className = 'col-hide'; // 小屏隐藏
+        tdShares.dataset.col = 'shares';
+        setColumnVisibilityClass(tdShares, 'shares');
         const sharesWrapper = document.createElement('div');
         sharesWrapper.className = 'cell-with-icon';
         const sharesText = document.createElement('span');
@@ -3776,6 +4060,8 @@ function renderTable() {
         // ... [净值列、昨日收益列、估值收益列代码保持不变] ...
         const tdNav = document.createElement('td');
         tdNav.className = 'col-hide';
+        tdNav.dataset.col = 'nav';
+        setColumnVisibilityClass(tdNav, 'nav');
         const prevNavLine = document.createElement('div');
         prevNavLine.style.cssText = 'display:flex; align-items:baseline; gap:4px;';
         const navVal = document.createElement('span');
@@ -3787,6 +4073,13 @@ function renderTable() {
             prevDateSpan.style.cssText = `font-size:10px; color:${item.prevPriceDate === todayStr ? '#8c8c8c' : '#fa8c16'};`;
             prevDateSpan.textContent = item.prevPriceDate.slice(5);
             prevNavLine.appendChild(prevDateSpan);
+        }
+        if (item.prevPrice > 0 && item.prevTradingDayPrice > 0) {
+            const prevDayRate = (item.prevPrice - item.prevTradingDayPrice) / item.prevTradingDayPrice * 100;
+            const prevRateSpan = document.createElement('span');
+            prevRateSpan.style.cssText = `font-size:10px; font-weight:bold; color:${prevDayRate >= 0 ? '#f5222d' : '#389e0d'};`;
+            prevRateSpan.textContent = formatProfit(prevDayRate, '%');
+            prevNavLine.appendChild(prevRateSpan);
         }
         tdNav.appendChild(prevNavLine);
         const liveNavLine = document.createElement('div');
@@ -3813,9 +4106,22 @@ function renderTable() {
         }
         tdNav.appendChild(liveNavLine);
         tr.appendChild(tdNav);
+        // -- 持有天数/区间涨跌幅 (全屏显示) --
+        PERF_FIELDS.forEach(field => {
+            const tdPerf = document.createElement('td');
+            tdPerf.className = 'col-hide perf-cell';
+            tdPerf.dataset.col = field;
+            tdPerf.dataset.perf = field;
+            setColumnVisibilityClass(tdPerf, field);
+            tdPerf.textContent = '—';
+            tr.appendChild(tdPerf);
+        });
+        renderFundPerfCells(tr, item.code);
         // -- 昨日收益 --
         const tdYesterday = document.createElement('td');
+        tdYesterday.dataset.col = 'yesterdayProfit';
         tdYesterday.className = item.yesterdayProfit >= 0 ? 'up' : 'down';
+        setColumnVisibilityClass(tdYesterday, 'yesterdayProfit');
         tdYesterday.textContent = formatProfit(item.yesterdayProfit);
         if (hasPendingDividend) {
             const warnYesterday = document.createElement('span');
@@ -3826,9 +4132,11 @@ function renderTable() {
         }
         tr.appendChild(tdYesterday);
         const tdToday = document.createElement('td');
+        tdToday.dataset.col = 'todayProfit';
         if (item.todayProfit !== null) {
             tdToday.className = item.todayProfit >= 0 ? 'up' : 'down';
         }
+        setColumnVisibilityClass(tdToday, 'todayProfit');
         const todayAmtLine = document.createElement('div');
         todayAmtLine.textContent = todayProfitText;
         tdToday.appendChild(todayAmtLine);
@@ -3842,6 +4150,8 @@ function renderTable() {
         // 累计收益
         const tdHoldProfit = document.createElement('td');
         tdHoldProfit.className = `editable-cell ${item.holdProfit >= 0 ? 'up' : 'down'}`;
+        tdHoldProfit.dataset.col = 'holdProfit';
+        setColumnVisibilityClass(tdHoldProfit, 'holdProfit');
         tdHoldProfit.contentEditable = 'true';
         tdHoldProfit.dataset.field = 'holdProfit';
         tdHoldProfit.dataset.code = item.code;
@@ -3857,6 +4167,8 @@ function renderTable() {
         // -- 操作列 (只保留删除) --
         const tdOp = document.createElement('td');
         tdOp.className = 'col-hide';
+        tdOp.dataset.col = 'actions';
+        setColumnVisibilityClass(tdOp, 'actions');
         const btnDel = document.createElement('button');
         btnDel.className = 'del-btn';
         btnDel.dataset.code = item.code;
@@ -4004,7 +4316,8 @@ function updateSelectionStatus() {
             renderTable();
         };
 
-        elements.status.replaceChildren(
+        elements.selectionStatus.style.display = '';
+        elements.selectionStatus.replaceChildren(
             document.createTextNode('已选中 '),
             countStrong,
             document.createTextNode(' 项 '),
@@ -4012,16 +4325,22 @@ function updateSelectionStatus() {
         );
         if (fabMain) fabMain.style.background = '#fa8c16';
     } else {
-        elements.statusText.innerText = lastUpdateTime ? `最后更新: ${lastUpdateTime}` : '准备就绪';
+        elements.selectionStatus.style.display = 'none';
+        elements.selectionStatus.replaceChildren();
         if (fabMain) fabMain.style.background = '';
     }
 }
 
 
-function _td(tr, text) {
+function _td(tr, text, colId = null) {
     const td = document.createElement('td');
     td.textContent = text;
+    if (colId) {
+        td.dataset.col = colId;
+        setColumnVisibilityClass(td, colId);
+    }
     tr.appendChild(td);
+    return td;
 }
 
 // 辅助函数：重置单个基金的持仓数据
@@ -5343,7 +5662,305 @@ async function loadHoldings(code, isStale = createFundDetailStaleGuard(code)) {
     }
 }
 
-// ==================== 数据获取函数（优化版） ====================
+// ==================== 区间涨跌幅后台拉取 ====================
+
+function parseYmdDate(dateStr) {
+    if (typeof dateStr !== 'string') return null;
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(year, month - 1, day);
+    if (
+        date.getFullYear() !== year
+        || date.getMonth() !== month - 1
+        || date.getDate() !== day
+    ) {
+        return null;
+    }
+    return date;
+}
+
+function calcHoldDays(addedDate, today = getToday()) {
+    const todayDate = parseYmdDate(today);
+    const added = parseYmdDate(addedDate || '');
+    if (!todayDate || !added) return null;
+    return Math.max(0, Math.floor((todayDate.getTime() - added.getTime()) / 86400000));
+}
+
+function normalizePerfRateValue(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value !== 'number' || Number.isNaN(value)) return null;
+    return round2(value);
+}
+
+function normalizeFundPerfDailyCache(rawCache = {}) {
+    if (!rawCache || typeof rawCache !== 'object') return {};
+    const normalized = {};
+    Object.entries(rawCache).forEach(([code, entry]) => {
+        if (!entry || typeof entry !== 'object') return;
+        const asOfDate = typeof entry.asOfDate === 'string' && parseYmdDate(entry.asOfDate)
+            ? entry.asOfDate
+            : '';
+        if (!asOfDate) return;
+        normalized[code] = {
+            asOfDate,
+            w1: normalizePerfRateValue(entry.w1),
+            m1: normalizePerfRateValue(entry.m1),
+            m3: normalizePerfRateValue(entry.m3),
+            m6: normalizePerfRateValue(entry.m6),
+            y1: normalizePerfRateValue(entry.y1),
+            ly: normalizePerfRateValue(entry.ly)
+        };
+    });
+    return normalized;
+}
+
+async function ensureFundPerfDailyCacheLoaded() {
+    if (fundPerfDailyCacheLoaded) return;
+    try {
+        const stored = await storage.get([CONFIG.PERF_DAILY_CACHE_STORAGE_KEY]);
+        fundPerfDailyCacheByCode = normalizeFundPerfDailyCache(stored[CONFIG.PERF_DAILY_CACHE_STORAGE_KEY] || {});
+    } catch (err) {
+        console.warn('[fundPerf] 读取日级缓存失败:', err);
+        fundPerfDailyCacheByCode = {};
+    }
+
+    fundPerfDailyCacheLoaded = true;
+}
+
+async function persistFundPerfDailyCache() {
+    try {
+        await storage.set({
+            [CONFIG.PERF_DAILY_CACHE_STORAGE_KEY]: fundPerfDailyCacheByCode
+        });
+    } catch (err) {
+        console.warn('[fundPerf] 保存日级缓存失败:', err);
+    }
+}
+
+function createEmptyFundPerfDailyEntry(asOfDate) {
+    return {
+        asOfDate,
+        w1: null,
+        m1: null,
+        m3: null,
+        m6: null,
+        y1: null,
+        ly: null
+    };
+}
+
+function buildFundPerfDisplayData(code, addedDate) {
+    const holdDays = calcHoldDays(addedDate);
+    const cached = fundPerfDailyCacheByCode[code];
+    return {
+        holdDays,
+        w1: normalizePerfRateValue(cached?.w1),
+        m1: normalizePerfRateValue(cached?.m1),
+        m3: normalizePerfRateValue(cached?.m3),
+        m6: normalizePerfRateValue(cached?.m6),
+        y1: normalizePerfRateValue(cached?.y1),
+        ly: normalizePerfRateValue(cached?.ly)
+    };
+}
+
+async function hydrateFundPerfCache(funds, codes) {
+    await ensureFundPerfDailyCacheLoaded();
+    const codeSet = new Set(codes);
+    const nextDisplayCache = {};
+
+    codes.forEach(code => {
+        nextDisplayCache[code] = buildFundPerfDisplayData(code, funds[code]?.addedDate || '');
+    });
+    fundPerfCache = nextDisplayCache;
+
+    let changed = false;
+    Object.keys(fundPerfDailyCacheByCode).forEach(code => {
+        if (!codeSet.has(code)) {
+            delete fundPerfDailyCacheByCode[code];
+            changed = true;
+        }
+    });
+
+    if (changed) {
+        await persistFundPerfDailyCache();
+    }
+}
+
+/**
+ * 计算区间涨跌幅：(末净值 - 首净值) / 首净值 * 100
+ */
+function calcRateFromNavData(navData, startDate) {
+    if (!Array.isArray(navData) || navData.length < 2) return null;
+    const filtered = navData.filter(d => d.date >= startDate);
+    if (filtered.length < 2) return null;
+    const first = filtered[0].price;
+    const last = filtered[filtered.length - 1].price;
+    if (!first) return null;
+    return round2((last - first) / first * 100);
+}
+
+function calcRateFromFirstNav(navData) {
+    if (!Array.isArray(navData) || navData.length < 2) return null;
+    const first = navData[0]?.price;
+    const last = navData[navData.length - 1]?.price;
+    if (!(first > 0) || !(last > 0)) return null;
+    return round2((last - first) / first * 100);
+}
+
+/**
+ * 拉取单只基金的区间涨跌幅（不直接改展示缓存，返回计算结果）
+ */
+async function fetchFundPerfData(code) {
+    try {
+        const today = getToday();
+        const todayDate = parseYmdDate(today);
+        if (!todayDate) return null;
+
+        const getStart = (days) => formatDate(new Date(todayDate.getTime() - days * 86400000));
+        const lyStart = '2000-01-01';
+
+        // 统一复用历史净值数据源：优先读详情页缓存（_netValueCache 的 LY），无缓存再拉全历史
+        let navData = getCachedPerformanceData(code, 'LY', lyStart, today);
+        if (!Array.isArray(navData) || navData.length < 2) {
+            navData = await fetchAndCacheFullPerformanceHistory(code, today);
+        }
+
+        if (!Array.isArray(navData) || navData.length < 2) {
+            return null;
+        }
+
+        const normalizedNavData = navData
+            .map(item => ({
+                date: item?.date,
+                price: parseFloat(item?.price)
+            }))
+            .filter(item => typeof item.date === 'string' && item.date && Number.isFinite(item.price) && item.price > 0)
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        if (normalizedNavData.length < 2) {
+            return null;
+        }
+
+        return {
+            w1: calcRateFromNavData(normalizedNavData, getStart(7)),
+            m1: calcRateFromNavData(normalizedNavData, getStart(30)),
+            m3: calcRateFromNavData(normalizedNavData, getStart(90)),
+            m6: calcRateFromNavData(normalizedNavData, getStart(180)),
+            y1: calcRateFromNavData(normalizedNavData, getStart(365)),
+            ly: calcRateFromFirstNav(normalizedNavData),
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
+let fundPerfRefreshPromise = null;
+
+/**
+ * 后台批量拉取所有基金区间涨跌幅
+ */
+async function fetchAllFundPerfData(fundsOverride = null) {
+    if (!document.body.classList.contains('is-fullscreen')) return;
+    if (fundPerfRefreshPromise) return fundPerfRefreshPromise;
+
+    fundPerfRefreshPromise = (async () => {
+        await ensureFundPerfDailyCacheLoaded();
+        const funds = fundsOverride || (await storage.get(['myFunds'])).myFunds || {};
+        const codes = allFundsData.map(d => d.code);
+        const today = getToday();
+
+        let cacheChanged = false;
+
+        for (const code of codes) {
+            const addedDate = funds[code]?.addedDate || '';
+            fundPerfCache[code] = buildFundPerfDisplayData(code, addedDate);
+
+            const cached = fundPerfDailyCacheByCode[code];
+            if (cached?.asOfDate === today && PERF_FIELDS.every(field => field === 'holdDays' || cached[field] !== null && cached[field] !== undefined)) {
+                const tr = document.querySelector(`#fundTableBody tr[data-code="${code}"]`);
+                if (tr) renderFundPerfCells(tr, code);
+                continue;
+            }
+
+            const fetchedPerf = await fetchFundPerfData(code);
+            if (fetchedPerf) {
+                fundPerfDailyCacheByCode[code] = {
+                    asOfDate: today,
+                    ...fetchedPerf
+                };
+                fundPerfCache[code] = buildFundPerfDisplayData(code, addedDate);
+                cacheChanged = true;
+
+                const tr = document.querySelector(`#fundTableBody tr[data-code="${code}"]`);
+                if (tr) renderFundPerfCells(tr, code);
+            } else {
+                const fallbackEntry = cached
+                    ? {
+                        asOfDate: today,
+                        w1: normalizePerfRateValue(cached.w1),
+                        m1: normalizePerfRateValue(cached.m1),
+                        m3: normalizePerfRateValue(cached.m3),
+                        m6: normalizePerfRateValue(cached.m6),
+                        y1: normalizePerfRateValue(cached.y1),
+                        ly: normalizePerfRateValue(cached.ly)
+                    }
+                    : createEmptyFundPerfDailyEntry(today);
+
+                fundPerfDailyCacheByCode[code] = fallbackEntry;
+                fundPerfCache[code] = buildFundPerfDisplayData(code, addedDate);
+                cacheChanged = true;
+            }
+
+            await new Promise(r => setTimeout(r, 80)); // 避免并发过多
+        }
+
+
+        if (cacheChanged) {
+            await persistFundPerfDailyCache();
+        }
+    })().finally(() => {
+        fundPerfRefreshPromise = null;
+    });
+
+    return fundPerfRefreshPromise;
+}
+
+/**
+ * 渲染单行的区间涨跌幅 td
+ */
+function renderFundPerfCells(tr, code) {
+    const perf = fundPerfCache[code];
+    const fields = PERF_FIELDS;
+    fields.forEach(field => {
+        const td = tr.querySelector(`[data-perf="${field}"]`);
+        if (!td) return;
+        if (!perf) {
+            td.textContent = '—';
+            td.className = 'col-hide perf-cell';
+            setColumnVisibilityClass(td, field);
+            return;
+        }
+        if (field === 'holdDays') {
+            td.textContent = perf.holdDays !== null ? `${perf.holdDays}天` : '—';
+            td.className = 'col-hide perf-cell';
+            setColumnVisibilityClass(td, field);
+        } else {
+            const val = perf[field];
+            if (val === null || val === undefined) {
+                td.textContent = '—';
+                td.className = 'col-hide perf-cell';
+                setColumnVisibilityClass(td, field);
+            } else {
+                td.textContent = formatProfit(val, '%');
+                td.className = `col-hide perf-cell ${val >= 0 ? 'up' : 'down'}`;
+                setColumnVisibilityClass(td, field);
+            }
+        }
+    });
+}
 
 /**
  * 获取基金历史净值数据
