@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "支付宝基金收益助手",
-  "version": "1.7.7",
-  "description": "实时计算基金今日收益，支持OCR识别与手动录入",
+  "name": "资产收益助手",
+  "version": "2.0.0",
+  "description": "实时资产收益追踪器，支持基金/期货、OCR识别、指数行情与自动结算",
   "permissions": [
     "storage"
   ],
@@ -21,7 +21,9 @@
     "https://fundmobapi.eastmoney.com/*",
     "https://push2.eastmoney.com/*",
     "https://push2ex.eastmoney.com/*",
-    "https://qt.gtimg.cn/*"
+    "https://qt.gtimg.cn/*",
+    "https://query1.finance.yahoo.com/*",
+    "https://query2.finance.yahoo.com/*"
   ],
   "action": {
     "default_popup": "popup.html"
