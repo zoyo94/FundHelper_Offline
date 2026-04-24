@@ -211,7 +211,7 @@ function renderColumnConfigPanel() {
             renderTable();
             applyColumnVisibilityToHeader();
             try {
-                await storage.set({ [CONFIG.COLUMN_VISIBILITY_STORAGE_KEY]: columnVisibility });
+                await storageHelper.set(CONFIG.COLUMN_VISIBILITY_STORAGE_KEY, columnVisibility);
             } catch (err) {
                 console.error('保存列配置失败:', err);
                 showToast('列配置保存失败', 'error');
@@ -226,8 +226,8 @@ function renderColumnConfigPanel() {
 
 async function initColumnVisibility() {
     try {
-        const stored = await storage.get([CONFIG.COLUMN_VISIBILITY_STORAGE_KEY]);
-        columnVisibility = normalizeColumnVisibility(stored[CONFIG.COLUMN_VISIBILITY_STORAGE_KEY] || {});
+        const stored = await storageHelper.getAll([CONFIG.COLUMN_VISIBILITY_STORAGE_KEY]);
+        columnVisibility = normalizeColumnVisibility(stored?.[CONFIG.COLUMN_VISIBILITY_STORAGE_KEY] || {});
     } catch (err) {
         console.warn('读取列配置失败，使用默认配置:', err);
         columnVisibility = normalizeColumnVisibility({});
@@ -269,8 +269,8 @@ async function initColumnVisibility() {
  */
 async function initPinnedFunds() {
     try {
-        const stored = await storage.get([CONFIG.PINNED_FUNDS_STORAGE_KEY]);
-        const arr = stored[CONFIG.PINNED_FUNDS_STORAGE_KEY];
+        const stored = await storageHelper.getAll([CONFIG.PINNED_FUNDS_STORAGE_KEY]);
+        const arr = stored?.[CONFIG.PINNED_FUNDS_STORAGE_KEY];
         pinnedFunds = new Set(Array.isArray(arr) ? arr : []);
     } catch (err) {
         console.warn('读取置顶基金失败，使用空列表:', err);
@@ -295,7 +295,7 @@ async function togglePinFund(code) {
         showToast(`📌 已置顶：${label}`, 'success', CONFIG.TOAST_SHORT);
     }
     try {
-        await storage.set({ [CONFIG.PINNED_FUNDS_STORAGE_KEY]: [...pinnedFunds] });
+        await storageHelper.set(CONFIG.PINNED_FUNDS_STORAGE_KEY, [...pinnedFunds]);
     } catch (err) {
         console.error('保存置顶基金失败:', err);
     }
@@ -363,6 +363,82 @@ const storage = {
                 }
             });
         });
+    }
+};
+
+/**
+ * Storage 辅助对象（统一封装 storage 操作）
+ */
+const storageHelper = {
+    /**
+     * 获取单个键的值（带默认值）
+     * @param {string} key - Storage key
+     * @param {*} defaultValue - 默认值
+     * @returns {Promise<*>} 键的值
+     */
+    async get(key, defaultValue = undefined) {
+        try {
+            const result = await storageHelper.getAll([key]);
+            return result?.[key] ?? defaultValue;
+        } catch (error) {
+            console.warn('[StorageHelper] 获取失败:', error);
+            return defaultValue;
+        }
+    },
+
+    /**
+     * 获取多个键的值
+     * @param {string[]} keys - Storage keys
+     * @returns {Promise<Object>} 包含键值对的对象
+     */
+    async getAll(keys) {
+        try {
+            const result = await storage.get(keys);
+            return result || {};
+        } catch (error) {
+            console.warn('[StorageHelper] 批量获取失败:', error);
+            return {};
+        }
+    },
+
+    /**
+     * 设置单个键的值
+     * @param {string} key - Storage key
+     * @param {*} value - 要存储的值
+     * @returns {Promise<void>}
+     */
+    async set(key, value) {
+        try {
+            await storageHelper.setAll({ [key]: value });
+        } catch (error) {
+            console.error('[StorageHelper] 设置失败:', error);
+        }
+    },
+
+    /**
+     * 设置多个键的值
+     * @param {Object} data - 键值对对象
+     * @returns {Promise<void>}
+     */
+    async setAll(data) {
+        try {
+            await storage.set(data);
+        } catch (error) {
+            console.error('[StorageHelper] 批量设置失败:', error);
+        }
+    },
+
+    /**
+     * 删除单个键的值
+     * @param {string} key - Storage key
+     * @returns {Promise<void>}
+     */
+    async remove(key) {
+        try {
+            await chrome.storage.local.remove([key]);
+        } catch (error) {
+            console.error('[StorageHelper] 删除失败:', error);
+        }
     }
 };
 
@@ -615,7 +691,7 @@ async function persistLiveApiRequestDate(todayStr = getToday()) {
     if (lastLiveApiRequestDate === todayStr) return;
     markLiveApiRequestDone(todayStr);
     try {
-        await storage.set({ [CONFIG.LIVE_API_REQUEST_DATE_STORAGE_KEY]: todayStr });
+        await storageHelper.set(CONFIG.LIVE_API_REQUEST_DATE_STORAGE_KEY, todayStr);
     } catch (error) {
         console.warn('[refresh] 记录当日行情请求标记失败:', error);
     }
@@ -746,7 +822,7 @@ async function persistLiveSnapshot(entries = [], todayStr = getToday()) {
     const snapshot = sanitizeLiveSnapshot({ date: todayStr, entries });
     if (!snapshot || snapshot.entries.length === 0) return;
     try {
-        await storage.set({ [CONFIG.LIVE_SNAPSHOT_STORAGE_KEY]: snapshot });
+        await storageHelper.set(CONFIG.LIVE_SNAPSHOT_STORAGE_KEY, snapshot);
     } catch (error) {
         console.warn('[refresh] 保存行情快照失败:', error);
     }
@@ -780,7 +856,7 @@ async function persistMarketBreadthSnapshot(data, todayStr = getToday()) {
     if (!normalizedData) return;
 
     try {
-        await storage.set({
+        await storageHelper.setAll({
             [CONFIG.MARKET_BREADTH_STORAGE_KEY]: {
                 date: todayStr,
                 data: normalizedData
@@ -793,7 +869,7 @@ async function persistMarketBreadthSnapshot(data, todayStr = getToday()) {
 
 async function restoreMarketBreadthSnapshot(todayStr = getToday()) {
     try {
-        const stored = await storage.get([CONFIG.MARKET_BREADTH_STORAGE_KEY]);
+        const stored = await storageHelper.getAll([CONFIG.MARKET_BREADTH_STORAGE_KEY]);
         const snapshot = sanitizeMarketBreadthSnapshot(stored?.[CONFIG.MARKET_BREADTH_STORAGE_KEY]);
         if (!snapshot || snapshot.date !== todayStr) return null;
         return snapshot.data;
@@ -808,7 +884,7 @@ async function restoreMarketBreadthSnapshot(todayStr = getToday()) {
  */
 async function persistIndexQuotesSnapshot(data, todayStr = getToday()) {
     try {
-        await storage.set({
+        await storageHelper.setAll({
             [CONFIG.INDEX_QUOTES_STORAGE_KEY]: {
                 date: todayStr,
                 time: new Date().getTime(),
@@ -825,7 +901,7 @@ async function persistIndexQuotesSnapshot(data, todayStr = getToday()) {
  */
 async function restoreIndexQuotesSnapshot(todayStr = getToday()) {
     try {
-        const stored = await storage.get([CONFIG.INDEX_QUOTES_STORAGE_KEY]);
+        const stored = await storageHelper.getAll([CONFIG.INDEX_QUOTES_STORAGE_KEY]);
         const snapshot = stored?.[CONFIG.INDEX_QUOTES_STORAGE_KEY];
         if (snapshot && Array.isArray(snapshot.data)) {
             return snapshot.data;
@@ -916,7 +992,7 @@ function buildLiveFromLocalFund(code, fund, todayStr = getToday()) {
 async function buildLiveDataFromSnapshot(codes, funds = {}, todayStr = getToday()) {
     if (!Array.isArray(codes) || codes.length === 0) return [];
     try {
-        const stored = await storage.get([CONFIG.LIVE_SNAPSHOT_STORAGE_KEY]);
+        const stored = await storageHelper.getAll([CONFIG.LIVE_SNAPSHOT_STORAGE_KEY]);
         const snapshot = sanitizeLiveSnapshot(stored?.[CONFIG.LIVE_SNAPSHOT_STORAGE_KEY]);
         const entryByCode = snapshot && snapshot.date === todayStr
             ? new Map(snapshot.entries.map(entry => [entry.code, entry]))
@@ -1037,13 +1113,13 @@ const notificationCenter = {
 
     // 初始化：加载今天的通知
     async init() {
-        const { notifications, notificationDate } = await storage.get(['notifications', 'notificationDate']);
+        const { notifications, notificationDate } = await storageHelper.getAll(['notifications', 'notificationDate']);
         const todayStr = getToday();
 
         // 如果是新的一天，清空通知
         if (notificationDate !== todayStr) {
             this.notifications = [];
-            await storage.set({ notifications: [], notificationDate: todayStr });
+            await storageHelper.setAll({ notifications: [], notificationDate: todayStr });
         } else {
             this.notifications = notifications || [];
         }
@@ -1061,7 +1137,7 @@ const notificationCenter = {
         };
 
         this.notifications.unshift(notification); // 新通知在前
-        await storage.set({ notifications: this.notifications });
+        await storageHelper.setAll({ notifications: this.notifications });
         this.updateBadge();
     },
 
@@ -1082,7 +1158,7 @@ const notificationCenter = {
     // 清空所有通知
     async clear() {
         this.notifications = [];
-        await storage.set({ notifications: [], notificationDate: getToday() });
+        await storageHelper.setAll({ notifications: [], notificationDate: getToday() });
         this.updateBadge();
     },
 
@@ -1318,7 +1394,7 @@ function showHtmlModal(title, html, footerBtns = null) {
 const ROLLBACK_SETTLEMENT_PREFIX = 'ROLLBACK_';
 
 async function checkBackup() {
-    const { backupFunds, lastSettlementDate, autoSettlementBlockedDate } = await storage.get([
+    const { backupFunds, lastSettlementDate, autoSettlementBlockedDate } = await storageHelper.getAll([
         'backupFunds',
         'lastSettlementDate',
         'autoSettlementBlockedDate'
@@ -1781,7 +1857,7 @@ function formatProfitCalendarDate(dateStr) {
 }
 
 async function openProfitCalendar() {
-    const stored = await storage.get(['dailyProfitHistory', CONFIG.PROFIT_HISTORY_RETENTION_STORAGE_KEY]);
+    const stored = await storageHelper.getAll(['dailyProfitHistory', CONFIG.PROFIT_HISTORY_RETENTION_STORAGE_KEY]);
     let retentionDays = Number(stored[CONFIG.PROFIT_HISTORY_RETENTION_STORAGE_KEY]) || 30;
     const RETENTION_OPTIONS = [30, 60, 90, 180, 365];
     if (!RETENTION_OPTIONS.includes(retentionDays)) retentionDays = 30;
@@ -1981,7 +2057,7 @@ async function openProfitCalendar() {
         if (retentionSelect) {
             retentionSelect.onchange = async () => {
                 retentionDays = Number(retentionSelect.value);
-                await storage.set({ [CONFIG.PROFIT_HISTORY_RETENTION_STORAGE_KEY]: retentionDays });
+                await storageHelper.setAll({ [CONFIG.PROFIT_HISTORY_RETENTION_STORAGE_KEY]: retentionDays });
                 render();
             };
         }
@@ -2449,7 +2525,7 @@ async function saveSettlementState(funds, todayStr, autoSettlementBlockedDate = 
     if (dailyProfitHistory) {
         dataToSave.dailyProfitHistory = normalizeDailyProfitHistory(dailyProfitHistory);
     }
-    await storage.set(dataToSave);
+    await storageHelper.setAll(dataToSave);
 }
 
 // ==================== 1. 新增：统一的备份函数 ====================
@@ -2480,7 +2556,7 @@ async function backupFundsData(snapshot) {
         myFunds: funds,
         dailyProfitHistory: normalizeDailyProfitHistory(snapshot?.dailyProfitHistory)
     };
-    await storage.set({ backupFunds: backupData });
+    await storageHelper.setAll({ backupFunds: backupData });
     console.log('[Backup] 数据已备份（首次）:', backupData);
 }
 
@@ -2686,7 +2762,7 @@ async function manualSettlement() {
     if (!ok) return;
 
     const todayStr = getToday();
-    const { myFunds, lastUpdateDate, lastDayProfits, lastSettlementDate, autoSettlementBlockedDate, backupFunds, dailyProfitHistory } = await storage.get([
+    const { myFunds, lastUpdateDate, lastDayProfits, lastSettlementDate, autoSettlementBlockedDate, backupFunds, dailyProfitHistory } = await storageHelper.getAll([
         'myFunds',
         'lastUpdateDate',
         'lastDayProfits',
@@ -2746,7 +2822,7 @@ async function manualSettlement() {
 
 // ==================== 3. 修改：撤销结算（使用备份数据覆盖）====================
 async function rollbackSettlement() {
-    const { backupFunds } = await storage.get(['backupFunds']);
+    const { backupFunds } = await storageHelper.getAll(['backupFunds']);
     if (!hasTodayBackup(backupFunds)) {
         await showAlert('未找到今天的备份数据，无法撤销！');
         return;
@@ -2762,7 +2838,7 @@ async function rollbackSettlement() {
 
     const todayStr = getToday();
     const { settlementDate } = parseSettlementState(backupFunds.lastSettlementDate, backupFunds.autoSettlementBlockedDate);
-    await storage.set({
+    await storageHelper.setAll({
         myFunds: cloneData(backupFunds.myFunds),
         lastUpdateDate: backupFunds.lastUpdateDate || '',
         lastDayProfits: cloneData(backupFunds.lastDayProfits || {}),
@@ -2805,7 +2881,7 @@ async function loadFundHistoryData(activeCodes) {
     const todayStr = getToday();
     const activeSet = new Set(activeCodes);
     try {
-        const { fundHistoryData: stored = {} } = await storage.get(['fundHistoryData']);
+        const { fundHistoryData: stored = {} } = await storageHelper.getAll(['fundHistoryData']);
         let loaded = 0;
         for (const code in stored) {
             // 双重过滤：必须是今日数据 && 必须是当前基金列表里的
@@ -2828,7 +2904,7 @@ async function saveFundHistoryData() {
     if (saveFundHistoryTimer) clearTimeout(saveFundHistoryTimer);
     saveFundHistoryTimer = setTimeout(async () => {
         try {
-            await storage.set({ fundHistoryData });
+            await storageHelper.setAll({ fundHistoryData });
         } catch (err) {
             console.warn('[走势数据] 保存失败:', err);
         }
@@ -3555,7 +3631,7 @@ async function setAutoRefreshInterval(seconds, { silent = false, resetCountdown 
     }
 
     try {
-        await storage.set({ [CONFIG.AUTO_REFRESH_STORAGE_KEY]: normalizedSeconds });
+        await storageHelper.setAll({ [CONFIG.AUTO_REFRESH_STORAGE_KEY]: normalizedSeconds });
     } catch (error) {
         console.warn('[refresh] 保存自动刷新间隔失败:', error);
     }
@@ -3569,7 +3645,7 @@ async function setAutoRefreshInterval(seconds, { silent = false, resetCountdown 
 
 async function restoreAutoRefreshInterval() {
     try {
-        const result = await storage.get([CONFIG.AUTO_REFRESH_STORAGE_KEY]);
+        const result = await storageHelper.getAll([CONFIG.AUTO_REFRESH_STORAGE_KEY]);
         const savedSeconds = Number(result?.[CONFIG.AUTO_REFRESH_STORAGE_KEY]);
         if (CONFIG.AUTO_REFRESH_OPTIONS.includes(savedSeconds)) {
             autoRefreshIntervalMs = savedSeconds * 1000;
@@ -3579,7 +3655,7 @@ async function restoreAutoRefreshInterval() {
     }
 
     try {
-        const result = await storage.get([CONFIG.LIVE_API_REQUEST_DATE_STORAGE_KEY]);
+        const result = await storageHelper.getAll([CONFIG.LIVE_API_REQUEST_DATE_STORAGE_KEY]);
         const savedDate = result?.[CONFIG.LIVE_API_REQUEST_DATE_STORAGE_KEY];
         lastLiveApiRequestDate = typeof savedDate === 'string' ? savedDate : '';
     } catch (error) {
@@ -3653,7 +3729,7 @@ const SUPPORTED_INDICES = [
 ];
 
 async function initIndexSettings() {
-    const { [CONFIG.INDEX_SETTINGS_STORAGE_KEY]: saved } = await storage.get([CONFIG.INDEX_SETTINGS_STORAGE_KEY]);
+    const { [CONFIG.INDEX_SETTINGS_STORAGE_KEY]: saved } = await storageHelper.getAll([CONFIG.INDEX_SETTINGS_STORAGE_KEY]);
     indexSettings = Array.isArray(saved) && saved.length > 0 ? saved : DEFAULT_INDEX_CODES;
     // 数据迁移：将旧的 UDI 代码替换为正确的 IXIC
     const legacyMap = { 'UDI': 'IXIC' };
@@ -3663,7 +3739,7 @@ async function initIndexSettings() {
         return code;
     });
     if (migrated) {
-        await storage.set({ [CONFIG.INDEX_SETTINGS_STORAGE_KEY]: indexSettings });
+        await storageHelper.setAll({ [CONFIG.INDEX_SETTINGS_STORAGE_KEY]: indexSettings });
         console.log('[indexSettings] 已自动迁移旧版指数代码（UDI → IXIC）');
     }
 }
@@ -3880,7 +3956,7 @@ async function _fetchIndexQuotesImpl() {
     }
 
     // 快照补全（历史数据兜底）
-    const snapshot = await storage.get([CONFIG.INDEX_QUOTES_STORAGE_KEY]);
+    const snapshot = await storageHelper.getAll([CONFIG.INDEX_QUOTES_STORAGE_KEY]);
     const oldData = Array.isArray(snapshot?.[CONFIG.INDEX_QUOTES_STORAGE_KEY])
         ? snapshot[CONFIG.INDEX_QUOTES_STORAGE_KEY] : [];
 
@@ -3966,7 +4042,7 @@ function openIndexSettings() {
     showHtmlModal('指数设置', renderSettingsContent(), [
         {
             text: '保存', cls: 'modal-btn-primary', onClick: async () => {
-                await storage.set({ [CONFIG.INDEX_SETTINGS_STORAGE_KEY]: indexSettings });
+                await storageHelper.setAll({ [CONFIG.INDEX_SETTINGS_STORAGE_KEY]: indexSettings });
                 _closeModal();
                 await fetchIndexQuotes();
                 renderMarketBreadthTicker();
@@ -4170,7 +4246,7 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
         elements.statusText.innerText = '同步行情中...';
         apiLogger.reset();
 
-        const storageState = await storage.get([
+        const storageState = await storageHelper.getAll([
             'myFunds',
             'lastSettlementDate',
             'lastDayProfits',
@@ -4245,7 +4321,7 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
         if (!isRollbackToday) {
             const autoSettlementEntries = collectAutoSettlementEntries(funds, fetchedData, dominantMarketPrevPriceDate);
             if (autoSettlementEntries.length > 0) {
-                const { backupFunds } = await storage.get(['backupFunds']);
+                const { backupFunds } = await storageHelper.getAll(['backupFunds']);
                 const settlementSnapshot = createBackupSnapshot({
                     myFunds: funds,
                     lastUpdateDate,
@@ -4520,7 +4596,7 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
             funds
         });
         if (Object.keys(dataToPersist).length > 0) {
-            await storage.set(dataToPersist);
+            await storageHelper.setAll(dataToPersist);
         }
 
         // 显示合并的交易确认通知
@@ -4595,7 +4671,7 @@ async function batchRecalculateShares() {
     if (!ensureBatchSelection()) return;
     if (!await askBatchConfirmation('重算份额', selectedCodes.size)) return;
 
-    const { myFunds } = await storage.get(['myFunds']);
+    const { myFunds } = await storageHelper.getAll(['myFunds']);
     const funds = myFunds || {};
     const codes = [...selectedCodes].filter(c => funds[c]);
 
@@ -4609,7 +4685,7 @@ async function batchRecalculateShares() {
             count++;
         }
     }
-    await storage.set({ myFunds: funds });
+    await storageHelper.setAll({ myFunds: funds });
     showToast(`✅ 已重算 ${count} 支基金份额`, 'success');
     loadData();
 }
@@ -4623,12 +4699,12 @@ async function batchChangeGroup() {
     });
     if (newGroup === null) return;
 
-    const { myFunds } = await storage.get(['myFunds']);
+    const { myFunds } = await storageHelper.getAll(['myFunds']);
     const funds = myFunds || {};
     selectedCodes.forEach(code => {
         if (funds[code]) funds[code].group = newGroup || '默认';
     });
-    await storage.set({ myFunds: funds });
+    await storageHelper.setAll({ myFunds: funds });
     showToast(`📁 移动成功：已将 ${selectedCodes.size} 支基金归类至 [${newGroup || '默认'}]`, 'success');
     loadData();
 }
@@ -4666,12 +4742,12 @@ async function clearPositions(codes) {
 
     if (!ok) return;
 
-    const { myFunds } = await storage.get(['myFunds']);
+    const { myFunds } = await storageHelper.getAll(['myFunds']);
     const funds = myFunds || {};
     codeList.forEach(code => {
         if (funds[code]) resetFundPosition(funds[code], ok === 'yes');
     });
-    await storage.set({ myFunds: funds });
+    await storageHelper.setAll({ myFunds: funds });
     const msg = isBatch ? `🧹 已清空 ${codeList.length} 支基金持仓` : `✅ ${codeList[0]} 持仓已清空`;
     showToast(msg, 'success');
     loadData();
@@ -4940,7 +5016,7 @@ function showFormModal(config) {
 async function adjustPosition(code, type) {
     try {
         // 获取基础数据
-        const { myFunds } = await storage.get(['myFunds']);
+        const { myFunds } = await storageHelper.getAll(['myFunds']);
         const funds = myFunds || {};
         const fundItem = funds[code];
         if (!fundItem) {
@@ -5091,7 +5167,7 @@ async function adjustPosition(code, type) {
             });
         }
         // 保存
-        await storage.set({ myFunds: funds });
+        await storageHelper.setAll({ myFunds: funds });
         const actionName = isDividend ? '分红记录' : (isAdd ? '加仓' : '减仓');
         const amountInfo = isDividend ? `${result.dividendAmount}元`
             : isAdd ? `${result.amount}元`
@@ -5110,7 +5186,7 @@ async function openFundEditor(existingCode = null) {
     let currentNav = 1.0000;
 
     if (existingCode) {
-        const { myFunds } = await storage.get(['myFunds']);
+        const { myFunds } = await storageHelper.getAll(['myFunds']);
         fund = (myFunds || {})[existingCode];
         live = await fetchLiveInfo(existingCode);
         currentNav = live?.prevPrice || 1.0000;
@@ -5192,7 +5268,7 @@ async function openFundEditor(existingCode = null) {
     }
 
     const todayStr = getToday();
-    const { myFunds } = await storage.get(['myFunds']);
+    const { myFunds } = await storageHelper.getAll(['myFunds']);
     const funds = myFunds || {};
     const nextFund = {
         ...(funds[code] || {}),
@@ -5209,7 +5285,7 @@ async function openFundEditor(existingCode = null) {
     syncAddedDateByPosition(nextFund, todayStr);
     funds[code] = nextFund;
 
-    await storage.set({ myFunds: funds });
+    await storageHelper.setAll({ myFunds: funds });
     showToast(`✅ [${code}] 资产保存成功！当前持仓：${result.amount}元 / ${result.shares}份`, 'success');
     elements.statusText.innerText = '准备就绪';
     loadData();
@@ -5306,7 +5382,7 @@ function showCenterMenu(code) {
  * 显示某基金的交易记录弹窗（加仓/减仓/分红，支持撤销和分红类型切换）
  */
 async function showPendingTransactions(code) {
-    const { myFunds } = await storage.get(['myFunds']);
+    const { myFunds } = await storageHelper.getAll(['myFunds']);
     const funds = myFunds || {};
     const fund = funds[code];
     const txList = getPendingAdjustments(fund);
@@ -5393,7 +5469,7 @@ async function showPendingTransactions(code) {
             );
             if (!ok) return;
             adj.type = 'dividend_reinvest';
-            await storage.set({ myFunds: funds });
+            await storageHelper.setAll({ myFunds: funds });
             showToast(`✅ ${code} 分红${adj.dividendAmount}元已改为红利再投`, 'success');
             elements.modalMsg.innerHTML = renderList();
             loadData();
@@ -5413,7 +5489,7 @@ async function showPendingTransactions(code) {
         if (!ok) return;
 
         txList.splice(idx, 1);
-        await storage.set({ myFunds: funds });
+        await storageHelper.setAll({ myFunds: funds });
         showToast(`✅ ${code} ${typeLabel}已撤销`, 'success');
 
         if (txList.length === 0) {
@@ -5444,14 +5520,14 @@ async function forceRecalculateShares(code) {
         return;
     }
 
-    const { myFunds } = await storage.get(['myFunds']);
+    const { myFunds } = await storageHelper.getAll(['myFunds']);
     const funds = myFunds || {};
     if (funds[code]) {
         const newShares = deriveFundShares(funds[code], live.prevPrice);
         funds[code].shares = newShares;
         syncAddedDateByPosition(funds[code], getToday());
 
-        await storage.set({ myFunds: funds });
+        await storageHelper.setAll({ myFunds: funds });
         showToast(`✅ ${code} 已按净值 ${live.prevPrice} 重算份额为 ${newShares} 份`, 'success');
         elements.statusText.innerText = '准备就绪';
         loadData();
@@ -5745,14 +5821,14 @@ function renderTable() {
     };
     // 绑定可编辑单元格事件（使用防抖优化）
     const debouncedSave = debounce(async (code, field, val) => {
-        const { myFunds } = await storage.get(['myFunds']);
+        const { myFunds } = await storageHelper.getAll(['myFunds']);
         const funds = myFunds || {};
         if (funds[code]) {
             if (funds[code][field] === val) return;
             funds[code][field] = val;
             const localItem = allFundsData.find(f => f.code === code);
             if (localItem) localItem[field] = val;
-            await storage.set({ myFunds: funds });
+            await storageHelper.setAll({ myFunds: funds });
             showToast('✅ 基金备注信息已保存', 'success', CONFIG.TOAST_SHORT);
             renderTable();
         }
@@ -5905,14 +5981,14 @@ function removeFundsFromHistory(codeList) {
 
 async function deleteFunds(codeList) {
     if (codeList.length === 0) return;
-    const { myFunds } = await storage.get(['myFunds']);
+    const { myFunds } = await storageHelper.getAll(['myFunds']);
     const funds = myFunds || {};
     codeList.forEach(code => {
         delete funds[code];
     });
     clearSelection();
     removeFundsFromHistory(codeList);
-    await storage.set({ myFunds: funds });
+    await storageHelper.setAll({ myFunds: funds });
 }
 
 async function removeFund(code) {
@@ -5949,7 +6025,7 @@ function buildFundsExportData({ myFunds, lastUpdateDate, lastDayProfits, dailyPr
 }
 
 async function exportFundsData() {
-    const { myFunds, lastUpdateDate, lastDayProfits, dailyProfitHistory } = await storage.get(['myFunds', 'lastUpdateDate', 'lastDayProfits', 'dailyProfitHistory']);
+    const { myFunds, lastUpdateDate, lastDayProfits, dailyProfitHistory } = await storageHelper.getAll(['myFunds', 'lastUpdateDate', 'lastDayProfits', 'dailyProfitHistory']);
     const fundsData = myFunds || {};
     if (Object.keys(fundsData).length === 0) {
         showToast('暂无可导出的基金数据！', 'warning');
@@ -5969,7 +6045,7 @@ async function exportFundsData() {
 }
 
 async function exportBackupFundsData() {
-    const { backupFunds } = await storage.get(['backupFunds']);
+    const { backupFunds } = await storageHelper.getAll(['backupFunds']);
     if (!hasTodayBackup(backupFunds)) {
         showToast('今天还没有可导出的备份数据！', 'warning');
         return;
@@ -6058,7 +6134,7 @@ function importFundsData(event) {
             notificationCenter.updateBadge();
             // 注意：走势数据（fundHistoryData）刻意不清空，备份恢复场景下历史走势应当保留。
 
-            await storage.set(dataToSave);
+            await storageHelper.setAll(dataToSave);
             // silent=true：导入成功提示只弹 toast，不写入通知中心（避免刚清空又立刻写入）
             showToast('✅ 外部数据导入成功，资产列表已更新', 'success', CONFIG.TOAST_NORMAL, true);
             fileInput.value = '';
@@ -6707,7 +6783,7 @@ async function _saveOCRItems() {
     btn.textContent = '保存中...';
 
     try {
-        const { myFunds } = await storage.get(['myFunds']);
+        const { myFunds } = await storageHelper.getAll(['myFunds']);
         const funds = myFunds || {};
         for (const a of toSave) {
             const code = String(a.code).trim().toUpperCase();
@@ -6739,7 +6815,7 @@ async function _saveOCRItems() {
             syncAddedDateByPosition(funds[code], getToday());
         }
 
-        await storage.set({ myFunds: funds });
+        await storageHelper.setAll({ myFunds: funds });
         showToast(`✅ 成功保存 ${toSave.length} 个资产！`, 'success');
         _ocrModalEl.remove();
         _ocrModalEl = null;
@@ -7282,7 +7358,7 @@ function normalizeFundPerfDailyCache(rawCache = {}) {
 async function ensureFundPerfDailyCacheLoaded() {
     if (fundPerfDailyCacheLoaded) return;
     try {
-        const stored = await storage.get([CONFIG.PERF_DAILY_CACHE_STORAGE_KEY]);
+        const stored = await storageHelper.getAll([CONFIG.PERF_DAILY_CACHE_STORAGE_KEY]);
         fundPerfDailyCacheByCode = normalizeFundPerfDailyCache(stored[CONFIG.PERF_DAILY_CACHE_STORAGE_KEY] || {});
     } catch (err) {
         console.warn('[fundPerf] 读取日级缓存失败:', err);
@@ -7294,7 +7370,7 @@ async function ensureFundPerfDailyCacheLoaded() {
 
 async function persistFundPerfDailyCache() {
     try {
-        await storage.set({
+        await storageHelper.setAll({
             [CONFIG.PERF_DAILY_CACHE_STORAGE_KEY]: fundPerfDailyCacheByCode
         });
     } catch (err) {
@@ -7430,7 +7506,7 @@ async function fetchAllFundPerfData(fundsOverride = null) {
 
     fundPerfRefreshPromise = (async () => {
         await ensureFundPerfDailyCacheLoaded();
-        const funds = fundsOverride || (await storage.get(['myFunds'])).myFunds || {};
+        const funds = fundsOverride || (await storageHelper.getAll(['myFunds'])).myFunds || {};
         const codes = allFundsData.map(d => d.code);
         const today = getToday();
 
