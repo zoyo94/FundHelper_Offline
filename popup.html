@@ -33,14 +33,22 @@
         .header {
             background: linear-gradient(135deg, #0d1b2e 0%, #1a2f50 100%);
             color: #e8f0ff;
-            padding: 10px 16px;
+            padding: 7px 12px;
             font-weight: 700;
-            font-size: 15px;
+            font-size: 14px;
             flex-shrink: 0;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 10px;
             border-bottom: 1px solid #1e3a5f;
+        }
+
+        .header>span {
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .header-logo {
@@ -58,7 +66,45 @@
             position: relative;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 5px;
+            min-width: 0;
+            flex-shrink: 1;
+        }
+
+        .header-icon-btn {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.08);
+            color: #a8c4e8;
+            line-height: 1;
+            flex-shrink: 0;
+            transition: background 0.2s, color 0.2s, border-color 0.2s, transform 0.12s, box-shadow 0.2s;
+        }
+
+
+        .header-icon-btn:hover,
+        .header-icon-btn.active {
+            background: rgba(24, 144, 255, 0.25);
+            color: #69b1ff;
+            border-color: rgba(105, 177, 255, 0.35);
+            transform: translateY(-1px);
+            filter: none;
+        }
+
+        .header-icon-btn:active {
+            transform: translateY(0);
+        }
+
+        .header-icon-btn:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.25);
         }
 
         .refresh-control {
@@ -68,8 +114,8 @@
             display: inline-flex;
             align-items: center;
             gap: 0;
-            min-width: 122px;
-            min-height: 30px;
+            min-width: 112px;
+            min-height: 28px;
             padding: 2px;
             border-radius: 999px;
             background: rgba(255, 255, 255, 0.08);
@@ -308,42 +354,54 @@
         .market-ticker {
             display: flex;
             align-items: center;
-            flex-shrink: 0;
+            min-width: 0;
+            flex: 1 1 220px;
             background: transparent;
             border: none;
             padding: 0;
+            overflow: hidden;
         }
 
         .market-ticker-track {
             display: flex;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start;
             width: 100%;
+            min-width: 0;
+            overflow: hidden;
         }
 
         .market-ticker-copy {
             display: inline-flex;
             align-items: center;
-            justify-content: center;
-            gap: 12px;
+            gap: 8px;
             white-space: nowrap;
+            flex-shrink: 0;
+            cursor: default;
+        }
+
+        .market-ticker-copy:hover {
+            animation-play-state: paused !important;
         }
 
         .market-ticker-item {
             display: inline-flex;
             align-items: center;
-            gap: 4px;
+            gap: 3px;
             font-size: 11px;
             font-weight: 700;
-            letter-spacing: 0.2px;
+            letter-spacing: 0.15px;
+            flex-shrink: 0;
         }
 
         .market-ticker-label {
             color: #86a9cf;
+            white-space: nowrap;
         }
 
         .market-ticker-value {
             color: #d8eaff;
+            font-variant-numeric: tabular-nums;
         }
 
         .market-ticker-item.is-up .market-ticker-value,
@@ -360,6 +418,287 @@
             font-size: 11px;
             color: #7f9ab9;
             font-weight: 600;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .market-ticker-item.is-index .market-ticker-label {
+            color: #a0b8d8;
+        }
+
+        .index-settings-btn {
+            flex-shrink: 0;
+            background: none;
+            border: none;
+            color: #7f9ab9;
+            font-size: 13px;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            line-height: 1;
+            transition: color 0.15s, background 0.15s;
+        }
+
+        .index-settings-btn:hover {
+            color: #d8eaff;
+            background: rgba(255, 255, 255, 0.07);
+        }
+
+        /* ===== 指数设置面板 ===== */
+        .index-settings-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+            color: #d8eaff;
+            height: 420px;
+            min-height: 0;
+        }
+
+        /* 左栏：已添加 */
+        .index-settings-left {
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid rgba(255, 255, 255, 0.07);
+            padding-right: 16px;
+            min-height: 0;
+        }
+
+        /* 右栏：可选 */
+        .index-settings-right {
+            display: flex;
+            flex-direction: column;
+            padding-left: 16px;
+            min-height: 0;
+        }
+
+        .index-settings-col-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #4a6a90;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            flex-shrink: 0;
+        }
+
+        /* 已选列表 */
+        .index-settings-selected-grid {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        .index-settings-selected-grid::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .index-settings-selected-grid::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .index-settings-selected-grid::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 2px;
+        }
+
+        .index-card {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 6px 7px 8px;
+            border-radius: 6px;
+            cursor: grab;
+            transition: background 0.15s;
+            border: 1px solid transparent;
+            user-select: none;
+        }
+
+        .index-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.07);
+        }
+
+        .index-card.dragging {
+            opacity: 0.4;
+            cursor: grabbing;
+        }
+
+        .index-card.drag-over {
+            border-top: 2px solid rgba(0, 153, 255, 0.6);
+        }
+
+        .index-card-drag-handle {
+            color: rgba(255, 255, 255, 0.18);
+            font-size: 11px;
+            letter-spacing: -1px;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+
+        .index-card-title {
+            font-size: 12px;
+            color: #c8d8f0;
+            white-space: nowrap;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .index-card-price {
+            font-size: 12px;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .index-card-rate {
+            font-size: 11px;
+            font-variant-numeric: tabular-nums;
+            min-width: 52px;
+            text-align: right;
+        }
+
+        .index-card-remove {
+            font-size: 13px;
+            color: rgba(255, 77, 79, 0.4);
+            cursor: pointer;
+            flex-shrink: 0;
+            width: 18px;
+            text-align: center;
+            transition: color 0.15s;
+            line-height: 1;
+        }
+
+        .index-card-remove:hover {
+            color: #ff4d4f;
+        }
+
+        .index-card-up .index-card-price,
+        .index-card-up .index-card-rate {
+            color: #ff6168;
+        }
+
+        .index-card-down .index-card-price,
+        .index-card-down .index-card-rate {
+            color: #4dd38a;
+        }
+
+        .index-card-none .index-card-price,
+        .index-card-none .index-card-rate {
+            color: #4a6a90;
+        }
+
+        .index-settings-empty {
+            padding: 24px 0;
+            text-align: center;
+            color: #3a5a7a;
+            font-size: 12px;
+        }
+
+        /* 右栏：分组可选 */
+        .index-settings-all-list {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .index-settings-all-list::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .index-settings-all-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .index-settings-all-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 2px;
+        }
+
+        .index-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .index-group-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: #3a5a7a;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            padding-bottom: 4px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .index-group-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .index-tag-item {
+            padding: 4px 9px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 4px;
+            font-size: 11px;
+            color: #7f9ab9;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+
+        .index-tag-item:hover {
+            background: rgba(255, 255, 255, 0.09);
+            color: #d8eaff;
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .index-tag-item.active {
+            background: rgba(0, 153, 255, 0.12);
+            border-color: rgba(0, 153, 255, 0.35);
+            color: #4ab0ff;
+        }
+
+        .index-tag-item.active:hover {
+            background: rgba(0, 153, 255, 0.18);
+        }
+
+        #modalOverlay[data-mode="index-settings"] .modal-box {
+            max-width: 640px;
+            width: 92%;
+        }
+
+        #modalOverlay[data-mode="index-settings"] .modal-msg {
+            margin-bottom: 0;
+            padding: 0;
+        }
+
+        .index-settings-row:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .index-settings-row input[type=checkbox] {
+            accent-color: #1890ff;
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+        }
+
+        .index-settings-code {
+            margin-left: auto;
+            font-size: 11px;
+            color: #7f9ab9;
+            font-variant-numeric: tabular-nums;
         }
 
         @keyframes spin {
@@ -373,15 +712,7 @@
         }
 
         #fullscreenBtn {
-            cursor: pointer;
-            font-size: 16px;
-            color: #a8c4e8;
-            opacity: 0.8;
-            transition: opacity 0.2s;
-        }
-
-        #fullscreenBtn:hover {
-            opacity: 1;
+            font-size: 15px;
         }
 
         .refresh-control:has(#refreshBtn.spinning) {
@@ -464,37 +795,71 @@
 
         /* ===== 统计栏 ===== */
         .summary-bar {
-            background: #111f35;
-            padding: 10px 16px;
+            background: linear-gradient(180deg, rgba(17, 31, 53, 0.96), rgba(14, 26, 44, 0.96));
+            padding: 7px 12px;
             display: flex;
-            justify-content: space-around;
+            align-items: stretch;
+            gap: 6px;
             border-bottom: 1px solid #1e3a5f;
             font-size: 11px;
             color: #6a8aaa;
             flex-shrink: 0;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
         }
 
         .summary-item {
+            flex: 1 1 0;
+            min-width: 0;
             display: flex;
             flex-direction: column;
+            justify-content: center;
             align-items: center;
             gap: 2px;
+            padding: 3px 6px;
+            border-radius: 8px;
+            background: rgba(9, 21, 36, 0.32);
+            border: 1px solid rgba(30, 58, 95, 0.42);
+            text-align: center;
+            line-height: 1.25;
+        }
+
+        .summary-label {
+            max-width: 100%;
+            font-size: 10px;
+            color: #6f8fb3;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.15;
         }
 
         .summary-item b {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
-            letter-spacing: 0.3px;
+            letter-spacing: 0.25px;
+            font-variant-numeric: tabular-nums;
+            color: #d8eaff;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .summary-item b.up {
+            color: #f5222d;
+        }
+
+        .summary-item b.down {
+            color: #39b56e;
         }
 
         /* ===== 筛选栏 ===== */
         .filter-bar {
-            padding: 7px 14px;
+            padding: 5px 10px;
             background: linear-gradient(180deg, rgba(15, 31, 52, 0.98), rgba(13, 27, 46, 0.98));
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            gap: 10px;
+            gap: 8px;
             flex-shrink: 0;
             border-bottom: 1px solid #1e3a5f;
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
@@ -503,16 +868,92 @@
         .filter-left {
             display: flex;
             align-items: center;
-            gap: 9px;
+            gap: 6px;
             min-width: 0;
-            flex: 1;
+            flex: 0 1 auto;
         }
 
         .filter-left select {
             min-width: 0;
-            width: 100px;
+            width: 124px;
             max-width: 100%;
-            flex: 0 1 100px;
+            flex: 0 1 124px;
+        }
+
+        .header-ticker-wrap {
+            display: flex;
+            align-items: center;
+            flex: 1 1 0;
+            min-width: 0;
+            overflow: hidden;
+            gap: 4px;
+            padding: 0 8px;
+        }
+
+        .header-ticker-wrap .market-ticker {
+            flex: 1 1 0;
+            min-width: 0;
+            max-width: 100%;
+            justify-content: flex-start;
+        }
+
+        .header-ticker-wrap .market-ticker-track {
+            justify-content: flex-start;
+            overflow: hidden;
+        }
+
+        .header-ticker-wrap .market-ticker-copy {
+            display: flex;
+            align-items: center;
+            width: max-content;
+            gap: 32px;
+            padding-right: 32px;
+        }
+
+        .header-ticker-wrap .market-ticker-copy.is-animating {
+            animation: ticker-scroll 30s linear infinite;
+        }
+
+        .header-ticker-wrap .market-ticker-item {
+            font-size: 11px;
+            gap: 8px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+        }
+
+        /* 统一着色：红涨绿跌 */
+        .market-ticker-item.is-up {
+            color: #ff5252 !important;
+            font-weight: 500;
+        }
+
+        .market-ticker-item.is-down {
+            color: #2ecc71 !important;
+            font-weight: 500;
+        }
+
+        .market-ticker-item .market-ticker-price,
+        .market-ticker-item .market-ticker-change,
+        .market-ticker-item .market-ticker-value {
+            font-weight: 600;
+        }
+
+        .market-ticker-mv {
+            opacity: 0.7;
+            font-size: 10px;
+            margin-left: 2px;
+        }
+
+        @keyframes ticker-scroll {
+            from {
+                transform: translateX(0);
+            }
+
+            to {
+                transform: translateX(-50%);
+            }
         }
 
         .filter-bar label,
@@ -522,11 +963,74 @@
             font-weight: 600;
             letter-spacing: 0.2px;
             flex-shrink: 0;
+            white-space: nowrap;
+        }
+
+        /* 筛选栏广度数据样式 */
+        .filter-breadth {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            margin: 0 4px;
+            color: #a0c2e8;
+            flex: 1;
+            justify-content: center;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .filter-breadth-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .filter-breadth-label {
+            color: #6f8fb3;
+            opacity: 0.8;
+        }
+
+        .filter-breadth-value {
+            font-weight: 700;
+            font-family: "JetBrains Mono", "Roboto Mono", monospace;
+        }
+
+        .filter-breadth-item.is-up .filter-breadth-value,
+        .filter-breadth-item.is-limit-up .filter-breadth-value {
+            color: #ff4d4f;
+        }
+
+        .filter-breadth-item.is-down .filter-breadth-value,
+        .filter-breadth-item.is-limit-down .filter-breadth-value {
+            color: #26b47a;
+        }
+
+        .index-settings-btn {
+            background: transparent;
+            border: none;
+            color: #6f8fb3;
+            cursor: pointer;
+            padding: 2px 4px;
+            font-size: 14px;
+            line-height: 1;
+            transition: color 0.2s, transform 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.7;
+            margin-left: 2px;
+        }
+
+        .index-settings-btn:hover {
+            color: #1890ff;
+            opacity: 1;
+            transform: rotate(30deg);
         }
 
         .filter-action-btn {
-            min-height: 30px;
-            padding: 6px 13px;
+            min-height: 26px;
+            padding: 4px 10px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -538,9 +1042,15 @@
             letter-spacing: 0.2px;
             border-radius: 999px;
             white-space: nowrap;
-            flex-shrink: 0;
+            flex: 0 0 auto;
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 6px 18px rgba(5, 17, 34, 0.24);
             transition: transform 0.12s, border-color 0.2s, box-shadow 0.2s, background 0.2s, color 0.2s;
+        }
+
+        #profitCalendarBtn {
+            max-width: 88px;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .filter-action-btn:hover {
@@ -1564,7 +2074,10 @@
             flex: 1;
             overflow-y: auto;
             background: #0d1b2e;
+            padding-bottom: 78px;
+            box-sizing: border-box;
         }
+
 
         /* 滚动条美化 */
         .table-container::-webkit-scrollbar {
@@ -1597,18 +2110,56 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
             border-bottom: 1px solid #1e3a5f;
+            padding-top: 7px;
+            padding-bottom: 7px;
         }
 
         th,
         td {
-            padding: 9px 7px;
+            padding: 7px 6px;
             text-align: left;
             border-bottom: 1px solid #141f30;
             font-size: 12px;
+            line-height: 1.32;
+        }
+
+        th[data-col="amount"],
+        th[data-col="shares"],
+        th[data-col="nav"],
+        th[data-col="holdDays"],
+        th[data-col="w1"],
+        th[data-col="m1"],
+        th[data-col="m3"],
+        th[data-col="m6"],
+        th[data-col="y1"],
+        th[data-col="ly"],
+        th[data-col="yesterdayProfit"],
+        th[data-col="todayProfit"],
+        th[data-col="holdProfit"],
+        td[data-col="amount"],
+        td[data-col="shares"],
+        td[data-col="nav"],
+        td[data-col="holdDays"],
+        td[data-col="w1"],
+        td[data-col="m1"],
+        td[data-col="m3"],
+        td[data-col="m6"],
+        td[data-col="y1"],
+        td[data-col="ly"],
+        td[data-col="yesterdayProfit"],
+        td[data-col="todayProfit"],
+        td[data-col="holdProfit"] {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        td[data-col="amount"] .cell-with-icon,
+        td[data-col="shares"] .cell-with-icon {
+            justify-content: flex-end;
         }
 
         tbody tr {
-            transition: background 0.15s;
+            transition: background-color 0.15s, box-shadow 0.15s;
         }
 
         tbody tr:hover {
@@ -1667,6 +2218,71 @@
             animation: pulse 2s ease-in-out infinite;
         }
 
+        .buy-badge {
+            font-size: 10px;
+            color: #fff;
+            background: #f5222d;
+            padding: 2px 6px;
+            border-radius: 3px;
+            display: inline-block;
+            margin-left: 6px;
+            border: 1px solid #ff7875;
+            font-weight: 600;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .sell-badge {
+            font-size: 10px;
+            color: #fff;
+            background: #39b56e;
+            padding: 2px 6px;
+            border-radius: 3px;
+            display: inline-block;
+            margin-left: 6px;
+            border: 1px solid #73d13d;
+            font-weight: 600;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        /* ===== 置顶图钉按钮 ===== */
+        .pin-btn {
+            display: inline-block;
+            margin-left: 5px;
+            font-size: 11px;
+            cursor: pointer;
+            opacity: 0.22;
+            vertical-align: middle;
+            transition: opacity 0.18s, transform 0.18s;
+            user-select: none;
+            line-height: 1;
+        }
+
+        .pin-btn:hover {
+            opacity: 0.7;
+            transform: scale(1.15);
+        }
+
+        /* 已置顶状态：高亮显示 */
+        .pin-btn.is-pinned {
+            opacity: 1;
+            filter: drop-shadow(0 0 3px rgba(255, 215, 0, 0.8));
+        }
+
+        /* 置顶行样式：左侧金色边框 + 轻微背景 */
+        tbody tr.pinned-row {
+            background: rgba(255, 215, 0, 0.04);
+            box-shadow: inset 2px 0 0 rgba(255, 215, 0, 0.55);
+        }
+
+        tbody tr.pinned-row:hover {
+            background: rgba(255, 215, 0, 0.08);
+        }
+
+        /* 置顶区域底部加一条分隔线（当有非置顶行时） */
+        tbody tr.pinned-row:not(:has(+ tr.pinned-row)):not(:last-child) {
+            border-bottom: 1px dashed rgba(255, 215, 0, 0.25);
+        }
+
         @keyframes pulse {
 
             0%,
@@ -1705,19 +2321,37 @@
 
         /* ===== 状态栏 ===== */
         #status {
-            padding: 5px 16px;
+            padding: 5px 12px;
             font-size: 11px;
             color: #3a5a82;
             background: #0a1525;
             border-top: 1px solid #1e3a5f;
             flex-shrink: 0;
             display: flex;
-            justify-content: center;
+            justify-content: space-between;
             align-items: center;
-            gap: 16px;
-            min-height: 28px;
+            gap: 10px;
+            min-height: 30px;
             box-sizing: border-box;
         }
+
+        #statusText,
+        #selectionStatus {
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #statusText {
+            flex: 0 1 180px;
+        }
+
+        #selectionStatus {
+            flex: 0 1 160px;
+            text-align: center;
+        }
+
 
         /* ===== Toast ===== */
         #toastContainer {
@@ -1890,11 +2524,43 @@
 
         body:not(.is-fullscreen) .summary-bar {
             font-size: 10px;
-            padding: 7px 8px;
+            padding: 6px 8px;
+            gap: 5px;
+        }
+
+        body:not(.is-fullscreen) .summary-item {
+            padding: 3px 5px;
+            gap: 1px;
+        }
+
+        body:not(.is-fullscreen) .summary-label {
+            font-size: 9px;
         }
 
         body:not(.is-fullscreen) .summary-item b {
-            font-size: 13px;
+            font-size: 11px;
+        }
+
+        body:not(.is-fullscreen) .filter-bar {
+            gap: 5px;
+            padding-left: 8px;
+            padding-right: 8px;
+        }
+
+        body:not(.is-fullscreen) .filter-left {
+            gap: 5px;
+        }
+
+        body:not(.is-fullscreen) .filter-left select {
+            width: 110px;
+            flex-basis: 110px;
+        }
+
+        body:not(.is-fullscreen) #profitCalendarBtn {
+            max-width: 74px;
+            min-width: 64px;
+            padding-left: 7px;
+            padding-right: 7px;
         }
 
         body:not(.is-fullscreen) th,
@@ -1906,6 +2572,24 @@
         body:not(.is-fullscreen) .adjust-btn {
             padding: 2px 5px;
             font-size: 12px;
+        }
+
+        body:not(.is-fullscreen) #status {
+            gap: 8px;
+            padding-left: 8px;
+            padding-right: 8px;
+        }
+
+        body:not(.is-fullscreen) #statusText {
+            flex-basis: 130px;
+        }
+
+        body:not(.is-fullscreen) #selectionStatus {
+            flex-basis: 100px;
+        }
+
+        body:not(.is-fullscreen) .market-ticker {
+            flex-basis: 150px;
         }
 
         /* ===== 全屏增强 ===== */
@@ -2132,6 +2816,13 @@
         .tx-no-revoke {
             font-size: 11px;
             color: #3a5a82;
+        }
+
+        .cell-with-icon {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
         }
 
         /* ===== 设置齿轮图标 ===== */
@@ -2713,9 +3404,14 @@
         /* 悬浮球容器 */
         .fab-container {
             position: fixed;
-            bottom: 20px;
-            right: 20px;
+            bottom: 40px;
+            right: 18px;
             z-index: 999;
+        }
+
+        body.is-fullscreen .fab-container {
+            bottom: 28px;
+            right: 22px;
         }
 
         /* 主球体 */
@@ -2812,39 +3508,26 @@
 
         /* 选中行高亮（文件管理器风格） */
         tr.selected-row {
-            background-color: rgba(24, 144, 255, 0.18) !important;
-            outline: 1px solid rgba(24, 144, 255, 0.4);
+            background-color: rgba(24, 144, 255, 0.2) !important;
+            outline: 1px solid rgba(24, 144, 255, 0.45);
+            box-shadow: inset 0 0 0 1px rgba(105, 177, 255, 0.22);
         }
 
         /* 鼠标悬停效果 */
         #fundTableBody tr {
             cursor: pointer;
-            transition: background-color 0.15s;
+            transition: background-color 0.15s, box-shadow 0.15s;
             user-select: none;
             /* 禁止行内文字被选中 */
         }
 
         #fundTableBody tr:hover:not(.selected-row) {
-            background-color: rgba(255, 255, 255, 0.04);
+            background-color: rgba(24, 144, 255, 0.07);
+            box-shadow: inset 0 0 0 1px rgba(105, 177, 255, 0.16);
         }
 
         #columnConfigBtn {
-            cursor: pointer;
             font-size: 15px;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: #a8c4e8;
-            padding: 4px 8px;
-            border-radius: 6px;
-            line-height: 1;
-            transition: background 0.2s, color 0.2s, border-color 0.2s;
-        }
-
-        #columnConfigBtn:hover,
-        #columnConfigBtn.active {
-            background: rgba(24, 144, 255, 0.25);
-            color: #69b1ff;
-            border-color: rgba(105, 177, 255, 0.35);
         }
 
         #columnConfigPanel {
@@ -2926,21 +3609,28 @@
 
 
         #notificationBtn {
-            position: relative;
-            cursor: pointer;
-            font-size: 16px;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: #a8c4e8;
-            padding: 4px 8px;
-            border-radius: 6px;
-            line-height: 1;
-            transition: background 0.2s, color 0.2s;
+            font-size: 15px;
         }
 
-        #notificationBtn:hover {
-            background: rgba(24, 144, 255, 0.25);
-            color: #69b1ff;
+        .notification-badge {
+            position: absolute;
+            top: -3px;
+            right: -3px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 16px;
+            height: 16px;
+            padding: 0 4px;
+            border-radius: 10px;
+            background: #ff4d4f;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1;
+            border: 1px solid rgba(13, 27, 46, 0.9);
+            box-sizing: border-box;
+            pointer-events: none;
         }
 
         .notification-list {
@@ -3017,11 +3707,19 @@
 <body>
     <div class="header">
         <span>资产收益助手</span>
+        <div class="header-ticker-wrap">
+            <div id="marketTicker" class="market-ticker" title="全局指数行情">
+                <div id="marketTickerTrack" class="market-ticker-track">
+                    <div class="market-ticker-copy">
+                        <span class="market-ticker-empty">指数加载中...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="header-actions">
-            <button id="notificationBtn" title="通知中心" style="position: relative;">
+            <button id="notificationBtn" class="header-icon-btn" title="通知中心" aria-label="通知中心" type="button">
                 🔔
-                <span id="notificationBadge"
-                    style="display: none; position: absolute; top: -2px; right: -2px; background: #ff4d4f; color: white; border-radius: 10px; padding: 0 5px; font-size: 10px; min-width: 16px; text-align: center;"></span>
+                <span id="notificationBadge" class="notification-badge" style="display: none;"></span>
             </button>
             <div id="refreshControl" class="refresh-control" title="自动刷新控件">
                 <button id="refreshBtn" title="刷新行情" aria-label="刷新行情">
@@ -3038,9 +3736,10 @@
                     <option value="300">300s</option>
                 </select>
             </div>
-            <button id="columnConfigBtn" title="列显示设置" aria-label="列显示设置" aria-expanded="false">⚙️</button>
+            <button id="columnConfigBtn" class="header-icon-btn" title="列显示设置" aria-label="列显示设置" aria-expanded="false"
+                type="button">⚙️</button>
             <div id="columnConfigPanel" role="dialog" aria-label="列显示设置"></div>
-            <span id="fullscreenBtn" title="全屏查看">⛶</span>
+            <button id="fullscreenBtn" class="header-icon-btn" title="全屏查看" aria-label="全屏查看" type="button">⛶</button>
         </div>
     </div>
 
@@ -3080,10 +3779,10 @@
 
     <!-- 统计栏 -->
     <div class="summary-bar">
-        <div class="summary-item">总资产: <b id="totalAmount">0.00</b></div>
-        <div class="summary-item">昨日总收益: <b id="totalYesterdayProfit">0.00</b></div>
-        <div class="summary-item">当日估计总收益: <b id="totalTodayProfit">0.00</b></div>
-        <div class="summary-item">总累计收益: <b id="totalTotalProfit">0.00</b></div>
+        <div class="summary-item"><span class="summary-label">总资产</span><b id="totalAmount">0.00</b></div>
+        <div class="summary-item"><span class="summary-label">昨日收益</span><b id="totalYesterdayProfit">0.00</b></div>
+        <div class="summary-item"><span class="summary-label">当日估值</span><b id="totalTodayProfit">0.00</b></div>
+        <div class="summary-item"><span class="summary-label">累计收益</span><b id="totalTotalProfit">0.00</b></div>
     </div>
 
     <div class="filter-bar">
@@ -3094,6 +3793,10 @@
             </select>
             <datalist id="groupList"></datalist>
         </div>
+        <div id="filterBreadth" class="filter-breadth">
+            <!-- 广度数据由 JS 动态渲染 -->
+        </div>
+        <button id="indexSettingsBtn" class="index-settings-btn" title="指数设置">⚙</button>
         <button id="profitCalendarBtn" class="filter-action-btn">收益日历</button>
     </div>
 
@@ -3138,13 +3841,6 @@
     <div id="status">
         <span id="statusText">准备就绪</span>
         <span id="selectionStatus" style="display:none;"></span>
-        <div id="marketTicker" class="market-ticker" title="全局 A 股涨跌家数">
-            <div id="marketTickerTrack" class="market-ticker-track">
-                <div class="market-ticker-copy">
-                    <span class="market-ticker-empty">市场广度加载中...</span>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- Toast 容器 -->

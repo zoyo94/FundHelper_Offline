@@ -1,5 +1,5 @@
 // background.js - Service Worker (MV3)
-// 代理新浪行情请求，解决 popup 直接请求时的跨域问题
+// 代理请求：解决 popup 直接请求被目标站点拦截/中断的问题
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'FETCH_SINA') {
@@ -18,6 +18,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
 
         // 返回 true 表示异步响应，必须保留
+        return true;
+    }
+
+    if (message.type === 'FETCH_JSON') {
+        const url = message.url;
+        const headers = message.headers && typeof message.headers === 'object' ? message.headers : {};
+        fetch(url, { headers })
+            .then(async res => {
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                const data = await res.json();
+                sendResponse({ success: true, data });
+            })
+            .catch(err => {
+                console.error('[background] FETCH_JSON 请求失败:', url, err);
+                sendResponse({ success: false, error: err.message });
+            });
         return true;
     }
 });
