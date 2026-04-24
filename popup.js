@@ -2520,7 +2520,7 @@ async function saveSettlementState(funds, todayStr, autoSettlementBlockedDate = 
     await storageHelper.setAll(dataToSave);
 }
 
-// ==================== 1. 新增：统一的备份函数 ====================
+// ==================== 备份与结算状态管理 ====================
 /**
  * 执行结算前，先备份当前数据（每天只备份首次结算前的数据）
  * @returns {Promise<void>}
@@ -2748,7 +2748,7 @@ function _applySettlementLoop(funds, priceUpdates, todayStr) {
     return updatedCount;
 }
 
-// ==================== 2. 修改：手动日结算（增加备份步骤）====================
+// ==================== 手动日结算 ====================
 async function manualSettlement() {
     const ok = await showConfirm('确认进行日结算吗？\n系统将对比最新公布的净值与上次结算的净值，计算并记录收益。', '日结算确认');
     if (!ok) return;
@@ -2812,7 +2812,7 @@ async function manualSettlement() {
     loadData();
 }
 
-// ==================== 3. 修改：撤销结算（使用备份数据覆盖）====================
+// ==================== 撤销结算 ====================
 async function rollbackSettlement() {
     const { backupFunds } = await storageHelper.getAll(['backupFunds']);
     if (!hasTodayBackup(backupFunds)) {
@@ -2843,7 +2843,7 @@ async function rollbackSettlement() {
     loadData();
 }
 
-// ==================== 4. 自动结算部分（确保也有备份）====================
+// ==================== 自动结算 ====================
 async function autoSettlement(funds, settlements, todayStr, backupSnapshot) {
     console.log('[autoSettlement] 检测到净值更新，开始自动结算...');
     elements.statusText.innerText = '正在自动结算...';
@@ -4907,7 +4907,7 @@ function updateGroupFilter() {
     }
 }
 
-// ==================== 1. 新增：通用表单弹窗函数 ====================
+// ==================== 通用表单弹窗函数 ====================
 /**
  * 显示一个包含表单的模态框（替代多个连续 prompt）
  * @param {Object} config 配置对象
@@ -5004,7 +5004,7 @@ function showFormModal(config) {
     });
 }
 
-// ==================== 2. 重写：加仓/减仓/分红逻辑 ====================
+// ==================== 加仓/减仓/分红逻辑 ====================
 async function adjustPosition(code, type) {
     try {
         // 获取基础数据
