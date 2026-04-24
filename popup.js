@@ -531,18 +531,14 @@ function getPerformanceChartData(fundData) {
     };
 }
 
-function clearPerformanceCanvas() {
-    const canvas = document.getElementById('perfChart');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-}
-
-function resetPerformanceViewState() {
-    hidePerformanceTooltip();
-    clearPerformanceCanvas();
+function resetFundDetailPerformance(code = currentFundDetailCode) {
+    // 清理 Performance 视图状态
+    if (code) {
+        resetFundDetailViewState();
+        clearFundDetailPerformanceSession(code);
+    } else {
+        resetFundDetailViewState();
+    }
 }
 
 function getCurrentPerformanceState(code = currentFundDetailCode) {
@@ -645,21 +641,17 @@ function resetFundDetailViewState() {
     resetPerformanceViewState();
 }
 
-function clearFundDetailPerformanceSession(code) {
-    if (!code) return;
-    delete _performanceState[code];
-}
-
 function cleanupFundDetailSessionState(code) {
-    resetFundDetailViewState();
-    clearFundDetailPerformanceSession(code);
+    // 清理当前详情页的所有状态（代码、视图、图表、缓存）
+    if (code) {
+        resetFundDetailPerformance(code);
+    }
 }
 
 function beginFundDetailSession(code) {
+    // 开始新会话前清理旧会话
     if (currentFundDetailCode) {
-        cleanupFundDetailSessionState(currentFundDetailCode);
-    } else {
-        resetFundDetailViewState();
+        resetFundDetailPerformance(currentFundDetailCode);
     }
     currentFundDetailCode = code;
     currentFundDetailSessionId += 1;
