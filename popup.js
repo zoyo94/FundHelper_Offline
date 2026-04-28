@@ -41,6 +41,66 @@ const CONSTANTS = {
     INTRADAY_CHART_TOTAL_MINUTES: 300
 };
 
+// ==================== 优化工具函数（统一处理重复模式）====================
+/**
+ * 安全的数字转换函数
+ */
+const safeNumber = (value, defaultValue = 0) => {
+    if (value === null || value === undefined) return defaultValue;
+    const num = Number(value);
+    return isNaN(num) ? defaultValue : num;
+};
+
+/**
+ * 安全的浮点数转换函数
+ */
+const safeFloat = (value, defaultValue = 0) => {
+    if (value === null || value === undefined) return defaultValue;
+    const num = parseFloat(value);
+    return isNaN(num) ? defaultValue : num;
+};
+
+/**
+ * 安全的整数转换函数
+ */
+const safeInteger = (value, defaultValue = 0) => {
+    if (value === null || value === undefined) return defaultValue;
+    const num = parseInt(value, 10);
+    return isNaN(num) ? defaultValue : num;
+};
+
+/**
+ * 安全的字符串转换函数
+ */
+const safeString = (value, defaultValue = '') => {
+    if (value === null || value === undefined) return defaultValue;
+    const str = String(value).trim();
+    return str === '' ? defaultValue : str;
+};
+
+/**
+ * 安全的数组转换函数
+ */
+const safeArray = (value, defaultValue = []) => {
+    if (value === null || value === undefined) return defaultValue;
+    return Array.isArray(value) ? value : defaultValue;
+};
+
+/**
+ * 确保数值为非负
+ */
+const nonNegative = (value) => Math.max(0, safeNumber(value, 0));
+
+/**
+ * 确保数值为非负浮点数
+ */
+const nonNegativeFloat = (value) => Math.max(0, safeFloat(value, 0));
+
+/**
+ * 确保数值为非负整数
+ */
+const nonNegativeInteger = (value) => Math.max(0, safeInteger(value, 0));
+
 // ==================== 全局状态 ====================
 let allFundsData = []; // 所有基金的当前行情数据（每次 loadData 完整刷新）
 let sortField = 'todayProfit'; // 默认排序字段
@@ -271,7 +331,7 @@ async function initPinnedFunds() {
     try {
         const stored = await storageHelper.getAll([CONFIG.PINNED_FUNDS_STORAGE_KEY]);
         const arr = stored?.[CONFIG.PINNED_FUNDS_STORAGE_KEY];
-        pinnedFunds = new Set(Array.isArray(arr) ? arr : []);
+        pinnedFunds = new Set(safeArray(arr, []));
     } catch (err) {
         console.warn('读取置顶基金失败，使用空列表:', err);
         pinnedFunds = new Set();
@@ -450,7 +510,7 @@ function round2(num) {
         console.warn('round2: 输入不是有效数字:', num);
         return 0;
     }
-    return parseFloat(num.toFixed(2));
+    return safeFloat(num.toFixed(2));
 }
 
 /**
@@ -461,7 +521,7 @@ function round6(num) {
         console.warn('round6: 输入不是有效数字:', num);
         return 0;
     }
-    return parseFloat(num.toFixed(6));
+    return safeFloat(num.toFixed(6));
 }
 
 /**
@@ -471,11 +531,10 @@ function round6(num) {
  * @returns {string} 格式化后的字符串
  */
 function formatProfit(num, suffix = '') {
-    if (typeof num !== 'number' || isNaN(num)) {
-        console.warn('formatProfit: 输入不是有效数字:', num);
-        return `+0.00${suffix}`;
-    }
-    return `${num >= 0 ? '+' : ''}${num.toFixed(2)}${suffix}`;
+    const value = safeFloat(num, 0);
+    const isPositive = value >= 0;
+    const formatted = value.toFixed(2);
+    return `${isPositive ? '+' : ''}${formatted}${suffix}`;
 }
 
 function escapeHtml(value) {
@@ -504,6 +563,21 @@ function resetFundDetailChartRenderState() {
 function hidePerformanceTooltip() {
     const tooltip = document.getElementById('perfChartTooltip');
     if (tooltip) tooltip.style.display = 'none';
+}
+
+function resetPerformanceViewState() {
+    hidePerformanceTooltip();
+    const canvas = document.getElementById('perfChart');
+    if (!canvas) return;
+
+    canvas.onmousemove = null;
+    canvas.onmouseleave = null;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
 function getPerformanceChartData(fundData) {
@@ -539,6 +613,11 @@ function resetFundDetailPerformance(code = currentFundDetailCode) {
     } else {
         resetFundDetailViewState();
     }
+}
+
+function clearFundDetailPerformanceSession(code) {
+    if (!code) return;
+    delete _performanceState[code];
 }
 
 function getCurrentPerformanceState(code = currentFundDetailCode) {
@@ -586,7 +665,14 @@ function resizeFundDetailCharts() {
     const perfCanvas = document.getElementById('perfChart');
     const performanceChartData = getCurrentPerformanceChartData();
     if (perfCanvas && performanceChartData) {
-        drawPerfChart(perfCanvas, performanceChartData.prices, performanceChartData.dates, performanceChartData.isUp);
+        drawPerfChart(
+            perfCanvas,
+            performanceChartData.prices,
+            performanceChartData.dates,
+            performanceChartData.isUp,
+            performanceChartData.dailyRates,
+            performanceChartData.acPrices
+        );
     }
 }
 
@@ -719,7 +805,7 @@ function getIntradayBasePoint() {
 }
 
 function ensureIntradayBasePoint(points = []) {
-    const normalized = Array.isArray(points) ? [...points] : [];
+    const normalized = safeArray(points, []);
     if (normalized[0]?.time !== CONSTANTS.INTRADAY_CHART_START) {
         normalized.unshift(getIntradayBasePoint());
     }
@@ -771,33 +857,33 @@ function getIntradayAxisTicks() {
 
 function sanitizeSnapshotEntry(entry = {}) {
     if (!entry || typeof entry !== 'object') return null;
-    const code = typeof entry.code === 'string' ? entry.code : '';
+    const code = safeString(entry.code, '');
     if (!code) return null;
 
-    const prevPriceDate = entry.prevPriceDate || '';
-    const prevPrice = Number(entry.prevPrice) || 0;
-    const price = Number(entry.price) || 0;
+    const prevPrice = safeNumber(entry.prevPrice, 0);
+    const price = safeNumber(entry.price, prevPrice);
+    const prevPriceDate = safeString(entry.prevPriceDate, '');
     if (!(prevPrice > 0) || !prevPriceDate) return null;
 
     return {
         code,
-        name: entry.name || `[快照]${code}`,
-        rate: Number(entry.rate) || 0,
-        price,
+        name: safeString(entry.name, `[快照]${code}`),
+        rate: safeNumber(entry.rate, 0),
+        price: price > 0 ? price : prevPrice,
         prevPrice,
         prevPriceDate,
-        priceTime: entry.priceTime || '',
-        acNetValue: typeof entry.acNetValue === 'number' ? entry.acNetValue : null,
-        prevTradingDayPrice: Number(entry.prevTradingDayPrice) || 0,
-        prevTradingDayDate: entry.prevTradingDayDate || '',
-        dividendList: Array.isArray(entry.dividendList) ? entry.dividendList : [],
-        isFallback: Boolean(entry.isFallback)
+        priceTime: safeString(entry.priceTime, ''),
+        acNetValue: safeNumber(entry.acNetValue),
+        prevTradingDayPrice: safeNumber(entry.prevTradingDayPrice, 0),
+        prevTradingDayDate: safeString(entry.prevTradingDayDate, ''),
+        dividendList: safeArray(entry.dividendList, []),
+        isFallback: entry.isFallback
     };
 }
 
 function sanitizeLiveSnapshot(snapshot = {}) {
     if (!snapshot || typeof snapshot !== 'object') return null;
-    const date = typeof snapshot.date === 'string' ? snapshot.date : '';
+    const date = safeString(snapshot.date, '');
     if (!date) return null;
 
     const entries = Array.isArray(snapshot.entries)
@@ -823,10 +909,10 @@ async function persistLiveSnapshot(entries = [], todayStr = getToday()) {
 function sanitizeMarketBreadthData(data = {}) {
     if (!data || typeof data !== 'object') return null;
     const normalized = {
-        limitUp: Math.max(0, Number(data.limitUp) || 0),
-        up: Math.max(0, Number(data.up) || 0),
-        down: Math.max(0, Number(data.down) || 0),
-        limitDown: Math.max(0, Number(data.limitDown) || 0)
+        limitUp: nonNegativeFloat(data.limitUp),
+        up: nonNegativeFloat(data.up),
+        down: nonNegativeFloat(data.down),
+        limitDown: nonNegativeFloat(data.limitDown)
     };
 
     return normalized;
@@ -834,7 +920,7 @@ function sanitizeMarketBreadthData(data = {}) {
 
 function sanitizeMarketBreadthSnapshot(snapshot = {}) {
     if (!snapshot || typeof snapshot !== 'object') return null;
-    const date = typeof snapshot.date === 'string' ? snapshot.date : '';
+    const date = safeString(snapshot.date, '');
     if (!date) return null;
 
     const data = sanitizeMarketBreadthData(snapshot.data);
@@ -935,7 +1021,7 @@ function getLiveFromSnapshotEntry(snapshotEntry, code) {
 function buildLiveFromMemory(code, todayStr = getToday()) {
     const item = allFundsData.find(fund => fund?.code === code);
     if (!item) return null;
-    const prevPrice = Number(item.prevPrice) || 0;
+    const prevPrice = safeNumber(item.prevPrice, 0);
     const prevPriceDate = item.prevPriceDate || todayStr;
     if (!(prevPrice > 0) || !prevPriceDate) return null;
 
@@ -957,7 +1043,7 @@ function buildLiveFromMemory(code, todayStr = getToday()) {
 
 function buildLiveFromLocalFund(code, fund, todayStr = getToday()) {
     if (!fund || typeof fund !== 'object') return null;
-    const savedPrevPrice = Number(fund.savedPrevPrice) || 0;
+    const savedPrevPrice = safeNumber(fund.savedPrevPrice, 0);
     const derivedPrevPrice = (Number(fund.shares) > 0 && Number(fund.amount) > 0)
         ? Number(fund.amount) / Number(fund.shares)
         : 0;
@@ -1407,7 +1493,7 @@ function cloneData(data) {
 
 function deriveFundShares(item, primaryPrice = 0, fallbackPrice = 0) {
     if (!item) return 0;
-    const currentShares = Number(item.shares) || 0;
+    const currentShares = safeNumber(item.shares, 0);
     if (currentShares > 0) return currentShares;
     if (!(item.amount > 0)) return 0;
 
@@ -2101,14 +2187,14 @@ function buildAutoDividendNotification(code, dividend, totalDividend, arrivalDat
 }
 
 function isSameAutoDividendEvent(adj, dividend) {
-    if (!adj || !dividend || !dividend.date) return false;
+    if (!adj || !dividend || !safeString(dividend.date, '')) return false;
 
     if (adj.dividendDate === dividend.date) {
         return true;
     }
 
-    const existingPerShare = Number(adj.perShare) || 0;
-    const currentPerShare = Number(dividend.perShare) || 0;
+    const existingPerShare = safeFloat(adj.perShare, 0);
+    const currentPerShare = safeFloat(dividend.perShare, 0);
     if (!(existingPerShare > 0) || !(currentPerShare > 0)) {
         return false;
     }
@@ -2177,12 +2263,12 @@ function syncAutoDetectedDividendEntry(existingAdj, dividend, todayStr, shares =
 
 function toDividendFromAdjustment(adj) {
     if (!adj || !adj.dividendDate) return null;
-    const perShare = Number(adj.perShare);
+    const perShare = safeFloat(adj.perShare, 0);
     if (!(perShare > 0)) return null;
     return {
-        date: adj.dividendDate,
+        date: safeString(adj.dividendDate, ''),
         perShare,
-        navPrice: Number(adj.dividendNavPrice) || 0
+        navPrice: safeFloat(adj.dividendNavPrice, 0)
     };
 }
 
@@ -2435,7 +2521,7 @@ function detectAutoDividends(funds, fetchedData, todayStr) {
 }
 
 function getPendingAdjustments(item) {
-    return Array.isArray(item?.pendingAdjustments) ? item.pendingAdjustments : [];
+    return safeArray(item?.pendingAdjustments, []);
 }
 
 function sumPendingDividendAmount(pendingAdjustments) {
@@ -2967,7 +3053,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
-    const isPopup = chrome.extension.getViews({ type: 'popup' }).includes(window);
+    // MV3 已移除 chrome.extension.getViews，改用 URL 参数判断是否全屏模式
+    const isPopup = !new URLSearchParams(window.location.search).has('fullscreen');
     if (!isPopup) document.body.classList.add('is-fullscreen');
 
     checkBackup();
@@ -2985,7 +3072,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.importFile.addEventListener('change', importFundsData);
     initFabMenu();
 
-    elements.fullscreenBtn.onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') });
+    elements.fullscreenBtn.onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') + '?fullscreen' });
 
     if (elements.indexSettingsBtn) {
         elements.indexSettingsBtn.onclick = () => openIndexSettings();
@@ -3687,37 +3774,37 @@ function ensureRefreshCountdownTimer() {
 // ==================== 指数行情 ====================
 const SUPPORTED_INDICES = [
     // A 股
-    { code: '000001', market: 1,   name: '上证指数' },
-    { code: '000016', market: 1,   name: '上证50' },
-    { code: '399001', market: 0,   name: '深证成指' },
-    { code: '399330', market: 0,   name: '深证100' },
-    { code: '899050', market: 0,   name: '北证50' },
-    { code: '000300', market: 1,   name: '沪深300' },
-    { code: '399006', market: 0,   name: '创业板指' },
-    { code: '399102', market: 0,   name: '创业板综' },
-    { code: '399673', market: 0,   name: '创业板50' },
-    { code: '000688', market: 1,   name: '科创50' },
-    { code: '399005', market: 0,   name: '中小100' },
-    { code: '000905', market: 1,   name: '中证500' },
-    { code: '000906', market: 1,   name: '中证800' },
-    { code: '000852', market: 1,   name: '中证1000' },
-    { code: '000903', market: 1,   name: '中证A100' },
-    { code: '000982', market: 1,   name: '500等权' },
-    { code: '399303', market: 0,   name: '国证2000' },
+    { code: '000001', market: 1, name: '上证指数' },
+    { code: '000016', market: 1, name: '上证50' },
+    { code: '399001', market: 0, name: '深证成指' },
+    { code: '399330', market: 0, name: '深证100' },
+    { code: '899050', market: 0, name: '北证50' },
+    { code: '000300', market: 1, name: '沪深300' },
+    { code: '399006', market: 0, name: '创业板指' },
+    { code: '399102', market: 0, name: '创业板综' },
+    { code: '399673', market: 0, name: '创业板50' },
+    { code: '000688', market: 1, name: '科创50' },
+    { code: '399005', market: 0, name: '中小100' },
+    { code: '000905', market: 1, name: '中证500' },
+    { code: '000906', market: 1, name: '中证800' },
+    { code: '000852', market: 1, name: '中证1000' },
+    { code: '000903', market: 1, name: '中证A100' },
+    { code: '000982', market: 1, name: '500等权' },
+    { code: '399303', market: 0, name: '国证2000' },
     // 美股（东财 market=100，腾讯/新浪 fallback）
-    { code: 'IXIC',  market: 100,  name: '纳斯达克' },
-    { code: 'NDX',   market: 100,  name: '纳指100' },
-    { code: 'SPX',   market: 100,  name: '标普500' },
-    { code: 'DJI',   market: 100,  name: '道琼斯' },
+    { code: 'IXIC', market: 100, name: '纳斯达克' },
+    { code: 'NDX', market: 100, name: '纳指100' },
+    { code: 'SPX', market: 100, name: '标普500' },
+    { code: 'DJI', market: 100, name: '道琼斯' },
     // 港股
-    { code: 'HSI',    market: 100,  name: '恒生指数' },
-    { code: 'HSTECH', market: 124,  name: '恒生科技' },
+    { code: 'HSI', market: 100, name: '恒生指数' },
+    { code: 'HSTECH', market: 124, name: '恒生科技' },
     // 日本
-    { code: 'N225',  market: 100,  name: '日经225' },
-    { code: 'TPX',   market: 155,  name: '东证指数' },
+    { code: 'N225', market: 100, name: '日经225' },
+    { code: 'TPX', market: 155, name: '东证指数' },
     // 韩国
-    { code: 'KS11',  market: 100,  name: '韩国综合' },
-    { code: 'KQ11',  market: 100,  name: '韩国创业板' },
+    { code: 'KS11', market: 100, name: '韩国综合' },
+    { code: 'KQ11', market: 100, name: '韩国创业板' },
 ];
 
 async function initIndexSettings() {
@@ -3760,29 +3847,29 @@ async function _fetchIndexQuotesImpl() {
 
     // 腾讯（仅保留实测有效的代码）
     const TENCENT_MAP = {
-        'IXIC':   'usIXIC',    // 纳斯达克综合 ✅
-        'NDX':    'usNDX',     // 纳指100 ✅
-        'DJI':    'usDJI',     // 道琼斯 ✅
-        'HSI':    'hkHSI',     // 恒生指数 ✅
+        'IXIC': 'usIXIC',    // 纳斯达克综合 ✅
+        'NDX': 'usNDX',     // 纳指100 ✅
+        'DJI': 'usDJI',     // 道琼斯 ✅
+        'HSI': 'hkHSI',     // 恒生指数 ✅
         'HSTECH': 'hkHSTECH',  // 恒生科技 ✅
     };
 
     // 新浪（实测有效，Referer 需要 sina.com.cn）
     const SINA_MAP = {
         'IXIC': 'int_nasdaq',  // 纳斯达克综合 ✅
-        'SPX':  'int_sp500',   // 标普500 ✅
-        'DJI':  'int_dji',     // 道琼斯 ✅
-        'HSI':  'int_hangseng',// 恒生指数 ✅
+        'SPX': 'int_sp500',   // 标普500 ✅
+        'DJI': 'int_dji',     // 道琼斯 ✅
+        'HSI': 'int_hangseng',// 恒生指数 ✅
         'N225': 'int_nikkei',  // 日经225 ✅
     };
 
     // Yahoo Finance v8/chart（腾讯/新浪均无法覆盖的地区指数）
     const YAHOO_MAP = {
-        'TPX':  '%5ETOPX',  // 东证指数
+        'TPX': '%5ETOPX',  // 东证指数
         'KS11': '%5EKS11',  // 韩国综合
         'KQ11': '%5EKQ11',  // 韩国创业板
         'N225': '%5EN225',  // 日经225（备用）
-        'SPX':  '%5EGSPC',  // 标普500（备用）
+        'SPX': '%5EGSPC',  // 标普500（备用）
     };
 
     // ===== 第一级：东财主接口（A股效果最好）=====
@@ -4182,7 +4269,7 @@ async function triggerUnifiedRefresh(source = 'manual') {
         return unifiedRefreshPromise;
     }
 
-    const skipLiveRequests = shouldSkipLiveRequestsAfterCutoff();
+    const skipLiveRequests = source !== 'manual' && shouldSkipLiveRequestsAfterCutoff();
     if (skipLiveRequests) {
         console.log(`[refresh] ${source} 跳过实时请求：15:30后今日已请求过`);
     }

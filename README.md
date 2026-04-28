@@ -185,7 +185,7 @@ FundHelper Offline 是一款功能强大的 Chrome 扩展，专为投资者设�
 FundHelper_Offline/
 ├── manifest.json              # 扩展配置文件
 ├── popup.html                 # 主界面 HTML
-├── popup.js                   # 核心业务逻辑 (4800+ 行)
+├── popup.js                   # 核心业务逻辑 (8400+ 行)
 ├── popup.css                  # 样式文件
 ├── background.js              # 后台服务 (代理跨域请求)
 ├── tesseract.min.js           # OCR 核心库
@@ -371,7 +371,7 @@ function round2(num) {
 {
   "manifest_version": 3,
   "name": "FundHelper Offline",
-  "version": "1.7.7",
+  "version": "2.0.0",
   "permissions": [
     "storage",           // 本地存储
     "unlimitedStorage"   // 无限存储空间
