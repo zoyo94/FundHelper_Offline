@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "资产收益助手",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "实时资产收益追踪器，支持基金/期货、OCR识别、指数行情与自动结算",
   "permissions": [
     "storage"
