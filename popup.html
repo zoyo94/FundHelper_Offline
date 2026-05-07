@@ -322,10 +322,6 @@
             padding-left: 0;
         }
 
-        .refresh-control-divider {
-            margin-left: 1px;
-        }
-
         .refresh-control.is-disabled #refreshBtn,
         .refresh-control.is-disabled .refresh-interval-select {
             cursor: wait;
@@ -404,16 +400,6 @@
             font-variant-numeric: tabular-nums;
         }
 
-        .market-ticker-item.is-up .market-ticker-value,
-        .market-ticker-item.is-limit-up .market-ticker-value {
-            color: #ff6b72;
-        }
-
-        .market-ticker-item.is-down .market-ticker-value,
-        .market-ticker-item.is-limit-down .market-ticker-value {
-            color: #4dd38a;
-        }
-
         .market-ticker-empty {
             font-size: 11px;
             color: #7f9ab9;
@@ -426,24 +412,6 @@
 
         .market-ticker-item.is-index .market-ticker-label {
             color: #a0b8d8;
-        }
-
-        .index-settings-btn {
-            flex-shrink: 0;
-            background: none;
-            border: none;
-            color: #7f9ab9;
-            font-size: 13px;
-            cursor: pointer;
-            padding: 2px 4px;
-            border-radius: 4px;
-            line-height: 1;
-            transition: color 0.15s, background 0.15s;
-        }
-
-        .index-settings-btn:hover {
-            color: #d8eaff;
-            background: rgba(255, 255, 255, 0.07);
         }
 
         /* ===== 指数设置面板 ===== */
@@ -855,6 +823,7 @@
 
         /* ===== 筛选栏 ===== */
         .filter-bar {
+            position: relative;
             padding: 5px 10px;
             background: linear-gradient(180deg, rgba(15, 31, 52, 0.98), rgba(13, 27, 46, 0.98));
             display: flex;
@@ -924,13 +893,17 @@
         }
 
         /* 统一着色：红涨绿跌 */
-        .market-ticker-item.is-up {
-            color: #ff5252 !important;
+        .market-ticker-item.is-up,
+        .market-ticker-item.is-up .market-ticker-value,
+        .market-ticker-item.is-limit-up .market-ticker-value {
+            color: #ff5252;
             font-weight: 500;
         }
 
-        .market-ticker-item.is-down {
-            color: #2ecc71 !important;
+        .market-ticker-item.is-down,
+        .market-ticker-item.is-down .market-ticker-value,
+        .market-ticker-item.is-limit-down .market-ticker-value {
+            color: #2ecc71;
             font-weight: 500;
         }
 
@@ -1004,28 +977,6 @@
         .filter-breadth-item.is-down .filter-breadth-value,
         .filter-breadth-item.is-limit-down .filter-breadth-value {
             color: #26b47a;
-        }
-
-        .index-settings-btn {
-            background: transparent;
-            border: none;
-            color: #6f8fb3;
-            cursor: pointer;
-            padding: 2px 4px;
-            font-size: 14px;
-            line-height: 1;
-            transition: color 0.2s, transform 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: 0.7;
-            margin-left: 2px;
-        }
-
-        .index-settings-btn:hover {
-            color: #1890ff;
-            opacity: 1;
-            transform: rotate(30deg);
         }
 
         .filter-action-btn {
@@ -2601,21 +2552,6 @@
             font-size: 13px;
         }
 
-        .btn-clear {
-            background: #ff4d4f;
-            color: white;
-            border: none;
-            padding: 2px 6px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 11px;
-            margin-left: 4px;
-        }
-
-        .btn-clear:hover {
-            background: #cf4444;
-        }
-
         /* ===== 表单弹窗 ===== */
         .form-group {
             margin-bottom: 16px;
@@ -2839,20 +2775,6 @@
         .settings-icon:hover {
             opacity: 1;
             transform: rotate(45deg);
-        }
-
-        /* ===== 上下文菜单 ===== */
-        .context-menu {
-            position: fixed;
-            background: #1a2f50;
-            border: 1px solid #2a4a72;
-            border-radius: 8px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-            z-index: 20000;
-            min-width: 130px;
-            padding: 6px 0;
-            display: none;
-            overflow: hidden;
         }
 
         /* ===== 居中操作弹窗样式 ===== */
@@ -3717,6 +3639,7 @@
             </div>
         </div>
         <div class="header-actions">
+            <button id="indexSettingsBtn" class="header-icon-btn" title="指数设置" aria-label="指数设置" type="button">📊</button>
             <button id="notificationBtn" class="header-icon-btn" title="通知中心" aria-label="通知中心" type="button">
                 🔔
                 <span id="notificationBadge" class="notification-badge" style="display: none;"></span>
@@ -3736,9 +3659,6 @@
                     <option value="300">300s</option>
                 </select>
             </div>
-            <button id="columnConfigBtn" class="header-icon-btn" title="列显示设置" aria-label="列显示设置" aria-expanded="false"
-                type="button">⚙️</button>
-            <div id="columnConfigPanel" role="dialog" aria-label="列显示设置"></div>
             <button id="fullscreenBtn" class="header-icon-btn" title="全屏查看" aria-label="全屏查看" type="button">⛶</button>
         </div>
     </div>
@@ -3796,7 +3716,8 @@
         <div id="filterBreadth" class="filter-breadth">
             <!-- 广度数据由 JS 动态渲染 -->
         </div>
-        <button id="indexSettingsBtn" class="index-settings-btn" title="指数设置">⚙</button>
+        <button id="columnConfigBtn" class="filter-action-btn" title="列显示设置" aria-label="列显示设置" aria-expanded="false" type="button">⚙️</button>
+        <div id="columnConfigPanel" role="dialog" aria-label="列显示设置"></div>
         <button id="profitCalendarBtn" class="filter-action-btn">收益日历</button>
     </div>
 

@@ -67,16 +67,14 @@ const storage = {
 
 ### 必须使用的工具函数
 
-- **Storage 访问**：使用 `storage.get()` / `storage.set()`（禁止直接用 `chrome.storage.local`）
+- **Storage 访问**：使用 `storageHelper.get()` / `storageHelper.set()` / `storageHelper.getAll()` / `storageHelper.setAll()`（禁止直接用 `chrome.storage.local` 或旧的 `storage` 对象）
 - **类型安全转换**：
   - 使用 `safeNumber(value, defaultValue)` 安全转换为数字
   - 使用 `safeFloat(value, defaultValue)` 安全转换为浮点数
   - 使用 `safeInteger(value, defaultValue)` 安全转换为整数
   - 使用 `safeString(value, defaultValue)` 安全转换为字符串
   - 使用 `safeArray(value, defaultValue)` 安全转换为数组
-  - 使用 `nonNegative(value)` 确保非负数
-  - 使用 `nonNegativeFloat(value)` 确保非负浮点数
-  - 使用 `nonNegativeInteger(value)` 确保非负整数
+  - 使用 `nonNegativeFloat(value)` 确保非负浮点数（注：`nonNegative` 和 `nonNegativeInteger` 已废弃）
 - **数值格式化**：
   - 使用 `round2(num)` 处理所有金额（保留 2 位小数，带类型检查）
   - 使用 `round6(num)` 处理所有份额（保留 6 位小数，带类型检查）

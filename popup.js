@@ -87,19 +87,9 @@ const safeArray = (value, defaultValue = []) => {
 };
 
 /**
- * 确保数值为非负
- */
-const nonNegative = (value) => Math.max(0, safeNumber(value, 0));
-
-/**
  * 确保数值为非负浮点数
  */
 const nonNegativeFloat = (value) => Math.max(0, safeFloat(value, 0));
-
-/**
- * 确保数值为非负整数
- */
-const nonNegativeInteger = (value) => Math.max(0, safeInteger(value, 0));
 
 // ==================== 全局状态 ====================
 let allFundsData = []; // 所有基金的当前行情数据（每次 loadData 完整刷新）
@@ -3503,21 +3493,6 @@ function withTimeout(promise, ms, fallback) {
     return Promise.race([promise, timer]);
 }
 
-function getMarketTickerContent(data, indexData = []) {
-    const indexItems = indexData.map(idx => {
-        const sign = idx.changeRate >= 0 ? '+' : '';
-        const cls = idx.changeRate >= 0 ? 'is-up' : 'is-down';
-        return `<span class="market-ticker-item is-index ${cls}"><span class="market-ticker-label">${idx.name}</span><span class="market-ticker-value">${sign}${idx.changeRate.toFixed(2)}%</span></span>`;
-    }).join('');
-    return `
-        ${indexItems}
-        <span class="market-ticker-item is-limit-up"><span class="market-ticker-label">涨停</span><span class="market-ticker-value">${data.limitUp}</span></span>
-        <span class="market-ticker-item is-up"><span class="market-ticker-label">涨</span><span class="market-ticker-value">${data.up}</span></span>
-        <span class="market-ticker-item is-down"><span class="market-ticker-label">跌</span><span class="market-ticker-value">${data.down}</span></span>
-        <span class="market-ticker-item is-limit-down"><span class="market-ticker-label">跌停</span><span class="market-ticker-value">${data.limitDown}</span></span>
-    `;
-}
-
 function renderFilterBreadth(data = marketBreadthData) {
     if (!elements.filterBreadth) return;
     if (!data) {
@@ -3809,7 +3784,7 @@ const SUPPORTED_INDICES = [
 
 async function initIndexSettings() {
     const { [CONFIG.INDEX_SETTINGS_STORAGE_KEY]: saved } = await storageHelper.getAll([CONFIG.INDEX_SETTINGS_STORAGE_KEY]);
-    indexSettings = Array.isArray(saved) && saved.length > 0 ? saved : DEFAULT_INDEX_CODES;
+    indexSettings = Array.isArray(saved) && saved.length > 0 ? saved : SUPPORTED_INDICES.map(idx => idx.code);
     // 数据迁移：将旧的 UDI 代码替换为正确的 IXIC
     const legacyMap = { 'UDI': 'IXIC' };
     let migrated = false;
@@ -6929,7 +6904,7 @@ async function openFundDetail(code) {
         // 获取基金实时行情和持仓数据
         const [live, { myFunds }] = await Promise.all([
             fetchLiveInfo(code),
-            storage.get(['myFunds'])
+            storageHelper.getAll(['myFunds'])
         ]);
 
         if (isStale()) return;
