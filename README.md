@@ -183,17 +183,31 @@ FundHelper Offline 是一款功能强大的 Chrome 扩展，专为投资者设�
 
 ```
 FundHelper_Offline/
-├── manifest.json              # 扩展配置文件
-├── popup.html                 # 主界面 HTML
-├── popup.js                   # 核心业务逻辑 (8400+ 行)
-├── popup.css                  # 样式文件
-├── background.js              # 后台服务 (代理跨域请求)
+├── manifest.json              # 扩展配置文件 (v3.0.0)
+├── popup.html                 # 主界面 HTML + 全部样式
+├── popup.js                   # 入口与全局状态 (~600 行)
+├── popup_api.js               # 多源 API 拉取（天天/新浪/腾讯/东财）
+├── popup_history.js           # IndexedDB 持久化 (HistoryDB)
+├── popup_perf.js              # 业绩走势 / 弹窗主流程
+├── popup_perf_chart.js        # ECharts 走势图绘制
+├── popup_perf_panel.js        # 业绩面板布局
+├── popup_perf_state.js        # 业绩缓存与会话状态
+├── popup_perf_table.js        # 业绩表格渲染
+├── popup_position_ui.js       # FAB 菜单 / 批量操作弹窗
+├── popup_trade.js             # 交易订单 (加仓/减仓/分红)
+├── popup_fund_detail.js       # 基金详情弹窗
+├── popup_import_export.js     # 数据导入导出 (JSON / 交易订单 CSV)
+├── popup_ocr.js               # OCR 批量识别 (Tesseract.js)
+├── popup_opt_utils.js         # 类型安全工具函数库
+├── background.js              # 后台服务 (代理新浪 API)
 ├── tesseract.min.js           # OCR 核心库
 ├── worker.min.js              # OCR Worker
 ├── tesseract-core.wasm.js     # WASM 核心
 ├── chi_sim.traineddata.gz     # 中文简体训练数据
 └── README.md                  # 项目文档
 ```
+
+> v3.0.0 起 `popup.js` 已按职责拆分为 14 个模块（合计约 13,500 行），并将历史净值 / 状态 / 交易订单迁移至 IndexedDB（`HistoryDB`），`chrome.storage.local` 仅保留配置与持仓快照。
 
 ### 代码优化亮点
 
@@ -370,11 +384,10 @@ function round2(num) {
 ```json
 {
   "manifest_version": 3,
-  "name": "FundHelper Offline",
-  "version": "2.0.0",
+  "name": "资产收益助手",
+  "version": "3.0.0",
   "permissions": [
-    "storage",           // 本地存储
-    "unlimitedStorage"   // 无限存储空间
+    "storage"
   ],
   "host_permissions": [
     "https://fundgz.1234567.com.cn/*",
@@ -440,6 +453,18 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
 ---
 
 ## 📝 更新日志
+
+### v3.0.0 (2026-05-22) - 架构重构与 IndexedDB 持久化
+- 🏗️ **模块化拆分**：8400 行单体 `popup.js` 按职责拆分为 14 个模块（api/history/perf/perf_chart/perf_panel/perf_state/perf_table/position_ui/trade/fund_detail/import_export/ocr/opt_utils 等）
+- 💾 **IndexedDB 持久化层**：新增 `HistoryDB`（`tradeOrders` / 历史净值 / 状态快照 store），原 `chrome.storage.local` 仅保留配置与持仓快照
+- 📋 **交易订单 CSV 导入导出**：完整覆盖 30 列订单字段（含 `createTime` 时间戳、`autoDetected` 标记），支持 Excel mangling 修复工具
+- 🎛️ **FAB 菜单分组**：扁平 17 项按钮重构为 6 个分组（批量操作 / 日结算 / 数据维护 / 导入导出 / 全选 / 添加资产），子菜单一致从右侧侧出
+- 🪟 **批量操作弹窗复用 form 模式**：批量修改分组 / 批量清空持仓 / 批量删除三个确认弹窗统一使用 `data-mode="form"` 紧凑布局，文案明确列出影响范围
+- 📐 **净值列居中 / 估值收益单行**：表格视觉精简，去除冗余百分比副行
+- 📊 **业绩走势重做**：基于 ECharts 重写走势图、面板与缓存层
+- 📅 **收益日历视觉统一**：复用项目暗色 modal 体系，紧凑 callout / option / fund-list 子类
+- 🧰 **新增维护工具**：重建收益日历缓存、订单一致性检查
+- 🐍 **trade CSV 修复脚本** (`/tmp/fix_trade_csv.py`)：从清洁导出还原 Excel 篡改后的日期/布尔值/科学计数法精度
 
 ### v2.0.0 (2026-04-24) - 指数行情系统与版本号升级
 - 📈 **指数行情实时监控** - 支持 20+ 指数（A股/美股/港股/日本/韩国等）

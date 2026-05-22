@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# User exports / sample data
+trade_orders_*.csv
+*基金数据*.json
+*backupFunds*.json
+
+# Build artifacts
+*.zip
+*.crx
+
+# Logs
+*.log

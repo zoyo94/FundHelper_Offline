@@ -13,7 +13,6 @@
     "service_worker": "background.js"
   },
   "host_permissions": [
-    "https://fundgz.eastmoney.com/*",
     "https://fundgz.1234567.com.cn/*",
     "https://hq.sinajs.cn/*",
     "https://fund.eastmoney.com/*",
@@ -22,8 +21,7 @@
     "https://push2.eastmoney.com/*",
     "https://push2ex.eastmoney.com/*",
     "https://qt.gtimg.cn/*",
-    "https://query1.finance.yahoo.com/*",
-    "https://query2.finance.yahoo.com/*"
+    "https://query1.finance.yahoo.com/*"
   ],
   "action": {
     "default_popup": "popup.html"

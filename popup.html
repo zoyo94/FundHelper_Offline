@@ -849,6 +849,102 @@
             flex: 0 1 124px;
         }
 
+        .multi-select-filter {
+            position: relative;
+            min-width: 0;
+            width: 124px;
+            max-width: 100%;
+            flex: 0 1 124px;
+        }
+
+        .multi-select-trigger {
+            width: 100%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+            padding: 6px 8px;
+            background: #0d1b2e;
+            border: 1px solid #2a4a72;
+            border-radius: 6px;
+            color: #c8d8f0;
+            font-size: 12px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .multi-select-trigger:hover {
+            border-color: #3a5a82;
+        }
+
+        .multi-select-filter[data-state="multi"] .multi-select-trigger,
+        .multi-select-filter[data-state="one"] .multi-select-trigger {
+            border-color: #1890ff;
+        }
+
+        .multi-select-label {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            text-align: left;
+        }
+
+        .multi-select-arrow {
+            color: #6f8fb3;
+            font-size: 10px;
+            flex-shrink: 0;
+        }
+
+        .multi-select-popover {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            min-width: 100%;
+            max-width: 220px;
+            max-height: 240px;
+            overflow-y: auto;
+            background: #0d1b2e;
+            border: 1px solid #2a4a72;
+            border-radius: 6px;
+            padding: 4px;
+            z-index: 1000;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        }
+
+        .multi-select-popover[hidden] {
+            display: none;
+        }
+
+        .multi-select-option {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #c8d8f0;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .multi-select-option:hover {
+            background: rgba(24, 144, 255, 0.12);
+        }
+
+        .multi-select-option input[type="checkbox"] {
+            margin: 0;
+            cursor: pointer;
+            accent-color: #1890ff;
+        }
+
+        .multi-select-option.is-all {
+            border-bottom: 1px solid #1e3a5f;
+            margin-bottom: 4px;
+            padding-bottom: 6px;
+        }
+
         .header-ticker-wrap {
             display: flex;
             align-items: center;
@@ -1146,6 +1242,61 @@
             gap: 5px;
         }
 
+        .profit-calendar-grid.view-month {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .profit-calendar-grid.view-year {
+            grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+        }
+
+        .profit-calendar-grid.view-month .profit-calendar-day-btn,
+        .profit-calendar-grid.view-year .profit-calendar-day-btn {
+            min-height: 72px;
+        }
+
+        .profit-calendar-grid.view-month .profit-calendar-day-label,
+        .profit-calendar-grid.view-year .profit-calendar-day-label {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .profit-calendar-view-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            padding: 2px;
+            border-radius: 10px;
+            border: 1px solid rgba(42, 74, 114, 0.55);
+            background: rgba(10, 22, 38, 0.66);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+        }
+
+        .profit-calendar-view-btn {
+            min-width: 28px;
+            height: 26px;
+            padding: 0 9px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: #94adcc;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .profit-calendar-view-btn:hover {
+            color: #d6e4ff;
+        }
+
+        .profit-calendar-view-btn.is-active {
+            background: linear-gradient(180deg, #1f4e8a, #163a6a);
+            color: #f3f8ff;
+            border-color: rgba(91, 145, 213, 0.7);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
         .profit-calendar-weekdays {
             padding: 0 2px;
         }
@@ -1176,6 +1327,7 @@
         }
 
         .profit-calendar-day-btn {
+            position: relative;
             width: 100%;
             min-height: 56px;
             border: 1px solid rgba(42, 74, 114, 0.62);
@@ -1191,6 +1343,25 @@
             cursor: pointer;
             text-align: left;
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+        }
+
+        .profit-calendar-day-badge {
+            position: absolute;
+            top: 3px;
+            right: 3px;
+            min-width: 15px;
+            height: 15px;
+            padding: 0 4px;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 15px;
+            color: #fff;
+            background: linear-gradient(135deg, #d4380d, #ff4d4f);
+            border-radius: 8px;
+            text-align: center;
+            letter-spacing: 0;
+            box-shadow: 0 1px 3px rgba(212, 56, 13, 0.5);
+            pointer-events: none;
         }
 
         .profit-calendar-day-btn:hover {
@@ -1451,6 +1622,56 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .profit-calendar-detail-dividend {
+            display: inline-block;
+            font-size: 9px;
+            font-weight: 600;
+            color: #ffb37a;
+            background: rgba(255, 122, 56, 0.14);
+            border: 1px solid rgba(255, 122, 56, 0.32);
+            border-radius: 999px;
+            padding: 1px 6px;
+            white-space: nowrap;
+            line-height: 1.3;
+            flex-shrink: 0;
+        }
+
+        .profit-calendar-detail-values {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+            white-space: nowrap;
+        }
+
+        .profit-calendar-detail-combined {
+            font-size: 9px;
+            color: #88a2bf;
+            font-weight: 600;
+        }
+
+        .profit-calendar-detail-combined.positive {
+            color: #95de64;
+        }
+
+        .profit-calendar-detail-combined.negative {
+            color: #ff9c9c;
+        }
+
+        .profit-calendar-detail-dividend-total {
+            font-size: 10px;
+            color: #ffb37a;
+            background: rgba(255, 122, 56, 0.12);
+            border: 1px solid rgba(255, 122, 56, 0.28);
+            border-radius: 999px;
+            padding: 2px 8px;
+            font-weight: 600;
+            margin-left: 4px;
         }
 
         .profit-calendar-detail-profit {
@@ -2076,7 +2297,6 @@
 
         th[data-col="amount"],
         th[data-col="shares"],
-        th[data-col="nav"],
         th[data-col="holdDays"],
         th[data-col="w1"],
         th[data-col="m1"],
@@ -2089,7 +2309,6 @@
         th[data-col="holdProfit"],
         td[data-col="amount"],
         td[data-col="shares"],
-        td[data-col="nav"],
         td[data-col="holdDays"],
         td[data-col="w1"],
         td[data-col="m1"],
@@ -2101,6 +2320,12 @@
         td[data-col="todayProfit"],
         td[data-col="holdProfit"] {
             text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        th[data-col="nav"],
+        td[data-col="nav"] {
+            text-align: center;
             font-variant-numeric: tabular-nums;
         }
 
@@ -2394,6 +2619,37 @@
             width: 90%;
         }
 
+        #modalOverlay[data-mode="form"] {
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            box-sizing: border-box;
+        }
+
+        #modalOverlay[data-mode="form"] .modal-box {
+            width: min(500px, calc(100vw - 24px));
+            max-width: 500px;
+            max-height: calc(100vh - 24px);
+            min-width: 0;
+            padding: 14px 14px 10px;
+            overflow-y: auto;
+        }
+
+        #modalOverlay[data-mode="form"] .modal-title {
+            margin-bottom: 6px;
+        }
+
+        #modalOverlay[data-mode="form"] .modal-msg {
+            margin-bottom: 10px;
+            line-height: 1.35;
+            white-space: normal;
+        }
+
+        #modalOverlay[data-mode="form"] .modal-footer {
+            padding-top: 8px;
+            border-top: 1px solid #1e3a5f;
+        }
+
         .modal-title {
             font-size: 14px;
             font-weight: 700;
@@ -2405,7 +2661,7 @@
             font-size: 12px;
             color: #8aacce;
             white-space: pre-wrap;
-            line-height: 1.7;
+            line-height: 1.5;
             margin-bottom: 14px;
         }
 
@@ -2468,6 +2724,112 @@
             background: #e05555;
         }
 
+        /* ===== 弹窗内容通用子类（与 form 模式同样紧凑） ===== */
+        .modal-lead {
+            margin: 0 0 8px;
+            color: #e6efff;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        .modal-lead--danger {
+            color: #ffb4b4;
+            font-weight: 600;
+        }
+
+        .modal-callout {
+            border-radius: 6px;
+            padding: 8px 10px;
+            margin-bottom: 10px;
+            background: rgba(24, 144, 255, 0.08);
+            border: 1px solid rgba(24, 144, 255, 0.3);
+        }
+
+        .modal-callout--warning {
+            background: rgba(255, 193, 7, 0.08);
+            border-color: rgba(255, 193, 7, 0.3);
+        }
+
+        .modal-callout--danger {
+            background: rgba(255, 107, 107, 0.08);
+            border-color: rgba(255, 107, 107, 0.32);
+        }
+
+        .modal-callout-title {
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #cfe1ff;
+        }
+
+        .modal-callout--warning .modal-callout-title { color: #ffe7a8; }
+        .modal-callout--danger .modal-callout-title { color: #ffd4d4; }
+
+        .modal-callout-list {
+            margin: 0;
+            padding-left: 16px;
+            font-size: 11px;
+            line-height: 1.55;
+            color: #cfe1ff;
+        }
+
+        .modal-callout--warning .modal-callout-list { color: #f4e8c8; }
+        .modal-callout--danger .modal-callout-list { color: #f4dada; }
+
+        .modal-option {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #c8d8f0;
+            cursor: pointer;
+            margin-bottom: 6px;
+        }
+
+        .modal-option:last-child { margin-bottom: 0; }
+
+        .modal-option input[type="checkbox"] {
+            accent-color: #1890ff;
+        }
+
+        .modal-collapse {
+            margin-bottom: 8px;
+        }
+
+        .modal-collapse > summary {
+            cursor: pointer;
+            color: #8aacce;
+            font-size: 11px;
+            outline: none;
+            list-style: none;
+        }
+
+        .modal-collapse > summary::-webkit-details-marker { display: none; }
+        .modal-collapse > summary::before {
+            content: '▸ ';
+            color: #6f8fb3;
+        }
+
+        .modal-collapse[open] > summary::before { content: '▾ '; }
+
+        .modal-fund-list {
+            margin: 4px 0 0;
+            padding-left: 16px;
+            font-size: 11px;
+            line-height: 1.6;
+            max-height: 140px;
+            overflow-y: auto;
+            color: #cfe1ff;
+        }
+
+        .modal-fund-list li {
+            padding: 1px 0;
+        }
+
+        .modal-fund-list .modal-fund-meta {
+            color: #7d99bd;
+        }
+
         /* ===== 响应式：小窗口 ===== */
         body:not(.is-fullscreen) .col-hide {
             display: none;
@@ -2503,6 +2865,11 @@
         }
 
         body:not(.is-fullscreen) .filter-left select {
+            width: 110px;
+            flex-basis: 110px;
+        }
+
+        body:not(.is-fullscreen) .filter-left .multi-select-filter {
             width: 110px;
             flex-basis: 110px;
         }
@@ -2553,41 +2920,70 @@
         }
 
         /* ===== 表单弹窗 ===== */
+        .form-modal {
+            display: block;
+        }
+
         .form-group {
-            margin-bottom: 16px;
+            margin-bottom: 10px;
         }
 
         .form-group label {
             display: block;
             font-size: 12px;
             color: #8aacce;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
 
         .form-group input,
         .form-group select {
             width: 100%;
             box-sizing: border-box;
-            padding: 10px 12px;
+            padding: 9px 11px;
             background: #0d1b2e;
             border: 1px solid #2a4a72;
             border-radius: 6px;
             color: #e8f0ff;
-            font-size: 14px;
+            font-size: 13px;
             transition: all 0.2s;
         }
 
-        .form-group input:focus {
+        .form-group input:focus,
+        .form-group select:focus {
             border-color: #1890ff;
             box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+        }
+
+        .form-field-hint {
+            margin-top: 5px;
+            font-size: 11px;
+            line-height: 1.35;
+            color: #7f9fc4;
+        }
+
+        .form-field-hint[data-tone="success"] {
+            color: #7dd3a6;
+        }
+
+        .form-field-hint[data-tone="warning"] {
+            color: #f3c969;
         }
 
         .form-header-sub {
             font-size: 12px;
             color: #8aacce;
-            margin-bottom: 16px;
-            padding-bottom: 10px;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
             border-bottom: 1px solid #1e3a5f;
+        }
+
+        .compact-trade-form {
+            margin-top: -2px;
+        }
+
+        #modalOverlay[data-mode="form"] .form-header-sub {
+            white-space: pre-line;
+            line-height: 1.45;
         }
 
         /* 表单里的"全部"按钮 */
@@ -2612,8 +3008,38 @@
         .timing-switcher {
             display: flex;
             gap: 6px;
-            margin-bottom: 12px;
+            margin: -2px 0 8px;
             align-items: center;
+        }
+
+        @media (min-width: 520px) {
+            #modalOverlay[data-mode="form"][data-form-layout="double"] .modal-box {
+                width: min(560px, calc(100vw - 24px));
+                max-width: 560px;
+            }
+
+            #modalOverlay[data-mode="form"][data-form-layout="double"] .form-modal {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px 10px;
+                align-items: start;
+            }
+
+            #modalOverlay[data-mode="form"][data-form-layout="double"] .form-group {
+                margin-bottom: 0;
+            }
+        }
+
+        @media (max-width: 720px) {
+            #modalOverlay[data-mode="form"] {
+                padding: 10px;
+            }
+
+            #modalOverlay[data-mode="form"] .modal-box {
+                width: calc(100vw - 20px);
+                max-height: calc(100vh - 20px);
+                padding: 12px 12px 10px;
+            }
         }
 
         .timing-switcher span {
@@ -2913,6 +3339,26 @@
             border-color: rgba(250, 140, 22, 0.3);
         }
 
+        .btn-op.history {
+            background: rgba(24, 144, 255, 0.12);
+            color: #69b1ff;
+            border-color: rgba(24, 144, 255, 0.3);
+        }
+
+        .btn-op.history:hover {
+            background: rgba(24, 144, 255, 0.22);
+        }
+
+        .btn-op.reconcile {
+            background: rgba(114, 46, 209, 0.12);
+            color: #b37feb;
+            border-color: rgba(114, 46, 209, 0.3);
+        }
+
+        .btn-op.reconcile:hover {
+            background: rgba(114, 46, 209, 0.22);
+        }
+
         .btn-op.dividend:hover {
             background: rgba(250, 140, 22, 0.22);
         }
@@ -2962,8 +3408,8 @@
         .fund-detail-overlay {
             position: fixed;
             inset: 0;
-            background: rgba(0, 0, 0, 0.85);
-            backdrop-filter: blur(6px);
+            background: rgba(4, 10, 20, 0.62);
+            backdrop-filter: blur(12px) saturate(1.18);
             z-index: 10002;
             display: none;
             justify-content: center;
@@ -2979,10 +3425,12 @@
             width: 92%;
             max-width: 800px;
             max-height: min(88vh, 760px);
-            background: #0a1525;
-            border: 1px solid #1e3a5f;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+            background:
+                radial-gradient(circle at 20% 0%, rgba(24, 144, 255, 0.13), transparent 34%),
+                linear-gradient(180deg, rgba(15, 31, 52, 0.82), rgba(8, 18, 32, 0.78));
+            border: 1px solid rgba(64, 103, 148, 0.48);
+            border-radius: 18px;
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.05);
             overflow: hidden;
             display: flex;
             flex-direction: column;
@@ -2996,11 +3444,12 @@
 
         .fund-detail-header {
             padding: 16px 20px;
-            background: #111f35;
-            border-bottom: 1px solid #1e3a5f;
+            background: rgba(12, 26, 44, 0.48);
+            border-bottom: 1px solid rgba(64, 103, 148, 0.38);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.02);
         }
 
         .fund-detail-actions {
@@ -3048,7 +3497,7 @@
         .fund-detail-content {
             flex: 1;
             overflow-y: auto;
-            background: #0d1b2e;
+            background: transparent;
         }
 
         .fund-detail-content::-webkit-scrollbar {
@@ -3056,7 +3505,7 @@
         }
 
         .fund-detail-content::-webkit-scrollbar-track {
-            background: #0d1b2e;
+            background: rgba(13, 27, 46, 0.28);
         }
 
         .fund-detail-content::-webkit-scrollbar-thumb {
@@ -3095,9 +3544,9 @@
 
         /* 估值时间小框 */
         .estimation-box {
-            background: rgba(26, 47, 80, 0.4);
-            border: 1px solid #1e3a5f;
-            border-radius: 6px;
+            background: rgba(10, 22, 38, 0.42);
+            border: 1px solid rgba(64, 103, 148, 0.42);
+            border-radius: 10px;
             padding: 8px 12px;
             text-align: right;
             margin-bottom: 20px;
@@ -3124,18 +3573,19 @@
         }
 
         .holding-card {
-            background: rgba(13, 27, 46, 0.5);
-            border: 1px solid #1e3a5f;
-            border-radius: 10px;
+            background: rgba(10, 22, 38, 0.42);
+            border: 1px solid rgba(64, 103, 148, 0.38);
+            border-radius: 12px;
             padding: 10px 14px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            transition: border-color 0.2s;
+            transition: border-color 0.2s, background 0.2s;
         }
 
         .holding-card:hover {
-            border-color: #2a4a72;
+            border-color: rgba(105, 177, 255, 0.5);
+            background: rgba(13, 32, 56, 0.56);
         }
 
         .holding-card-left {
@@ -3194,7 +3644,7 @@
 
         /* 面积图渐变背景 */
         .detail-chart-section {
-            background: #0a1525;
+            background: transparent;
             margin: 0;
             padding: 0 16px 24px;
         }
@@ -3209,9 +3659,9 @@
         /* 补全 Tab 切换按钮样式 */
         .detail-tabs {
             display: flex;
-            background: #0d1b2e;
-            border-bottom: 1px solid #1e3a5f;
-            border-top: 1px solid #1e3a5f;
+            background: rgba(7, 17, 31, 0.34);
+            border-bottom: 1px solid rgba(64, 103, 148, 0.38);
+            border-top: 1px solid rgba(64, 103, 148, 0.28);
             margin-bottom: 0px;
         }
 
@@ -3240,7 +3690,7 @@
 
         .detail-tab-content {
             display: none;
-            background: #111f35;
+            background: rgba(12, 26, 44, 0.34);
             padding: 18px 16px 24px;
         }
 
@@ -3251,9 +3701,10 @@
         .perf-nav-section {
             margin-top: 14px;
             padding: 12px 14px;
-            border: 1px solid #1e3a5f;
-            border-radius: 10px;
-            background: rgba(13, 27, 46, 0.55);
+            border: 1px solid rgba(64, 103, 148, 0.42);
+            border-radius: 14px;
+            background: linear-gradient(180deg, rgba(15, 31, 52, 0.58), rgba(11, 24, 41, 0.48));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
         }
 
         .perf-nav-header {
@@ -3426,6 +3877,50 @@
 
         .fab-item .fab-label {
             flex: 1;
+        }
+
+        .fab-chevron {
+            font-size: 11px;
+            color: #6f8fb3;
+            margin-left: 4px;
+            transition: color 0.15s, transform 0.15s;
+        }
+
+        .fab-group {
+            position: static;
+        }
+
+        .fab-group-header.open {
+            border-color: #3a7fbd;
+            background: linear-gradient(180deg, #183254 0%, #142845 100%);
+            color: #8dc5ff;
+        }
+
+        .fab-group-header.open .fab-chevron {
+            color: #8dc5ff;
+            transform: translateX(-2px);
+        }
+
+        .fab-submenu {
+            position: absolute;
+            bottom: 0;
+            right: calc(100% + 10px);
+            min-width: 200px;
+            max-height: calc(100vh - 140px);
+            overflow-y: auto;
+            padding: 10px;
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            background: linear-gradient(180deg, rgba(12, 28, 48, 0.96) 0%, rgba(8, 20, 35, 0.94) 100%);
+            border: 1px solid rgba(72, 110, 154, 0.56);
+            border-radius: 16px;
+            box-shadow: 0 16px 38px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+        }
+
+        .fab-group.open .fab-submenu {
+            display: flex;
         }
 
         /* 选中行高亮（文件管理器风格） */
@@ -3671,26 +4166,64 @@
                     取消全选</span></button>
             <button class="fab-item" id="fabAdd"><span class="fab-icon">➕</span><span
                     class="fab-label">添加资产</span></button>
-            <button class="fab-item" id="fabOCRBatch"><span class="fab-icon">📷</span><span
-                    class="fab-label">图片识别批量添加</span></button>
-            <button class="fab-item" id="fabBatchCalc"><span class="fab-icon">🔄</span><span
-                    class="fab-label">批量重算份额</span></button>
-            <button class="fab-item" id="fabBatchDel"><span class="fab-icon">🗑</span><span
-                    class="fab-label">批量删除</span></button>
-            <button class="fab-item" id="fabSettlement"><span class="fab-icon">📅</span><span
-                    class="fab-label">触发日结算</span></button>
-            <button class="fab-item" id="fabRollback" style="display:none;"><span class="fab-icon">↩</span><span
-                    class="fab-label">撤销日结算</span></button>
-            <button class="fab-item" id="fabBatchGroup"><span class="fab-icon">📁</span><span
-                    class="fab-label">批量修改分组</span></button>
-            <button class="fab-item" id="fabBatchClear"><span class="fab-icon">🧹</span><span
-                    class="fab-label">批量清空持仓</span></button>
-            <button class="fab-item" id="fabExport"><span class="fab-icon">📤</span><span
-                    class="fab-label">导出当前数据</span></button>
-            <button class="fab-item" id="fabExportBackup"><span class="fab-icon">🗂</span><span
-                    class="fab-label">导出备份数据</span></button>
-            <button class="fab-item" id="fabImport"><span class="fab-icon">📥</span><span
-                    class="fab-label">导入数据</span></button>
+
+            <div class="fab-group" data-fab-group="batch">
+                <button class="fab-item fab-group-header" type="button"><span class="fab-icon">✏️</span><span
+                        class="fab-label">批量操作</span><span class="fab-chevron">▸</span></button>
+                <div class="fab-submenu">
+                    <button class="fab-item" id="fabOCRBatch"><span class="fab-icon">📷</span><span
+                            class="fab-label">图片识别批量添加</span></button>
+                    <button class="fab-item" id="fabBatchGroup"><span class="fab-icon">📁</span><span
+                            class="fab-label">批量修改分组</span></button>
+                    <button class="fab-item" id="fabBatchCalc"><span class="fab-icon">🔄</span><span
+                            class="fab-label">批量重算份额</span></button>
+                    <button class="fab-item" id="fabBatchDividend"><span class="fab-icon">💰</span><span
+                            class="fab-label">批量补录分红</span></button>
+                    <button class="fab-item" id="fabBatchClear"><span class="fab-icon">🧹</span><span
+                            class="fab-label">批量清空持仓</span></button>
+                    <button class="fab-item" id="fabBatchDel"><span class="fab-icon">🗑</span><span
+                            class="fab-label">批量删除</span></button>
+                </div>
+            </div>
+
+            <div class="fab-group" data-fab-group="settlement">
+                <button class="fab-item fab-group-header" type="button"><span class="fab-icon">📅</span><span
+                        class="fab-label">日结算</span><span class="fab-chevron">▸</span></button>
+                <div class="fab-submenu">
+                    <button class="fab-item" id="fabSettlement"><span class="fab-icon">📅</span><span
+                            class="fab-label">触发日结算</span></button>
+                    <button class="fab-item" id="fabRollback" style="display:none;"><span class="fab-icon">↩</span><span
+                            class="fab-label">撤销日结算</span></button>
+                </div>
+            </div>
+
+            <div class="fab-group" data-fab-group="maintenance">
+                <button class="fab-item fab-group-header" type="button"><span class="fab-icon">🔧</span><span
+                        class="fab-label">数据维护</span><span class="fab-chevron">▸</span></button>
+                <div class="fab-submenu">
+                    <button class="fab-item" id="fabRebuildProfitHistory"><span class="fab-icon">📊</span><span
+                            class="fab-label">重算收益历史</span></button>
+                    <button class="fab-item" id="fabInspectOrders"><span class="fab-icon">🩺</span><span
+                            class="fab-label">订单体检</span></button>
+                </div>
+            </div>
+
+            <div class="fab-group" data-fab-group="io">
+                <button class="fab-item fab-group-header" type="button"><span class="fab-icon">📦</span><span
+                        class="fab-label">导入导出</span><span class="fab-chevron">▸</span></button>
+                <div class="fab-submenu">
+                    <button class="fab-item" id="fabExport"><span class="fab-icon">📤</span><span
+                            class="fab-label">导出当前数据</span></button>
+                    <button class="fab-item" id="fabExportBackup"><span class="fab-icon">🗂</span><span
+                            class="fab-label">导出备份数据</span></button>
+                    <button class="fab-item" id="fabExportTradeCSV"><span class="fab-icon">🧾</span><span
+                            class="fab-label">导出订单CSV</span></button>
+                    <button class="fab-item" id="fabImportTradeCSV"><span class="fab-icon">📝</span><span
+                            class="fab-label">导入订单CSV</span></button>
+                    <button class="fab-item" id="fabImport"><span class="fab-icon">📥</span><span
+                            class="fab-label">导入数据</span></button>
+                </div>
+            </div>
         </div>
         <div class="fab-main" id="fabMain">
             <span>⚡</span>
@@ -3708,9 +4241,13 @@
     <div class="filter-bar">
         <div class="filter-left">
             <label class="filter-label">筛选分组</label>
-            <select id="groupFilter">
-                <option value="all">全部显示</option>
-            </select>
+            <div id="groupFilter" class="multi-select-filter" data-state="all">
+                <button type="button" id="groupFilterTrigger" class="multi-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                    <span id="groupFilterLabel" class="multi-select-label">全部显示</span>
+                    <span class="multi-select-arrow" aria-hidden="true">▾</span>
+                </button>
+                <div id="groupFilterPopover" class="multi-select-popover" role="listbox" aria-multiselectable="true" hidden></div>
+            </div>
             <datalist id="groupList"></datalist>
         </div>
         <div id="filterBreadth" class="filter-breadth">
@@ -3723,6 +4260,7 @@
 
     <!-- 所有操作按钮通过悬浮球 FAB 访问，以下为隐藏的功能性元素 -->
     <input type="file" id="importFile" accept=".json" style="display:none;">
+    <input type="file" id="importTradeCsvFile" accept=".csv,text/csv" style="display:none;">
     <!-- 以下按钮隐藏，仅作 JS 绑定用（逻辑由 FAB 触发） -->
     <button id="addBtn" style="display:none;"></button>
     <button id="exportBtn" style="display:none;"></button>
@@ -3797,7 +4335,32 @@
     <script src="tesseract-core.wasm.js"></script>
     <script src="worker.min.js"></script>
     <script src="tesseract.min.js"></script>
+    <!-- 基础共享层：提供配置、全局状态、通用工具与主 UI -->
     <script src="popup.js"></script>
+    <!-- 历史数据域：提供 IndexedDB、历史净值缓存与同步 -->
+    <script src="popup_history.js"></script>
+    <!-- 交易域：提供交易归一化、迁移、运行时状态与结算辅助 -->
+    <script src="popup_trade.js"></script>
+    <!-- 请求 / 行情接口域 -->
+    <script src="popup_api.js"></script>
+    <!-- 基金表格业绩缓存 / 区间涨跌幅域 -->
+    <script src="popup_perf_table.js"></script>
+    <!-- 业绩状态 / 缓存 / 周期配置域 -->
+    <script src="popup_perf_state.js"></script>
+    <!-- 业绩图表 / 详情弹窗布局域 -->
+    <script src="popup_perf_chart.js"></script>
+    <!-- 业绩面板 / DOM 渲染域 -->
+    <script src="popup_perf_panel.js"></script>
+    <!-- 基金详情弹窗数据装载域 -->
+    <script src="popup_fund_detail.js"></script>
+    <!-- OCR 批量录入域 -->
+    <script src="popup_ocr.js"></script>
+    <!-- 导入 / 导出 / 备份恢复域 -->
+    <script src="popup_import_export.js"></script>
+    <!-- 持仓交互 / 加减仓 / 菜单域 -->
+    <script src="popup_position_ui.js"></script>
+    <!-- 业绩走势域：提供数据加载、计算与汇总 -->
+    <script src="popup_perf.js"></script>
 </body>
 
 </html>
