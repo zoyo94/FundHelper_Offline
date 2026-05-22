@@ -3474,7 +3474,6 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
     try {
         clearSelection();
         elements.statusText.innerText = '同步行情中...';
-        apiLogger.reset();
 
         const storageState = await storageHelper.getAll([
             'myFunds',

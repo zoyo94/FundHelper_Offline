@@ -27,8 +27,7 @@ const CONFIG = {
     MANUAL_PAUSE_STORAGE_KEY: 'isManuallyPaused',   // 手动暂停自动刷新存储 key
     TRADE_DATA_MIGRATION_STORAGE_KEY: 'tradeDataMigrationVersion',
     DEBUG_DIVIDEND_TRACE: false,
-    DEBUG_DIVIDEND_TRACE_CODES: ['002010'],
-    DEBUG_API_MONITOR: false
+    DEBUG_DIVIDEND_TRACE_CODES: ['002010']
 };
 
 // ==================== 业务常量 ====================
@@ -377,23 +376,6 @@ function debugDividendTrace(code, stage, payload = {}) {
     const stamp = new Date().toISOString();
     console.log(`[DIV-TRACE][${stamp}][${code}] ${stage}`, payload);
 }
-
-const apiLogger = {
-    loggedApis: new Set(),
-
-    reset() {
-        this.loggedApis.clear();
-        if (CONFIG.DEBUG_API_MONITOR) {
-            console.log('%c[API Monitor] 日志状态已重置，开始监测接口...', 'color: #1890ff; font-weight: bold;');
-        }
-    },
-
-    log(apiName, url, status) {
-        if (!CONFIG.DEBUG_API_MONITOR || this.loggedApis.has(url)) return;
-        console.log(`[API Monitor] ${apiName} | 状态: ${status} | 地址: ${url}`);
-        this.loggedApis.add(url);
-    }
-};
 
 // ==================== DOM 元素引用 ====================
 let elements = {};

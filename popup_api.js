@@ -1,13 +1,11 @@
 // ==================== 请求 / 行情 / 历史净值接口域 ====================
 
 function proxyFetchSina(url, timeout = 5000) {
-    apiLogger.log('新浪代理', url, '发起请求');
     return new Promise((resolve) => {
         let resolved = false;
         const timer = setTimeout(() => {
             if (!resolved) {
                 resolved = true;
-                apiLogger.log('新浪代理', url, '请求超时');
                 resolve(null);
             }
         }, timeout);
@@ -18,36 +16,26 @@ function proxyFetchSina(url, timeout = 5000) {
             clearTimeout(timer);
 
             if (chrome.runtime.lastError) {
-                apiLogger.log('新浪代理', url, `运行时错误: ${chrome.runtime.lastError.message}`);
                 resolve(null);
                 return;
             }
 
             if (response && response.success && response.data) {
                 const content = response.data.match(/"([^"]*)"/s);
-                const result = content ? content[1] : null;
-                if (result) {
-                    apiLogger.log('新浪代理', url, '成功获取数据');
-                } else {
-                    apiLogger.log('新浪代理', url, '返回数据格式无效');
-                }
-                resolve(result);
+                resolve(content ? content[1] : null);
             } else {
-                apiLogger.log('新浪代理', url, '请求失败或无响应');
                 resolve(null);
             }
         });
     });
 }
 
-function proxyFetchJson(url, { timeout = 5000, headers = {}, tag = '通用代理' } = {}) {
-    apiLogger.log(tag, url, '发起请求');
+function proxyFetchJson(url, { timeout = 5000, headers = {} } = {}) {
     return new Promise((resolve) => {
         let resolved = false;
         const timer = setTimeout(() => {
             if (!resolved) {
                 resolved = true;
-                apiLogger.log(tag, url, '请求超时');
                 resolve(null);
             }
         }, timeout);
@@ -58,16 +46,13 @@ function proxyFetchJson(url, { timeout = 5000, headers = {}, tag = '通用代理
             clearTimeout(timer);
 
             if (chrome.runtime.lastError) {
-                apiLogger.log(tag, url, `运行时错误: ${chrome.runtime.lastError.message}`);
                 resolve(null);
                 return;
             }
 
             if (response && response.success && response.data) {
-                apiLogger.log(tag, url, '成功获取数据');
                 resolve(response.data);
             } else {
-                apiLogger.log(tag, url, '请求失败或无响应');
                 resolve(null);
             }
         });
@@ -97,7 +82,6 @@ async function fetchEastmoneyJson(url, timeout = CONFIG.MARKET_BREADTH_TIMEOUT) 
 
     return proxyFetchJson(url, {
         timeout,
-        tag: '东方财富代理',
         headers: {
             'Referer': 'https://quote.eastmoney.com/',
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
@@ -122,7 +106,6 @@ async function fetchLiveInfo(code) {
         const url1 = `https://fundgz.1234567.com.cn/js/${cleanCode}.js?rt=${Date.now()}`;
         let mainResult = null;
         try {
-            apiLogger.log('场外主接口', url1, '发起请求');
             const res = await fetch(url1);
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -136,7 +119,6 @@ async function fetchLiveInfo(code) {
                     const gsz = parseFloat(d.gsz || d.dwjz) || 0;
                     const gszzl = parseFloat(d.gszzl) || 0;
                     const gztime = d.gztime || '';
-                    apiLogger.log('场外主接口', url1, '成功');
                     mainResult = {
                         name: d.name || `[未知]${cleanCode}`,
                         rate: gszzl,
@@ -154,17 +136,14 @@ async function fetchLiveInfo(code) {
                 }
             }
             if (!mainResult) {
-                apiLogger.log('场外主接口', url1, '数据无效(尝试备用)');
                 debugDividendTrace(cleanCode, 'fetch-main-invalid-data', {});
             }
         } catch (e) {
-            apiLogger.log('场外主接口', url1, `请求异常(${e.message})`);
             debugDividendTrace(cleanCode, 'fetch-main-error', { message: e.message });
         }
 
         const url2 = `https://fund.eastmoney.com/pingzhongdata/${cleanCode}.js?v=${Date.now()}`;
         try {
-            apiLogger.log('场外备用接口', url2, '发起请求');
             const res2 = await fetch(url2);
             if (!res2.ok) {
                 throw new Error(`HTTP ${res2.status}: ${res2.statusText}`);
@@ -218,7 +197,6 @@ async function fetchLiveInfo(code) {
                             }
                         }
 
-                        apiLogger.log('场外备用接口', url2, '成功');
                         debugDividendTrace(cleanCode, 'fetch-fallback-success', {
                             prevPriceDate: dateStr,
                             prevTradingDayDate,
@@ -292,10 +270,8 @@ async function fetchLiveInfo(code) {
                     }
                 }
             }
-            apiLogger.log('场外备用接口', url2, '数据无效');
             debugDividendTrace(cleanCode, 'fetch-fallback-invalid-data', {});
         } catch (e) {
-            apiLogger.log('场外备用接口', url2, `请求异常(${e.message})`);
             debugDividendTrace(cleanCode, 'fetch-fallback-error', { message: e.message });
         }
 

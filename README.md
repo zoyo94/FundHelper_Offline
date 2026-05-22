@@ -198,7 +198,6 @@ FundHelper_Offline/
 ├── popup_fund_detail.js       # 基金详情弹窗
 ├── popup_import_export.js     # 数据导入导出 (JSON / 交易订单 CSV)
 ├── popup_ocr.js               # OCR 批量识别 (Tesseract.js)
-├── popup_opt_utils.js         # 类型安全工具函数库
 ├── background.js              # 后台服务 (代理新浪 API)
 ├── tesseract.min.js           # OCR 核心库
 ├── worker.min.js              # OCR Worker
@@ -207,7 +206,7 @@ FundHelper_Offline/
 └── README.md                  # 项目文档
 ```
 
-> v3.0.0 起 `popup.js` 已按职责拆分为 14 个模块（合计约 13,500 行），并将历史净值 / 状态 / 交易订单迁移至 IndexedDB（`HistoryDB`），`chrome.storage.local` 仅保留配置与持仓快照。
+> v3.0.0 起 `popup.js` 已按职责拆分为 13 个模块（合计约 13,300 行），并将历史净值 / 状态 / 交易订单迁移至 IndexedDB（`HistoryDB`），`chrome.storage.local` 仅保留配置与持仓快照。
 
 ### 代码优化亮点
 
@@ -455,7 +454,7 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
 ## 📝 更新日志
 
 ### v3.0.0 (2026-05-22) - 架构重构与 IndexedDB 持久化
-- 🏗️ **模块化拆分**：8400 行单体 `popup.js` 按职责拆分为 14 个模块（api/history/perf/perf_chart/perf_panel/perf_state/perf_table/position_ui/trade/fund_detail/import_export/ocr/opt_utils 等）
+- 🏗️ **模块化拆分**：8400 行单体 `popup.js` 按职责拆分为 13 个模块（api/history/perf/perf_chart/perf_panel/perf_state/perf_table/position_ui/trade/fund_detail/import_export/ocr 等）
 - 💾 **IndexedDB 持久化层**：新增 `HistoryDB`（`tradeOrders` / 历史净值 / 状态快照 store），原 `chrome.storage.local` 仅保留配置与持仓快照
 - 📋 **交易订单 CSV 导入导出**：完整覆盖 30 列订单字段（含 `createTime` 时间戳、`autoDetected` 标记），支持 Excel mangling 修复工具
 - 🎛️ **FAB 菜单分组**：扁平 17 项按钮重构为 6 个分组（批量操作 / 日结算 / 数据维护 / 导入导出 / 全选 / 添加资产），子菜单一致从右侧侧出

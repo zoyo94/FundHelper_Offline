@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-Chrome 扩展（Manifest V3），用于离线追踪基金/期货资产。单页 popup 应用，支持 OCR 批量导入、实时估值和收益计算。所有数据通过 Chrome Storage API 本地存储。
+Chrome 扩展（Manifest V3），用于离线追踪基金/期货资产。单页 popup 应用，支持 OCR 批量导入、实时估值和收益计算。配置与持仓快照存 `chrome.storage.local`，交易订单与历史净值/状态存 IndexedDB（`HistoryDB`，v3.0.0 起）。
 
 ## 开发流程
 
@@ -26,21 +26,28 @@ Chrome 扩展（Manifest V3），用于离线追踪基金/期货资产。单页 
 ### 组件交互
 
 ```
-popup.html (UI 界面)
+popup.html (UI 界面 + 全部 CSS)
     ↓
-popup.js (所有业务逻辑 ~8400 行)
+popup.js (入口、全局状态、CONFIG、列设置、置顶) ─┐
+popup_history.js (HistoryDB / IndexedDB 持久化) │
+popup_trade.js (交易订单规范化与确认)            │
+popup_api.js (东财/天天/新浪/腾讯 行情拉取)       │
+popup_perf_table.js (基金表格 + 区间涨跌幅缓存)   │
+popup_perf_state.js (业绩缓存 / 周期配置)         │
+popup_perf_chart.js (业绩图表 / ECharts)          │
+popup_perf_panel.js (业绩面板 DOM 渲染)           ├─→ chrome.storage.local
+popup_fund_detail.js (详情弹窗数据装载)           │   + IndexedDB
+popup_ocr.js (Tesseract.js 批量录入)              │
+popup_import_export.js (JSON/CSV 导入导出)        │
+popup_position_ui.js (FAB 菜单 / 加减仓 / 批量)   │
+popup_perf.js (主数据加载、结算、modal 工具)    ─┘
     ↓
-chrome.storage.local (数据持久化)
-    ↓
-background.js (仅用于新浪 API 的 CORS 代理)
+background.js (仅用于新浪/东财 API 的 CORS 代理)
 ```
 
-**popup.js** 包含所有业务逻辑：
-- 全局状态管理（`currentFundsData`、`selectedCodes`、`fundHistoryData`）
-- 从多个 API 获取数据（天天基金、新浪、腾讯）
-- UI 渲染和事件处理
-- 结算计算
-- OCR 集成
+**popup.js**（~590 行）只负责：入口配置（`CONFIG` / `CONSTANTS`）、全局状态、列设置面板、置顶基金、低层 storage 包装、调试守门（`debugDividendTrace`）。
+
+**业务逻辑全部下沉到模块**，全部通过全局作用域共享（无 import）。各模块职责见 `README.md` 的项目结构段。
 
 **background.js** 只有一个用途：
 - 代理新浪 API 请求（`hq.sinajs.cn`）以绕过 CORS
@@ -324,27 +331,41 @@ Background 会自动添加必需的请求头。
 - 包含“导出当前数据”和“导出备份数据”两个导出入口
 - 当前样式是轻量面板化设计，不改原有展开交互模型，只做对齐和视觉优化
 
-## 代码组织
+## 代码组织（v3.0.0 模块化后）
 
-尽管是单个 3885 行文件，`popup.js` 有清晰的分区：
+按模块功能划分，添加新功能前先确认它属于哪个域：
 
-1. **全局状态**（第 1-10 行）
-2. **工具函数**（storage、格式化、日期、收益显示）
-3. **Toast/Modal 系统**
-4. **结算逻辑**（自动/手动/撤销）
-5. **走势数据持久化**
-6. **API 获取**（天天基金、新浪、腾讯）
-7. **主数据加载**（`loadData()`）- **关键：分红检测在自动结算之前**
-8. **批量操作**
-9. **基金编辑器 modal**
-10. **OCR 批量添加**
-11. **详情页**
-12. **事件处理器**
-13. **DOMContentLoaded 初始化**
+| 模块 | 主要职责 |
+| --- | --- |
+| `popup.js` | CONFIG / CONSTANTS、全局状态、低层 storage、列设置、置顶、调试守门 |
+| `popup_history.js` | IndexedDB (`HistoryDB`) — tradeOrders / 历史净值 / 状态快照 |
+| `popup_trade.js` | 交易订单规范化、迁移、待确认交易、分红自动检测 |
+| `popup_api.js` | 多源行情拉取（东财主/备、天天、新浪代理、腾讯）、指数行情 |
+| `popup_perf_table.js` | 基金表格渲染、区间涨跌幅日级缓存 |
+| `popup_perf_state.js` | 业绩走势缓存、周期常量 |
+| `popup_perf_chart.js` | 业绩图表 / 走势图 / 详情弹窗布局 |
+| `popup_perf_panel.js` | 业绩面板 DOM 渲染 |
+| `popup_fund_detail.js` | 基金详情弹窗（走势、净值、重仓股） |
+| `popup_ocr.js` | OCR 批量录入（Tesseract.js v4） |
+| `popup_import_export.js` | JSON 全量导入导出、交易订单 CSV 导入导出 |
+| `popup_position_ui.js` | FAB 菜单、加仓/减仓/分红/清仓、批量操作弹窗 |
+| `popup_perf.js` | 主数据加载 `loadData()`、自动结算、modal 工具（`showAlert`/`showConfirm`/`showFormModal`） |
+| `background.js` | CORS 代理（`FETCH_SINA` / `FETCH_JSON`） |
 
-添加新功能时，遵循此组织模式。
+**关键执行顺序**（`loadData()` 中）：分红检测 → 自动结算 → 待确认交易处理。该顺序在 `popup_perf.js` 的 `_loadDataImpl()` 强制约束。
+
+加载顺序由 `popup.html` 末尾 `<script>` 决定（popup.js 最先、popup_perf.js 最后，因为 popup_perf 依赖前面所有模块）。
 
 ## 最近更新
+
+### v3.0.0 架构重构 + IndexedDB（2026-05-22）
+- 🏗️ **模块化拆分**：单体 `popup.js`（8400 行）拆为 14 个职责单一的模块
+- 💾 **IndexedDB 持久化**：新增 `HistoryDB`（tradeOrders / 历史净值 / 状态快照 store），`chrome.storage.local` 只留配置与持仓快照
+- 📋 **交易订单 CSV 导入导出**：30 列完整字段，含 Excel mangling 修复脚本
+- 🎛️ **FAB 菜单分组化**：17 项扁平按钮 → 6 组带子菜单
+- 🪟 **批量弹窗复用 form 模式**：批量修改分组 / 清空持仓 / 删除 三个确认弹窗统一 `data-mode="form"` 紧凑布局
+- 📊 **业绩走势重写**：基于 ECharts；收益日历视觉统一
+- 🧹 **死代码清理**：移除 `popup_opt_utils.js`、`apiLogger` 调试套件
 
 ### v2.0.0 指数行情系统与版本号升级（2026-04-24）
 - 📈 **指数行情实时监控**：支持 20+ 指数（A股/美股/港股/日本/韩国等）
