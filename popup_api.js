@@ -104,176 +104,162 @@ async function fetchLiveInfo(code) {
     const cleanCode = code.trim();
     if (/^\d{6}$/.test(cleanCode)) {
         const url1 = `https://fundgz.1234567.com.cn/js/${cleanCode}.js?rt=${Date.now()}`;
-        let mainResult = null;
-        try {
-            const res = await fetch(url1);
-            if (!res.ok) {
-                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-            }
-            const text = await res.text();
-            const jsonMatch = text.match(/jsonpgz\((.*)\)/);
-            if (jsonMatch) {
-                const d = JSON.parse(jsonMatch[1]);
-                if (d && (d.gsz || d.dwjz)) {
-                    const dwjz = parseFloat(d.dwjz) || 0;
-                    const gsz = parseFloat(d.gsz || d.dwjz) || 0;
-                    const gszzl = parseFloat(d.gszzl) || 0;
-                    const gztime = d.gztime || '';
-                    mainResult = {
-                        name: d.name || `[未知]${cleanCode}`,
-                        rate: gszzl,
-                        price: gsz,
-                        prevPrice: dwjz,
-                        prevPriceDate: d.jzrq || '',
-                        priceTime: gztime
-                    };
-                    debugDividendTrace(cleanCode, 'fetch-main-success', {
-                        prevPrice: dwjz,
-                        price: gsz,
-                        prevPriceDate: d.jzrq || '',
-                        priceTime: gztime
-                    });
-                }
-            }
-            if (!mainResult) {
-                debugDividendTrace(cleanCode, 'fetch-main-invalid-data', {});
-            }
-        } catch (e) {
-            debugDividendTrace(cleanCode, 'fetch-main-error', { message: e.message });
-        }
-
         const url2 = `https://fund.eastmoney.com/pingzhongdata/${cleanCode}.js?v=${Date.now()}`;
-        try {
-            const res2 = await fetch(url2);
-            if (!res2.ok) {
-                throw new Error(`HTTP ${res2.status}: ${res2.statusText}`);
-            }
-            const extData = await res2.text();
-            if (extData && extData.includes('fS_name')) {
-                const nameMatch = extData.match(/fS_name\s*=\s*"([^"]+)"/);
-                const name = nameMatch ? nameMatch[1] : `[场外备用]${cleanCode}`;
-                const netWorthMatch = extData.match(/Data_netWorthTrend\s*=\s*(\[[\s\S]*?\])\s*;/);
-                if (netWorthMatch) {
-                    const netWorthData = JSON.parse(netWorthMatch[1]);
-                    if (netWorthData && netWorthData.length >= 2) {
-                        const latest = netWorthData[netWorthData.length - 1];
-                        const prev = netWorthData[netWorthData.length - 2];
-                        const gsz = parseFloat(latest.y) || 0;
-                        const dwjz = gsz;
-                        const dateStr = latest.x ? timestampToDate(latest.x) : '';
-                        const prevTradingDayPrice = parseFloat(prev.y) || 0;
-                        const prevTradingDayDate = prev.x ? timestampToDate(prev.x) : '';
 
-                        const dividendList = [];
-                        for (const item of netWorthData) {
-                            if (item.unitMoney && item.unitMoney.includes('分红')) {
-                                const match = item.unitMoney.match(/([0-9.]+)元/);
-                                if (match) {
-                                    const divDate = item.x ? timestampToDate(item.x) : '';
-                                    dividendList.push({
-                                        perShare: parseFloat(match[1]),
-                                        date: divDate,
-                                        navPrice: parseFloat(item.y) || 0,
-                                        desc: item.unitMoney
-                                    });
-                                }
-                            }
-                        }
+        // 两个接口完全独立，并发请求节省 url1+url2 串行等待时间
+        const [r1, r2] = await Promise.allSettled([
+            fetch(url1).then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.text(); }),
+            fetch(url2).then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.text(); })
+        ]);
 
-                        let acNetValue = null;
-                        const acMapInner = new Map();
-                        const acMatch = extData.match(/Data_ACWorthTrend\s*=\s*(\[[\s\S]*?\]);/);
-                        if (acMatch) {
-                            try {
-                                const acData = JSON.parse(acMatch[1]);
-                                if (acData && acData.length > 0) {
-                                    acData.forEach(item => acMapInner.set(item[0], parseFloat(item[1])));
-                                    const latestAC = acData[acData.length - 1];
-                                    acNetValue = parseFloat(latestAC[1]) || null;
-                                }
-                            } catch (e) {
-                                console.warn('解析累计净值失败:', e);
-                            }
-                        }
-
-                        debugDividendTrace(cleanCode, 'fetch-fallback-success', {
-                            prevPriceDate: dateStr,
-                            prevTradingDayDate,
-                            prevTradingDayPrice,
-                            acNetValue,
-                            dividendListLength: dividendList.length,
-                            dividendList: dividendList.map(div => ({
-                                date: div.date,
-                                perShare: div.perShare,
-                                navPrice: div.navPrice
-                            }))
-                        });
-
-                        const fallbackResult = {
-                            name,
-                            rate: null,
+        // ── 解析 url1（天天基金估值）──
+        let mainResult = null;
+        if (r1.status === 'fulfilled') {
+            try {
+                const text = r1.value;
+                const jsonMatch = text.match(/jsonpgz\((.*)\)/);
+                if (jsonMatch) {
+                    const d = JSON.parse(jsonMatch[1]);
+                    if (d && (d.gsz || d.dwjz)) {
+                        const dwjz = parseFloat(d.dwjz) || 0;
+                        const gsz = parseFloat(d.gsz || d.dwjz) || 0;
+                        const gszzl = parseFloat(d.gszzl) || 0;
+                        const gztime = d.gztime || '';
+                        mainResult = {
+                            name: d.name || `[未知]${cleanCode}`,
+                            rate: gszzl,
                             price: gsz,
                             prevPrice: dwjz,
-                            prevPriceDate: dateStr,
-                            prevTradingDayPrice,
-                            prevTradingDayDate,
-                            acNetValue,
-                            dividendList,
-                            isFallback: true
+                            prevPriceDate: d.jzrq || '',
+                            priceTime: gztime
                         };
-
-                        if (mainResult) {
-                            mainResult.acNetValue = acNetValue;
-                            mainResult.dividendList = dividendList;
-                            mainResult.prevTradingDayPrice = prevTradingDayPrice;
-                            mainResult.prevTradingDayDate = prevTradingDayDate;
-
-                            if (fallbackResult.prevPriceDate && (!mainResult.prevPriceDate || fallbackResult.prevPriceDate > mainResult.prevPriceDate)) {
-                                mainResult.prevPrice = fallbackResult.prevPrice;
-                                mainResult.prevPriceDate = fallbackResult.prevPriceDate;
-                            }
-
-                            debugDividendTrace(cleanCode, 'fetch-merged-main-fallback', {
-                                mainPrevPriceDate: mainResult.prevPriceDate || '',
-                                mainPrevPrice: mainResult.prevPrice || 0,
-                                prevTradingDayDate: mainResult.prevTradingDayDate || '',
-                                prevTradingDayPrice: mainResult.prevTradingDayPrice || 0,
-                                dividendListLength: Array.isArray(mainResult.dividendList) ? mainResult.dividendList.length : 0
-                            });
-                            return mainResult;
-                        }
-
-                        debugDividendTrace(cleanCode, 'fetch-return-fallback-only', {
-                            prevPriceDate: fallbackResult.prevPriceDate || '',
-                            prevTradingDayDate: fallbackResult.prevTradingDayDate || '',
-                            prevTradingDayPrice: fallbackResult.prevTradingDayPrice || 0,
-                            dividendListLength: fallbackResult.dividendList.length
+                        debugDividendTrace(cleanCode, 'fetch-main-success', {
+                            prevPrice: dwjz, price: gsz,
+                            prevPriceDate: d.jzrq || '', priceTime: gztime
                         });
-
-                        if (Array.isArray(netWorthData)) {
-                            const dbItems = netWorthData.map(item => ({
-                                code: cleanCode,
-                                date: item.x ? timestampToDate(item.x) : '',
-                                price: parseFloat(item.y),
-                                acPrice: acMapInner.get(item.x) || null,
-                                rate: typeof item.equityReturn !== 'undefined' ? parseFloat(item.equityReturn) : null,
-                                dividend: item.unitMoney || ''
-                            })).filter(d => d.date);
-
-                            if (dbItems.length > 0) {
-                                HistoryDB.batchPut(dbItems).catch(() => {});
-                            }
-                        }
-
-                        return fallbackResult;
+                    } else {
+                        debugDividendTrace(cleanCode, 'fetch-main-invalid-data', {});
                     }
                 }
+            } catch (e) {
+                debugDividendTrace(cleanCode, 'fetch-main-error', { message: e.message });
             }
-            debugDividendTrace(cleanCode, 'fetch-fallback-invalid-data', {});
-        } catch (e) {
-            debugDividendTrace(cleanCode, 'fetch-fallback-error', { message: e.message });
+        } else {
+            debugDividendTrace(cleanCode, 'fetch-main-error', { message: r1.reason?.message });
         }
 
+        // ── 解析 url2（东财历史净值）──
+        let fallbackResult = null;
+        if (r2.status === 'fulfilled') {
+            try {
+                const extData = r2.value;
+                if (extData && extData.includes('fS_name')) {
+                    const nameMatch = extData.match(/fS_name\s*=\s*"([^"]+)"/);
+                    const name = nameMatch ? nameMatch[1] : `[场外备用]${cleanCode}`;
+                    const netWorthMatch = extData.match(/Data_netWorthTrend\s*=\s*(\[[\s\S]*?\])\s*;/);
+                    if (netWorthMatch) {
+                        const netWorthData = JSON.parse(netWorthMatch[1]);
+                        if (netWorthData && netWorthData.length >= 2) {
+                            const latest = netWorthData[netWorthData.length - 1];
+                            const prev = netWorthData[netWorthData.length - 2];
+                            const gsz = parseFloat(latest.y) || 0;
+                            const dateStr = latest.x ? timestampToDate(latest.x) : '';
+                            const prevTradingDayPrice = parseFloat(prev.y) || 0;
+                            const prevTradingDayDate = prev.x ? timestampToDate(prev.x) : '';
+
+                            const dividendList = [];
+                            for (const item of netWorthData) {
+                                if (item.unitMoney && item.unitMoney.includes('分红')) {
+                                    const match = item.unitMoney.match(/([0-9.]+)元/);
+                                    if (match) {
+                                        dividendList.push({
+                                            perShare: parseFloat(match[1]),
+                                            date: item.x ? timestampToDate(item.x) : '',
+                                            navPrice: parseFloat(item.y) || 0,
+                                            desc: item.unitMoney
+                                        });
+                                    }
+                                }
+                            }
+
+                            let acNetValue = null;
+                            const acMapInner = new Map();
+                            const acMatch = extData.match(/Data_ACWorthTrend\s*=\s*(\[[\s\S]*?\]);/);
+                            if (acMatch) {
+                                try {
+                                    const acData = JSON.parse(acMatch[1]);
+                                    if (acData && acData.length > 0) {
+                                        acData.forEach(item => acMapInner.set(item[0], parseFloat(item[1])));
+                                        acNetValue = parseFloat(acData[acData.length - 1][1]) || null;
+                                    }
+                                } catch (e) {
+                                    console.warn('解析累计净值失败:', e);
+                                }
+                            }
+
+                            fallbackResult = {
+                                name, rate: null, price: gsz,
+                                prevPrice: gsz,
+                                prevPriceDate: dateStr,
+                                prevTradingDayPrice, prevTradingDayDate,
+                                acNetValue, dividendList,
+                                isFallback: true
+                            };
+
+                            debugDividendTrace(cleanCode, 'fetch-fallback-success', {
+                                prevPriceDate: dateStr, prevTradingDayDate,
+                                prevTradingDayPrice, acNetValue,
+                                dividendListLength: dividendList.length,
+                                dividendList: dividendList.map(div => ({
+                                    date: div.date, perShare: div.perShare, navPrice: div.navPrice
+                                }))
+                            });
+
+                            if (Array.isArray(netWorthData)) {
+                                const dbItems = netWorthData.map(item => ({
+                                    code: cleanCode,
+                                    date: item.x ? timestampToDate(item.x) : '',
+                                    price: parseFloat(item.y),
+                                    acPrice: acMapInner.get(item.x) || null,
+                                    rate: typeof item.equityReturn !== 'undefined' ? parseFloat(item.equityReturn) : null,
+                                    dividend: item.unitMoney || ''
+                                })).filter(d => d.date);
+                                if (dbItems.length > 0 && !mainResult) {
+                                    HistoryDB.batchPut(dbItems).catch(() => {});
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!fallbackResult) {
+                    debugDividendTrace(cleanCode, 'fetch-fallback-invalid-data', {});
+                }
+            } catch (e) {
+                debugDividendTrace(cleanCode, 'fetch-fallback-error', { message: e.message });
+            }
+        } else {
+            debugDividendTrace(cleanCode, 'fetch-fallback-error', { message: r2.reason?.message });
+        }
+
+        // ── 合并结果 ──
+        if (mainResult && fallbackResult) {
+            mainResult.acNetValue = fallbackResult.acNetValue;
+            mainResult.dividendList = fallbackResult.dividendList;
+            mainResult.prevTradingDayPrice = fallbackResult.prevTradingDayPrice;
+            mainResult.prevTradingDayDate = fallbackResult.prevTradingDayDate;
+            if (fallbackResult.prevPriceDate && (!mainResult.prevPriceDate || fallbackResult.prevPriceDate > mainResult.prevPriceDate)) {
+                mainResult.prevPrice = fallbackResult.prevPrice;
+                mainResult.prevPriceDate = fallbackResult.prevPriceDate;
+            }
+            debugDividendTrace(cleanCode, 'fetch-merged-main-fallback', {
+                mainPrevPriceDate: mainResult.prevPriceDate || '',
+                mainPrevPrice: mainResult.prevPrice || 0,
+                prevTradingDayDate: mainResult.prevTradingDayDate || '',
+                prevTradingDayPrice: mainResult.prevTradingDayPrice || 0,
+                dividendListLength: Array.isArray(mainResult.dividendList) ? mainResult.dividendList.length : 0
+            });
+            return mainResult;
+        }
         if (mainResult) {
             debugDividendTrace(cleanCode, 'fetch-return-main-only', {
                 prevPriceDate: mainResult.prevPriceDate || '',
@@ -281,6 +267,15 @@ async function fetchLiveInfo(code) {
                 hasDividendList: Array.isArray(mainResult.dividendList)
             });
             return mainResult;
+        }
+        if (fallbackResult) {
+            debugDividendTrace(cleanCode, 'fetch-return-fallback-only', {
+                prevPriceDate: fallbackResult.prevPriceDate || '',
+                prevTradingDayDate: fallbackResult.prevTradingDayDate || '',
+                prevTradingDayPrice: fallbackResult.prevTradingDayPrice || 0,
+                dividendListLength: fallbackResult.dividendList.length
+            });
+            return fallbackResult;
         }
 
         try {
