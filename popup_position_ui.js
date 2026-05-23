@@ -1,3 +1,10 @@
+async function getSelectedFunds() {
+    const { myFunds } = await storageHelper.getAll(['myFunds']);
+    const funds = myFunds || {};
+    const codes = [...selectedCodes].filter(c => funds[c]);
+    return { funds, codes };
+}
+
 async function askBatchConfirmation(action, count, details = '', danger = false) {
     return showConfirm(
         `确认${action}选中的 ${count} 项吗？${details}`,
@@ -10,9 +17,7 @@ async function batchRecalculateShares() {
     if (!ensureBatchSelection()) return;
     if (!await askBatchConfirmation('重算份额', selectedCodes.size)) return;
 
-    const { myFunds } = await storageHelper.getAll(['myFunds']);
-    const funds = myFunds || {};
-    const codes = [...selectedCodes].filter(c => funds[c]);
+    const { funds, codes } = await getSelectedFunds();
 
     const results = await fetchBatchLiveInfo(codes, 8000, null);
     let count = 0;
@@ -31,9 +36,7 @@ async function batchRecalculateShares() {
 async function batchChangeGroup() {
     if (!ensureBatchSelection()) return;
 
-    const { myFunds } = await storageHelper.getAll(['myFunds']);
-    const funds = myFunds || {};
-    const codes = [...selectedCodes].filter(c => funds[c]);
+    const { funds, codes } = await getSelectedFunds();
     if (codes.length === 0) {
         showToast('⚠️ 选中的基金未找到', 'warning');
         return;
@@ -151,9 +154,7 @@ async function batchBackfillHistoricalDividends() {
     if (!ensureBatchSelection()) return;
     if (!await askBatchConfirmation('补录历史分红', selectedCodes.size, '\n将按当前建仓日期，补录选中基金从建仓至今缺失的分红订单。')) return;
 
-    const { myFunds } = await storageHelper.getAll(['myFunds']);
-    const funds = myFunds || {};
-    const codes = [...selectedCodes].filter(code => funds[code]);
+    const { funds, codes } = await getSelectedFunds();
     if (codes.length === 0) {
         showToast('⚠️ 未找到可补录的基金', 'warning');
         return;
@@ -205,9 +206,8 @@ async function rebuildDailyProfitHistory() {
             return;
         }
 
-        const emptyHistory = {};
         await Promise.all(codes.map(code => HistoryDB.deleteStateRecordsByCode(code).catch(() => {})));
-        const { history: nextDailyProfitHistory } = await backfillMissingDailyProfitHistory(emptyHistory, funds);
+        const { history: nextDailyProfitHistory } = await backfillMissingDailyProfitHistory({}, funds);
         const normalizedNextHistory = normalizeDailyProfitHistory(nextDailyProfitHistory);
 
         await storageHelper.setAll({
@@ -549,9 +549,7 @@ async function batchClearPositions() {
 async function batchDeleteFunds() {
     if (!ensureBatchSelection()) return;
 
-    const { myFunds } = await storageHelper.getAll(['myFunds']);
-    const funds = myFunds || {};
-    const codes = [...selectedCodes].filter(c => funds[c]);
+    const { funds, codes } = await getSelectedFunds();
     if (codes.length === 0) {
         showToast('⚠️ 选中的基金未找到', 'warning');
         return;
