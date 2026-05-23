@@ -871,6 +871,33 @@ function getConfirmDate(now = new Date(), forceAfterCutoff = null) {
     return computeConfirmDateByTiming({ now, forceAfterCutoff });
 }
 
+async function deriveAndValidateTradeInput(type, amount, shares, dividendAmount, navPrice, feeRate) {
+    if ((type === 'add' || type === 'initial') && amount <= 0 && shares > 0 && navPrice > 0)
+        amount = calculateGrossBuyAmountFromShares(shares, navPrice, feeRate);
+    if ((type === 'add' || type === 'initial') && shares <= 0 && amount > 0 && navPrice > 0)
+        shares = calculateNetBuyShares(amount, navPrice, feeRate);
+    if ((type === 'remove' || type === 'clear') && amount <= 0 && shares > 0 && navPrice > 0)
+        amount = calculateNetSellAmountFromShares(shares, navPrice, feeRate);
+    if ((type === 'remove' || type === 'clear') && shares <= 0 && amount > 0 && navPrice > 0)
+        shares = calculateSellSharesFromNetAmount(amount, navPrice, feeRate);
+    if ((type === 'add' || type === 'initial') && amount <= 0) {
+        await showAlert('建仓/加仓至少需要有效金额'); return null;
+    }
+    if ((type === 'remove' || type === 'clear') && shares <= 0) {
+        await showAlert('减仓/清仓必须填写有效份额，金额仅用于按净值联动计算'); return null;
+    }
+    if (isDividendType(type) && dividendAmount <= 0) {
+        await showAlert('分红金额不能为空'); return null;
+    }
+    if ((type === 'add' || type === 'initial') && shares <= 0 && !(navPrice > 0)) {
+        await showAlert('建仓/加仓缺少份额时，必须提供有效净值用于反推'); return null;
+    }
+    if ((type === 'remove' || type === 'clear') && shares <= 0 && !(navPrice > 0)) {
+        await showAlert('减仓/清仓缺少份额时，必须提供有效净值和费率用于反推'); return null;
+    }
+    return { amount, shares };
+}
+
 async function adjustPosition(code, type) {
     try {
         const { myFunds } = await storageHelper.getAll(['myFunds']);
@@ -1056,40 +1083,11 @@ async function backfillHistoricalTrade(code) {
         let shares = safeFloat(result.shares, 0);
         const dividendAmount = safeFloat(result.amount, 0);
 
-        if ((type === 'add' || type === 'initial') && amount <= 0 && shares > 0 && navPrice > 0) {
-            amount = calculateGrossBuyAmountFromShares(shares, navPrice, feeRate);
-        }
-        if ((type === 'add' || type === 'initial') && shares <= 0 && amount > 0 && navPrice > 0) {
-            shares = calculateNetBuyShares(amount, navPrice, feeRate);
-        }
-        if ((type === 'remove' || type === 'clear') && amount <= 0 && shares > 0 && navPrice > 0) {
-            amount = calculateNetSellAmountFromShares(shares, navPrice, feeRate);
-        }
-        if ((type === 'remove' || type === 'clear') && shares <= 0 && amount > 0 && navPrice > 0) {
-            shares = calculateSellSharesFromNetAmount(amount, navPrice, feeRate);
-        }
+        const derived = await deriveAndValidateTradeInput(type, amount, shares, dividendAmount, navPrice, feeRate);
+        if (!derived) return;
+        ({ amount, shares } = derived);
 
-        if ((type === 'add' || type === 'initial') && amount <= 0) {
-            await showAlert('建仓/加仓至少需要有效金额');
-            return;
-        }
-        if ((type === 'remove' || type === 'clear') && shares <= 0) {
-            await showAlert('减仓/清仓必须填写有效份额，金额仅用于按净值联动计算');
-            return;
-        }
-        if (isDividendType(type) && dividendAmount <= 0) {
-            await showAlert('分红金额不能为空');
-            return;
-        }
-
-        if ((type === 'add' || type === 'initial') && shares <= 0 && !(navPrice > 0)) {
-            await showAlert('建仓/加仓缺少份额时，必须提供有效净值用于反推');
-            return;
-        }
-        if ((type === 'remove' || type === 'clear') && shares <= 0 && !(navPrice > 0)) {
-            await showAlert('减仓/清仓缺少份额时，必须提供有效净值和费率用于反推');
-            return;
-        }
+        const isDividend = isDividendType(type);
         const orderPayload = {
             code,
             name: fundItem.name || live?.name || code,
@@ -1100,18 +1098,18 @@ async function backfillHistoricalTrade(code) {
             targetDate: tradeDate,
             confirmedDate: tradeDate,
             effectiveDate: tradeDate,
-            amount: isDividendType(type) ? dividendAmount : amount,
+            amount: isDividend ? dividendAmount : amount,
             shares,
             confirmedShares: (type === 'add' || type === 'dividend_reinvest') ? shares : 0,
             confirmedPrice: navPrice,
             orderNav: navPrice,
-            dividendAmount: isDividendType(type) ? dividendAmount : 0,
-            dividendNavPrice: isDividendType(type) ? navPrice : 0,
+            dividendAmount: isDividend ? dividendAmount : 0,
+            dividendNavPrice: isDividend ? navPrice : 0,
             feeRate,
             fee: navPrice > 0
                 ? round2((type === 'remove' || type === 'clear' ? shares * navPrice : amount) * feeRate / 100)
                 : 0,
-            perShare: isDividendType(type) && shares > 0
+            perShare: isDividend && shares > 0
                 ? round4(dividendAmount / shares)
                 : 0,
             isClear: type === 'clear',
@@ -1848,7 +1846,7 @@ async function showPendingTransactions(code) {
                 initialValues: {
                     type: getTradeDisplayType(adj) === 'clear' ? 'clear' : normalizeTradeAction(adj.type),
                     tradeDate: adj.orderDate || adj.date || adj.confirmedDate || '',
-                    amount: (isDividendType(adj.type) ? (adj.dividendAmount || adj.amount || '') : (adj.amount || '')) ? String(isDividendType(adj.type) ? (adj.dividendAmount || adj.amount || '') : (adj.amount || '')) : '',
+                    amount: (() => { const v = isDividendType(adj.type) ? adj.dividendAmount || adj.amount : adj.amount; return v ? String(v) : ''; })(),
                     shares: adj.shares ? String(adj.shares) : '',
                     navPrice: String(adj.confirmedPrice || adj.orderNav || adj.dividendNavPrice || ''),
                     feeRate: String(adj.feeRate || 0),
@@ -1870,40 +1868,11 @@ async function showPendingTransactions(code) {
             let shares = safeFloat(result.shares, 0);
             const dividendAmount = safeFloat(result.amount, 0);
 
-            if ((type === 'add' || type === 'initial') && amount <= 0 && shares > 0 && navPrice > 0) {
-                amount = calculateGrossBuyAmountFromShares(shares, navPrice, feeRate);
-            }
-            if ((type === 'add' || type === 'initial') && shares <= 0 && amount > 0 && navPrice > 0) {
-                shares = calculateNetBuyShares(amount, navPrice, feeRate);
-            }
-            if ((type === 'remove' || type === 'clear') && amount <= 0 && shares > 0 && navPrice > 0) {
-                amount = calculateNetSellAmountFromShares(shares, navPrice, feeRate);
-            }
-            if ((type === 'remove' || type === 'clear') && shares <= 0 && amount > 0 && navPrice > 0) {
-                shares = calculateSellSharesFromNetAmount(amount, navPrice, feeRate);
-            }
+            const derived = await deriveAndValidateTradeInput(type, amount, shares, dividendAmount, navPrice, feeRate);
+            if (!derived) return;
+            ({ amount, shares } = derived);
 
-            if ((type === 'add' || type === 'initial') && amount <= 0) {
-                await showAlert('建仓/加仓至少需要有效金额');
-                return;
-            }
-            if ((type === 'remove' || type === 'clear') && shares <= 0) {
-                await showAlert('减仓/清仓必须填写有效份额，金额仅用于按净值联动计算');
-                return;
-            }
-            if (isDividendType(type) && dividendAmount <= 0) {
-                await showAlert('分红金额不能为空');
-                return;
-            }
-            if ((type === 'add' || type === 'initial') && shares <= 0 && !(navPrice > 0)) {
-                await showAlert('建仓/加仓缺少份额时，必须提供有效净值用于反推');
-                return;
-            }
-            if ((type === 'remove' || type === 'clear') && shares <= 0 && !(navPrice > 0)) {
-                await showAlert('减仓/清仓缺少份额时，必须提供有效净值和费率用于反推');
-                return;
-            }
-
+            const isDividend = isDividendType(type);
             const nextOrder = {
                 ...adj,
                 type: type === 'clear' ? 'remove' : type,
@@ -1912,18 +1881,18 @@ async function showPendingTransactions(code) {
                 targetDate: tradeDate,
                 confirmedDate: tradeDate,
                 effectiveDate: tradeDate,
-                amount: isDividendType(type) ? dividendAmount : amount,
+                amount: isDividend ? dividendAmount : amount,
                 shares,
                 confirmedShares: (type === 'add' || type === 'dividend_reinvest') ? shares : 0,
                 confirmedPrice: navPrice,
                 orderNav: navPrice,
-                dividendAmount: isDividendType(type) ? dividendAmount : 0,
-                dividendNavPrice: isDividendType(type) ? navPrice : 0,
+                dividendAmount: isDividend ? dividendAmount : 0,
+                dividendNavPrice: isDividend ? navPrice : 0,
                 feeRate,
                 fee: navPrice > 0
                     ? round2((type === 'remove' || type === 'clear' ? shares * navPrice : amount) * feeRate / 100)
                     : 0,
-                perShare: isDividendType(type) && shares > 0
+                perShare: isDividend && shares > 0
                     ? round4(dividendAmount / shares)
                     : 0,
                 isClear: type === 'clear',
