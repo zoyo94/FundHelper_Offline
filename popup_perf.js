@@ -1444,16 +1444,17 @@ async function backfillMissingDailyProfitHistory(history, funds) {
     const todayStr = getToday();
     const dateSet = new Set();
     
-    for (const code of codes) {
-        const ords = await HistoryDB.getOrders(code);
+    await Promise.all(codes.map(async code => {
+        const [ords, hist] = await Promise.all([
+            HistoryDB.getOrders(code),
+            HistoryDB.getRange(code, '2000-01-01', todayStr)
+        ]);
         ordersMap.set(code, normalizeHistoricalOrdersForProfitBackfill(ords || []));
-        
-        const hist = await HistoryDB.getRange(code, '2000-01-01', todayStr);
         historyMap.set(code, hist || []);
         safeArray(hist, []).forEach(item => {
             if (item?.date) dateSet.add(item.date);
         });
-    }
+    }));
 
     const dateList = Array.from(dateSet)
         .filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date))
@@ -3541,16 +3542,16 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
                     await new Promise(resolve => setTimeout(resolve, CONFIG.BATCH_DELAY));
                 }
             }
-            await persistLiveSnapshot(
-                fetchedData
-                    .map(({ code, live }) => toSnapshotEntry(code, live))
-                    .filter(Boolean),
-                todayStr
-            );
-            await persistLiveApiRequestDate(todayStr);
-            if (isAfterAutoRefreshPauseCutoff()) {
-                await persistFinalLiveApiRequestDate(todayStr);
-            }
+            await Promise.all([
+                persistLiveSnapshot(
+                    fetchedData
+                        .map(({ code, live }) => toSnapshotEntry(code, live))
+                        .filter(Boolean),
+                    todayStr
+                ),
+                persistLiveApiRequestDate(todayStr),
+                isAfterAutoRefreshPauseCutoff() ? persistFinalLiveApiRequestDate(todayStr) : Promise.resolve()
+            ]);
         }
 
         const dominantMarketPrevPriceDate = getDominantMarketPrevPriceDate(fetchedData);

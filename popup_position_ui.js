@@ -196,7 +196,7 @@ async function rebuildDailyProfitHistory() {
             await _loadDataPromise.catch(() => null);
         }
 
-        const { myFunds } = await storageHelper.getAll(['myFunds', 'dailyProfitHistory']);
+        const { myFunds } = await storageHelper.getAll(['myFunds']);
         const funds = myFunds || {};
         const codes = Object.keys(funds);
         if (codes.length === 0) {
@@ -206,9 +206,7 @@ async function rebuildDailyProfitHistory() {
         }
 
         const emptyHistory = {};
-        for (const code of codes) {
-            await HistoryDB.deleteStateRecordsByCode(code).catch(() => {});
-        }
+        await Promise.all(codes.map(code => HistoryDB.deleteStateRecordsByCode(code).catch(() => {})));
         const { history: nextDailyProfitHistory } = await backfillMissingDailyProfitHistory(emptyHistory, funds);
         const normalizedNextHistory = normalizeDailyProfitHistory(nextDailyProfitHistory);
 
