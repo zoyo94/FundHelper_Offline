@@ -883,7 +883,7 @@ async function adjustPosition(code, type) {
         const live = await fetchLiveInfo(code);
         const defaultNav = live?.prevPrice || 1.0000;
         const isAdd = type === 'add';
-        const isDividend = type === 'dividend';
+        const isDividend = isDividendType(type);
         const title = isDividend ? '分红调整' : (isAdd ? '加仓设置' : '减仓设置');
         const now = new Date();
         const confirmDate = getConfirmDate(now);
@@ -1077,7 +1077,7 @@ async function backfillHistoricalTrade(code) {
             await showAlert('减仓/清仓必须填写有效份额，金额仅用于按净值联动计算');
             return;
         }
-        if ((type === 'dividend' || type === 'dividend_reinvest') && dividendAmount <= 0) {
+        if (isDividendType(type) && dividendAmount <= 0) {
             await showAlert('分红金额不能为空');
             return;
         }
@@ -1100,18 +1100,18 @@ async function backfillHistoricalTrade(code) {
             targetDate: tradeDate,
             confirmedDate: tradeDate,
             effectiveDate: tradeDate,
-            amount: (type === 'dividend' || type === 'dividend_reinvest') ? dividendAmount : amount,
-            shares: (type === 'dividend' || type === 'dividend_reinvest') ? shares : shares,
+            amount: isDividendType(type) ? dividendAmount : amount,
+            shares: isDividendType(type) ? shares : shares,
             confirmedShares: (type === 'add' || type === 'dividend_reinvest') ? shares : 0,
             confirmedPrice: navPrice,
             orderNav: navPrice,
-            dividendAmount: (type === 'dividend' || type === 'dividend_reinvest') ? dividendAmount : 0,
-            dividendNavPrice: (type === 'dividend' || type === 'dividend_reinvest') ? navPrice : 0,
+            dividendAmount: isDividendType(type) ? dividendAmount : 0,
+            dividendNavPrice: isDividendType(type) ? navPrice : 0,
             feeRate,
             fee: navPrice > 0
                 ? round2((type === 'remove' || type === 'clear' ? shares * navPrice : amount) * feeRate / 100)
                 : 0,
-            perShare: (type === 'dividend' || type === 'dividend_reinvest') && shares > 0
+            perShare: isDividendType(type) && shares > 0
                 ? round4(dividendAmount / shares)
                 : 0,
             isClear: type === 'clear',
@@ -1891,7 +1891,7 @@ async function showPendingTransactions(code) {
                 await showAlert('减仓/清仓必须填写有效份额，金额仅用于按净值联动计算');
                 return;
             }
-            if ((type === 'dividend' || type === 'dividend_reinvest') && dividendAmount <= 0) {
+            if (isDividendType(type) && dividendAmount <= 0) {
                 await showAlert('分红金额不能为空');
                 return;
             }
@@ -1912,18 +1912,18 @@ async function showPendingTransactions(code) {
                 targetDate: tradeDate,
                 confirmedDate: tradeDate,
                 effectiveDate: tradeDate,
-                amount: (type === 'dividend' || type === 'dividend_reinvest') ? dividendAmount : amount,
+                amount: isDividendType(type) ? dividendAmount : amount,
                 shares,
                 confirmedShares: (type === 'add' || type === 'dividend_reinvest') ? shares : 0,
                 confirmedPrice: navPrice,
                 orderNav: navPrice,
-                dividendAmount: (type === 'dividend' || type === 'dividend_reinvest') ? dividendAmount : 0,
-                dividendNavPrice: (type === 'dividend' || type === 'dividend_reinvest') ? navPrice : 0,
+                dividendAmount: isDividendType(type) ? dividendAmount : 0,
+                dividendNavPrice: isDividendType(type) ? navPrice : 0,
                 feeRate,
                 fee: navPrice > 0
                     ? round2((type === 'remove' || type === 'clear' ? shares * navPrice : amount) * feeRate / 100)
                     : 0,
-                perShare: (type === 'dividend' || type === 'dividend_reinvest') && shares > 0
+                perShare: isDividendType(type) && shares > 0
                     ? round4(dividendAmount / shares)
                     : 0,
                 isClear: type === 'clear',

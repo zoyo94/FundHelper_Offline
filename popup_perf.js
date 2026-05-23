@@ -3727,7 +3727,7 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
                                     confirmedTransactions.remove.push({ code, shares: adj.shares, price, fee });
                                     dataChanged = true;
                                 }
-                            } else if (adj.type === 'dividend') {
+                            } else if (isDividendType(adj.type)) {
                                 // 现金分红确认：
                                 // autoDetected 分红由结算层（累计净值差）统一处理，确认时一律跳过手动计入，
                                 // 避免结算层与确认层双重计算。
