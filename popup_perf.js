@@ -3495,24 +3495,22 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
         let funds = myFunds || {};
         const todayStr = getToday();
         let dataChanged = false;
-        for (const [code, item] of Object.entries(funds)) {
-            // --- 核心优化：如果 Storage 里的标的没名字，尝试从数据库恢复 ---
+
+        // 名字恢复 + addedDate 同步：并发跨基金，避免串行 IndexedDB 读
+        const nameChanges = await Promise.all(Object.entries(funds).map(async ([code, item]) => {
+            let changed = false;
             if (!item.name || item.name === code) {
                 try {
                     const latest = await HistoryDB.getLatest(code);
-                    if (latest && latest.name) {
-                        item.name = latest.name;
-                        dataChanged = true;
-                    }
+                    if (latest && latest.name) { item.name = latest.name; changed = true; }
                 } catch (dbErr) {
                     console.warn(`[RestoreName] ${code} 恢复失败:`, dbErr);
                 }
             }
+            return changed || syncAddedDateByPosition(item, todayStr);
+        }));
+        if (nameChanges.some(Boolean)) dataChanged = true;
 
-            if (syncAddedDateByPosition(item, todayStr)) {
-                dataChanged = true;
-            }
-        }
         const codes = Object.keys(funds);
         const results = [];
 
@@ -3522,8 +3520,11 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
             await loadFundHistoryData(codes);
         }
 
-        // 1. 获取行情数据 - 优化：批量并发请求
+        // 1. 获取行情数据 + 交易订单 Map（两者独立，并发启动）
         let fetchedData = [];
+        // 提前启动 buildTradeOrdersMap，与行情请求并发
+        const tradeOrdersMapPromise = buildTradeOrdersMap(codes);
+
         if (skipLiveRequests) {
             fetchedData = await buildLiveDataFromSnapshot(codes, funds, todayStr);
         }
@@ -3555,7 +3556,7 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
         }
 
         const dominantMarketPrevPriceDate = getDominantMarketPrevPriceDate(fetchedData);
-        const tradeOrdersMap = await buildTradeOrdersMap(codes);
+        const tradeOrdersMap = await tradeOrdersMapPromise;
 
         // 2. 保留实时接口分红检测；历史分红补录改为按需触发（如添加资产时）
         dataChanged = (await detectAutoDividends(funds, fetchedData, todayStr, tradeOrdersMap)) || dataChanged;
@@ -4461,11 +4462,11 @@ async function deleteFunds(codeList) {
     if (codeList.length === 0) return;
     const { myFunds } = await storageHelper.getAll(['myFunds']);
     const funds = myFunds || {};
-    for (const code of codeList) {
-        delete funds[code];
-        await HistoryDB.deleteOrdersByCode(code).catch(() => {});
-        await HistoryDB.deleteStateRecordsByCode(code).catch(() => {});
-    }
+    codeList.forEach(code => delete funds[code]);
+    await Promise.all(codeList.flatMap(code => [
+        HistoryDB.deleteOrdersByCode(code).catch(() => {}),
+        HistoryDB.deleteStateRecordsByCode(code).catch(() => {})
+    ]));
     clearSelection();
     removeFundsFromHistory(codeList);
     await storageHelper.setAll({ myFunds: funds });
