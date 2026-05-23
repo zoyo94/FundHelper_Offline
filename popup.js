@@ -32,10 +32,7 @@ const CONFIG = {
 
 // ==================== 业务常量 ====================
 const CONSTANTS = {
-    HISTORY_DAYS_LIMIT: 0,           // 旧常量：当前不再用于限制历史数据
-    DAILY_PROFIT_HISTORY_LIMIT: 0,   // 旧常量：当前不再用于截断存储中的日收益历史
     DAY_MS: 86400000,                // 1天毫秒数
-    PRICE_EPSILON: 0.0001,           // 价格比较精度阈值
     DIVIDEND_MIN_THRESHOLD: 0.0001,  // 分红最小阈值
     INTRADAY_CHART_START: '09:00',
     INTRADAY_CHART_MORNING_END: '11:30',

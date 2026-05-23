@@ -1101,7 +1101,7 @@ async function backfillHistoricalTrade(code) {
             confirmedDate: tradeDate,
             effectiveDate: tradeDate,
             amount: isDividendType(type) ? dividendAmount : amount,
-            shares: isDividendType(type) ? shares : shares,
+            shares,
             confirmedShares: (type === 'add' || type === 'dividend_reinvest') ? shares : 0,
             confirmedPrice: navPrice,
             orderNav: navPrice,

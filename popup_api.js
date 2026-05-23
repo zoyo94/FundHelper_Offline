@@ -165,8 +165,7 @@ async function fetchLiveInfo(code) {
                         const prevTradingDayDate = prev.x ? timestampToDate(prev.x) : '';
 
                         const dividendList = [];
-                        const recentData = netWorthData.slice(-CONSTANTS.HISTORY_DAYS_LIMIT);
-                        for (const item of recentData) {
+                        for (const item of netWorthData) {
                             if (item.unitMoney && item.unitMoney.includes('分红')) {
                                 const match = item.unitMoney.match(/([0-9.]+)元/);
                                 if (match) {
