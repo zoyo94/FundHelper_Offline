@@ -621,11 +621,8 @@ async function cleanupDuplicateTradeLifecycleOrders(code, referenceOrder, keepId
         return isSameTradeLifecycleOrder(order, referenceOrder);
     });
 
-    for (const duplicate of duplicates) {
-        const duplicateId = duplicate.id || duplicate.orderId || null;
-        if (!duplicateId) continue;
-        await HistoryDB.deleteOrder(duplicateId).catch(() => {});
-    }
+    const deleteIds = duplicates.map(d => d.id || d.orderId || null).filter(Boolean);
+    await Promise.all(deleteIds.map(id => HistoryDB.deleteOrder(id).catch(() => {})));
 }
 
 async function cleanupInitialOrdersForCode(code, keepId = null) {
@@ -656,11 +653,10 @@ async function cleanupInitialOrdersForCode(code, keepId = null) {
         await HistoryDB.updateOrder(preferredId, { ...preferred, id: preferredId }).catch(() => {});
     }
 
-    for (const order of initialOrders) {
-        const orderId = order.id || order.orderId || null;
-        if (!orderId || orderId === preferredId) continue;
-        await HistoryDB.deleteOrder(orderId).catch(() => {});
-    }
+    const deleteExtraIds = initialOrders
+        .map(o => o.id || o.orderId || null)
+        .filter(id => id && id !== preferredId);
+    await Promise.all(deleteExtraIds.map(id => HistoryDB.deleteOrder(id).catch(() => {})));
 
     const current = safeArray(runtimeTradeOrdersMap.get(code), []);
     const next = current.filter(order => normalizeTradeAction(order.type) !== 'initial');
@@ -670,9 +666,11 @@ async function cleanupInitialOrdersForCode(code, keepId = null) {
 
 async function syncFundAddedDateFromTradeOrders(code) {
     if (!code) return;
-    const orders = await HistoryDB.getOrders(code).catch(() => []);
+    const [orders, { myFunds }] = await Promise.all([
+        HistoryDB.getOrders(code).catch(() => []),
+        storageHelper.getAll(['myFunds'])
+    ]);
     const snapshot = calculatePositionSnapshotFromTradeOrders(orders);
-    const { myFunds } = await storageHelper.getAll(['myFunds']);
     const funds = myFunds || {};
     const fund = funds[code];
     if (!fund) return;
@@ -1100,17 +1098,12 @@ function extractDividendEventsFromHistoryRecords(records = [], addedDate = '') {
 }
 
 async function backfillHistoricalDividendOrdersFromHistoryDB(funds, todayStr, tradeOrdersMap = new Map()) {
-    let changed = false;
-    for (const [code, item] of Object.entries(funds || {})) {
-        const created = await backfillHistoricalDividendOrdersForFund(
-            code,
-            item,
-            todayStr,
-            tradeOrdersMap.get(code) || []
-        );
-        if (created) changed = true;
-    }
-    return changed;
+    const results = await Promise.all(
+        Object.entries(funds || {}).map(([code, item]) =>
+            backfillHistoricalDividendOrdersForFund(code, item, todayStr, tradeOrdersMap.get(code) || [])
+        )
+    );
+    return results.some(Boolean);
 }
 
 async function backfillHistoricalDividendOrdersForFund(code, item, todayStr = getToday(), existingOrders = []) {

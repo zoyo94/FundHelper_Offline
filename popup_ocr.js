@@ -229,9 +229,7 @@ function _parseOCRText(text) {
         let yp = 0;
         let hp = 0;
         let amt = 0;
-        if (hasYesterday && nums.length >= 3) {
-            [yp, hp, amt] = [nums[0], nums[1], nums[2]];
-        } else if (nums.length >= 3) {
+        if (nums.length >= 3) {
             [yp, hp, amt] = [nums[0], nums[1], nums[2]];
         } else if (nums.length === 2) {
             [hp, amt] = [nums[0], nums[1]];

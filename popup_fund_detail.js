@@ -162,22 +162,6 @@ async function openFundDetail(code) {
             });
         })();
 
-        (() => {
-            const yRate = calculateDisplayedYesterdayRate({
-                shares,
-                prevTradingDayPrice: live.prevTradingDayPrice || 0,
-                yesterdayProfit: fundData.yesterdayProfit || 0,
-                prevPrice: live.prevPrice || 0,
-                acNetValue: live.acNetValue,
-                prevAcNetValue: live.prevAcNetValue
-            });
-            const yEl = document.getElementById('detail-yesterday-rate');
-            if (yEl && !isStale()) {
-                yEl.textContent = formatProfit(yRate, '%');
-                yEl.className = 'detail-info-value bold ' + (yRate >= 0 ? 'up' : 'down');
-            }
-        })();
-
         content.querySelectorAll('.detail-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 content.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
