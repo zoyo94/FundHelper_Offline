@@ -1,5 +1,8 @@
 let _ocrModalEl = null;
 let _ocrItems = [];
+let _batchFillDate = '';
+let _batchFillFee = '';
+let _batchFillMode = 'cash';
 
 function _sendToTesseract(action, payload) {
     return new Promise((resolve, reject) => {
@@ -123,6 +126,16 @@ function _normalizeOCR(text) {
     }).join('\n');
 }
 
+function _makeOCRItem(overrides = {}) {
+    return {
+        code: '', name: '', amount: '', holdProfit: '', yesterdayProfit: '',
+        shares: 0, group: '默认',
+        addedDate: '', feeRate: 0, dividendMode: 'cash',
+        selected: true,
+        ...overrides
+    };
+}
+
 function _parseOCRText(text) {
     const normalized = _normalizeOCR(text);
     const lines = normalized.split('\n').map(l => l.trim()).filter(Boolean);
@@ -149,17 +162,17 @@ function _parseOCRText(text) {
 
     function isNameLine(s) {
         if (!s || s.length < 2) return false;
-        if (!/[\u4e00-\u9fa5]/.test(s)) return false;
+        if (!/[一-龥]/.test(s)) return false;
         if (NAME_EXCL.test(s)) return false;
         if (CODE_RE.test(s)) return false;
         if (/^\d+(\.\d+)?$/.test(s)) return false;
-        const cjk = (s.match(/[\u4e00-\u9fa5]/g) || []).length;
+        const cjk = (s.match(/[一-龥]/g) || []).length;
         return cjk / s.replace(/\s/g, '').length >= 0.3;
     }
 
     function nameSimilar(a, b) {
-        const ca = a.replace(/[^\u4e00-\u9fa5]/g, '');
-        const cb = b.replace(/[^\u4e00-\u9fa5]/g, '');
+        const ca = a.replace(/[^一-龥]/g, '');
+        const cb = b.replace(/[^一-龥]/g, '');
         if (!ca || !cb || ca.length < 4 || cb.length < 4) return false;
         const [shorter, longer] = ca.length <= cb.length ? [ca, cb] : [cb, ca];
         return longer.includes(shorter);
@@ -216,7 +229,6 @@ function _parseOCRText(text) {
 
     for (let i = 0; i < lines.length; i++) {
         if (!COL_HEAD_RE.test(lines[i])) continue;
-        const hasYesterday = /昨日收/.test(lines[i]);
 
         let dataLine = '';
         for (let j = i + 1; j <= Math.min(i + 3, lines.length - 1); j++) {
@@ -246,10 +258,10 @@ function _parseOCRText(text) {
         if (!fundName || seenNames.has(fundName)) continue;
         seenNames.add(fundName);
 
-        modeB.push({
-            code: '', name: fundName, amount: amt, holdProfit: hp, yesterdayProfit: yp,
-            shares: 0, group: '默认', selected: true, _needLookup: true, _claimed: false
-        });
+        modeB.push(_makeOCRItem({
+            name: fundName, amount: amt, holdProfit: hp, yesterdayProfit: yp,
+            _needLookup: true, _claimed: false
+        }));
     }
 
     const seenCodes = new Set();
@@ -263,7 +275,7 @@ function _parseOCRText(text) {
 
         let fundName = '';
         for (let k = i - 1; k >= Math.max(0, i - 4); k--) {
-            if (/[\u4e00-\u9fa5]/.test(lines[k])) { fundName = lines[k]; break; }
+            if (/[一-龥]/.test(lines[k])) { fundName = lines[k]; break; }
         }
 
         const codePos = fullText.indexOf(code);
@@ -310,10 +322,10 @@ function _parseOCRText(text) {
             }
         }
 
-        result.push({
+        result.push(_makeOCRItem({
             code, name: fundName, amount, holdProfit: hold, yesterdayProfit: yesterday,
-            shares: 0, group: '默认', selected: true, _needLookup: false
-        });
+            _needLookup: false
+        }));
     }
 
     for (const b of modeB) {
@@ -335,16 +347,37 @@ function _renderOCRTable() {
     const C = 'padding:4px 3px;';
     const I = 'background:#0d1b2e;border:1px solid #2a4a72;border-radius:4px;color:#c8d8f0;padding:2px 4px;font-size:11px;width:100%;box-sizing:border-box;';
 
-    let html = `
+    const batchBarHtml = `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#0a1628;border:1px solid #2a4a72;border-radius:6px;margin-bottom:6px;flex-wrap:wrap;">
+            <span style="font-size:11px;color:#4a6a90;white-space:nowrap;font-weight:600;">批量填写</span>
+            <label style="font-size:11px;color:#6a8aaa;display:flex;align-items:center;gap:4px;white-space:nowrap;">
+                确认净值日<input type="date" id="_batchDate" style="${I}width:116px;" value="${_batchFillDate}">
+            </label>
+            <label style="font-size:11px;color:#6a8aaa;display:flex;align-items:center;gap:4px;white-space:nowrap;">
+                费率%<input type="number" id="_batchFee" style="${I}width:58px;" value="${_batchFillFee}" min="0" step="0.01" placeholder="0">
+            </label>
+            <label style="font-size:11px;color:#6a8aaa;display:flex;align-items:center;gap:4px;white-space:nowrap;">
+                分红方式<select id="_batchMode" style="${I}width:70px;">
+                    <option value="cash" ${_batchFillMode !== 'reinvest' ? 'selected' : ''}>现金分红</option>
+                    <option value="reinvest" ${_batchFillMode === 'reinvest' ? 'selected' : ''}>红利再投</option>
+                </select>
+            </label>
+            <button id="_applyBatch" style="background:#1a2f50;color:#69b1ff;border:1px solid #2a4a72;border-radius:5px;padding:4px 12px;font-size:11px;cursor:pointer;white-space:nowrap;">应用到选中行</button>
+        </div>`;
+
+    let tableHtml = `
         <table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;">
             <colgroup>
-                <col style="width:24px">
-                <col style="width:68px">
-                <col style="width:64px">
-                <col style="width:80px">
-                <col style="width:74px">
-                <col style="width:74px">
-                <col style="width:48px">
+                <col style="width:22px">
+                <col style="width:62px">
+                <col style="width:66px">
+                <col style="width:76px">
+                <col style="width:66px">
+                <col style="width:66px">
+                <col style="width:44px">
+                <col style="width:88px">
+                <col style="width:50px">
+                <col style="width:62px">
             </colgroup>
             <thead><tr style="color:#4a6a90;border-bottom:1px solid #1e3a5f;white-space:nowrap;">
                 <th style="${C}"><input type="checkbox" id="_ocrChkAll" checked></th>
@@ -354,6 +387,9 @@ function _renderOCRTable() {
                 <th style="${C}">持有收益(元)</th>
                 <th style="${C}">昨日收益(元)</th>
                 <th style="${C}">分组</th>
+                <th style="${C}">确认净值日</th>
+                <th style="${C}">费率%</th>
+                <th style="${C}">分红方式</th>
             </tr></thead>
             <tbody>`;
 
@@ -361,8 +397,9 @@ function _renderOCRTable() {
         const codeStyle = a.code ? '' : 'border-color:#f5222d;';
         const hpVal = (a.holdProfit !== undefined && a.holdProfit !== 0) ? a.holdProfit : '';
         const ypVal = (a.yesterdayProfit !== undefined && a.yesterdayProfit !== 0) ? a.yesterdayProfit : '';
+        const feeVal = (a.feeRate !== undefined && a.feeRate !== 0) ? a.feeRate : '';
         const nameStr = (a.name || '').replace(/"/g, '&quot;');
-        html += `<tr style="border-bottom:1px solid #141f30;">
+        tableHtml += `<tr style="border-bottom:1px solid #141f30;">
             <td style="${C}"><input type="checkbox" class="_oc" data-i="${idx}" ${a.selected ? 'checked' : ''}></td>
             <td style="${C}"><input type="text" style="${I}${codeStyle}" value="${a.code || ''}" class="_oe" data-i="${idx}" data-f="code" placeholder="待填"></td>
             <td style="${C}" title="${nameStr}"><span style="color:#8aacce;font-size:10px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.name || '—'}</span></td>
@@ -370,11 +407,36 @@ function _renderOCRTable() {
             <td style="${C}"><input type="number" style="${I}" value="${hpVal}" class="_oe" data-i="${idx}" data-f="holdProfit" step="0.01" placeholder="0"></td>
             <td style="${C}"><input type="number" style="${I}" value="${ypVal}" class="_oe" data-i="${idx}" data-f="yesterdayProfit" step="0.01" placeholder="0"></td>
             <td style="${C}"><input type="text" style="${I}" value="${a.group}" class="_oe" data-i="${idx}" data-f="group"></td>
+            <td style="${C}"><input type="date" style="${I}" value="${a.addedDate || ''}" class="_oe" data-i="${idx}" data-f="addedDate"></td>
+            <td style="${C}"><input type="number" style="${I}" value="${feeVal}" class="_oe" data-i="${idx}" data-f="feeRate" min="0" step="0.01" placeholder="0"></td>
+            <td style="${C}"><select style="${I}" class="_oe" data-i="${idx}" data-f="dividendMode">
+                <option value="cash" ${a.dividendMode !== 'reinvest' ? 'selected' : ''}>现金</option>
+                <option value="reinvest" ${a.dividendMode === 'reinvest' ? 'selected' : ''}>再投</option>
+            </select></td>
         </tr>`;
     });
-    html += '</tbody></table>';
-    container.innerHTML = html;
+    tableHtml += '</tbody></table>';
 
+    container.innerHTML = batchBarHtml + tableHtml;
+
+    // 批量填写栏事件
+    container.querySelector('#_batchDate').oninput = e => { _batchFillDate = e.target.value; };
+    container.querySelector('#_batchFee').oninput = e => { _batchFillFee = e.target.value; };
+    container.querySelector('#_batchMode').onchange = e => { _batchFillMode = e.target.value; };
+    container.querySelector('#_applyBatch').onclick = () => {
+        const selectedCount = _ocrItems.filter(i => i.selected).length;
+        if (!selectedCount) { showToast('请先勾选要应用的行', 'warning'); return; }
+        _ocrItems.forEach(item => {
+            if (!item.selected) return;
+            if (_batchFillDate) item.addedDate = _batchFillDate;
+            if (_batchFillFee !== '') item.feeRate = parseFloat(_batchFillFee) || 0;
+            item.dividendMode = _batchFillMode || 'cash';
+        });
+        _renderOCRTable();
+        showToast(`已应用到 ${selectedCount} 个选中资产`, 'success', CONFIG.TOAST_SHORT);
+    };
+
+    // 全选/反选
     container.querySelector('#_ocrChkAll').onchange = function () {
         _ocrItems.forEach(a => a.selected = this.checked);
         container.querySelectorAll('._oc').forEach(cb => cb.checked = this.checked);
@@ -382,14 +444,17 @@ function _renderOCRTable() {
     container.querySelectorAll('._oc').forEach(cb => {
         cb.onchange = () => { _ocrItems[+cb.dataset.i].selected = cb.checked; };
     });
-    container.querySelectorAll('._oe').forEach(inp => {
-        inp.oninput = () => {
-            const idx = +inp.dataset.i;
-            const f = inp.dataset.f;
-            const numFields = ['amount', 'holdProfit', 'yesterdayProfit', 'shares'];
-            _ocrItems[idx][f] = numFields.includes(f)
-                ? (parseFloat(inp.value) || 0) : inp.value;
+
+    // 行内输入同步到 _ocrItems
+    const numFields = new Set(['amount', 'holdProfit', 'yesterdayProfit', 'shares', 'feeRate']);
+    container.querySelectorAll('._oe').forEach(el => {
+        const handler = () => {
+            const idx = +el.dataset.i;
+            const f = el.dataset.f;
+            _ocrItems[idx][f] = numFields.has(f) ? (parseFloat(el.value) || 0) : el.value;
         };
+        el.oninput = handler;
+        el.onchange = handler;
     });
 }
 
@@ -397,16 +462,14 @@ function openOCRBatchAdd() {
     if (_ocrModalEl) return;
 
     _ocrItems = [
-        { code: '', name: '', amount: '', holdProfit: '', yesterdayProfit: '', group: '默认', selected: true },
-        { code: '', name: '', amount: '', holdProfit: '', yesterdayProfit: '', group: '默认', selected: true },
-        { code: '', name: '', amount: '', holdProfit: '', yesterdayProfit: '', group: '默认', selected: true }
+        _makeOCRItem(), _makeOCRItem(), _makeOCRItem()
     ];
 
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);z-index:20000;display:flex;align-items:center;justify-content:center;';
 
     overlay.innerHTML = `
-        <div style="background:#111f35;border:1px solid #2a4a72;border-radius:12px;width:600px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.6);overflow:hidden;">
+        <div style="background:#111f35;border:1px solid #2a4a72;border-radius:12px;width:760px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.6);overflow:hidden;">
             <div style="padding:13px 18px;border-bottom:1px solid #1e3a5f;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
                 <span style="font-size:14px;font-weight:700;color:#e8f0ff;">⚡ 批量添加数据</span>
                 <span id="_ocrClose" style="cursor:pointer;color:#6a8aaa;font-size:20px;line-height:1;padding:0 2px;">✕</span>
@@ -427,7 +490,7 @@ function openOCRBatchAdd() {
 
             <div id="_ocrFoot" style="padding:10px 16px;border-top:1px solid #1e3a5f;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
                 <button id="_ocrAddRow" style="background:transparent; border:1px dashed #2a4a72; color:#69b1ff; border-radius:6px; padding:6px 14px; font-size:12px; cursor:pointer;">+ 增加一行</button>
-                <button id="_ocrSave" style="background:#1890ff;color:#fff;border:none;border-radius:6px;padding:7px 22px;font-size:13px;font-weight:600;cursor:pointer;">批量保存</button>
+                <button id="_ocrSave" style="background:#1890ff;color:#fff;border:none;border-radius:6px;padding:7px 22px;font-size:13px;font-weight:600;cursor:pointer;">批量保存选中</button>
             </div>
         </div>`;
 
@@ -438,12 +501,13 @@ function openOCRBatchAdd() {
         overlay.remove();
         _ocrModalEl = null;
         _ocrItems = [];
+        _batchFillDate = '';
+        _batchFillFee = '';
+        _batchFillMode = 'cash';
     };
 
     overlay.onclick = (e) => {
-        if (e.target === overlay) {
-            closeOCRModal();
-        }
+        if (e.target === overlay) closeOCRModal();
     };
 
     _renderOCRTable();
@@ -455,7 +519,7 @@ function openOCRBatchAdd() {
     fileInput.onchange = () => _runOCR(Array.from(fileInput.files));
 
     overlay.querySelector('#_ocrAddRow').onclick = () => {
-        _ocrItems.push({ code: '', name: '', amount: '', holdProfit: '', yesterdayProfit: '', group: '默认', selected: true });
+        _ocrItems.push(_makeOCRItem());
         _renderOCRTable();
     };
 
@@ -466,10 +530,9 @@ function openOCRBatchAdd() {
         lines.forEach(line => {
             const parts = line.trim().split(/\s+/);
             if (parts.length >= 2 && /^\d{6}$/.test(parts[0])) {
-                _ocrItems.push({
-                    code: parts[0], name: '', amount: parseFloat(parts[1]) || 0,
-                    holdProfit: 0, yesterdayProfit: 0, group: '默认', selected: true
-                });
+                _ocrItems.push(_makeOCRItem({
+                    code: parts[0], amount: parseFloat(parts[1]) || 0
+                }));
             }
         });
         overlay.querySelector('#_batchText').value = '';
@@ -533,7 +596,7 @@ async function _runOCR(files) {
 
         if (_ocrItems.length) {
             const found = _ocrItems.filter(a => a.code).length;
-            prog.textContent = `✅ 识别完成（${found} 个找到代码），请核对后批量保存`;
+            prog.textContent = `✅ 识别完成（${found} 个找到代码），请核对并填写确认净值日后批量保存`;
         } else {
             prog.textContent = '⚠️ 未识别到有效基金信息，请手动补充';
         }
@@ -556,34 +619,87 @@ async function _saveOCRItems() {
     try {
         const { myFunds } = await storageHelper.getAll(['myFunds']);
         const funds = myFunds || {};
-        for (const a of toSave) {
+        const todayStr = getToday();
+
+        await Promise.all(toSave.map(async (a) => {
             const code = String(a.code).trim().toUpperCase();
-            if (!code) continue;
+            if (!code) return;
             const existing = funds[code] || {};
-            let actualPrevPrice = existing.savedPrevPrice;
-            if (!actualPrevPrice) {
-                try {
-                    const liveInfo = await fetchLiveInfo(code);
-                    actualPrevPrice = liveInfo?.prevPrice || 0;
-                } catch (e) {
-                    actualPrevPrice = 0;
-                }
-            }
-            funds[code] = {
+
+            let live = null;
+            try { live = await fetchLiveInfo(code); } catch (_) {}
+
+            const manualDate = normalizePerfDate(a.addedDate || '');
+            const nextAmount = safeFloat(a.amount, 0);
+            const nextShares = safeFloat(a.shares, 0);
+
+            const nextFund = {
                 ...existing,
-                name: a.name || existing.name || '',
-                amount: a.amount ?? 0,
-                holdProfit: a.holdProfit ?? 0,
-                yesterdayProfit: a.yesterdayProfit ?? 0,
-                group: a.group || '默认',
-                savedPrevPrice: actualPrevPrice || existing.savedPrevPrice || undefined,
-                savedPrevDate: existing.savedPrevDate || getToday(),
+                name:            live?.name || a.name || existing.name || code,
+                amount:          nextAmount,
+                shares:          nextShares,
+                holdProfit:      safeFloat(a.holdProfit, 0),
+                yesterdayProfit: safeFloat(a.yesterdayProfit, 0),
+                group:           a.group || '默认',
+                dividendMode:    a.dividendMode || 'cash',
+                savedPrevPrice:  existing.savedPrevPrice || live?.prevPrice    || undefined,
+                savedPrevDate:   existing.savedPrevDate  || live?.prevPriceDate || todayStr,
+                savedAcNetValue: existing.savedAcNetValue || live?.acNetValue   || null,
+                addedDate:       manualDate || existing.addedDate || null,
             };
-            if (a.shares && a.shares > 0) {
-                funds[code].shares = a.shares;
+
+            if (!manualDate) {
+                syncAddedDateByPosition(nextFund, todayStr, {
+                    allowCreateAddedDateWithoutOrders: true
+                });
             }
-            syncAddedDateByPosition(funds[code], getToday());
-        }
+
+            funds[code] = nextFund;
+
+            // 写 initial 订单（仅新增资产且有持仓，已有持仓的基金跳过）
+            const isNewFund   = !existing.amount && !existing.shares;
+            const hasPosition = nextAmount > 0 || nextShares > 0;
+            let ordersForBackfill = [];
+            if (isNewFund && hasPosition) {
+                const feeRatePct = Math.max(0, safeFloat(a.feeRate, 0));
+                const principal  = round2(nextAmount - safeFloat(a.holdProfit, 0));
+                const fee        = round2(principal * feeRatePct / 100);
+                const orderNav   = nextShares > 0
+                    ? round4(principal * (1 - feeRatePct / 100) / nextShares)
+                    : (live?.prevPrice || 0);
+                const initialOrder = {
+                    code,
+                    name:          nextFund.name,
+                    group:         nextFund.group || '默认',
+                    date:          nextFund.addedDate || todayStr,
+                    type:          'initial',
+                    orderDate:     nextFund.addedDate || todayStr,
+                    targetDate:    nextFund.addedDate || todayStr,
+                    confirmedDate: nextFund.addedDate || todayStr,
+                    effectiveDate: nextFund.addedDate || todayStr,
+                    shares:        nextShares,
+                    amount:        principal,
+                    price:         orderNav,
+                    confirmedPrice: orderNav,
+                    orderNav,
+                    feeRate:       feeRatePct,
+                    fee,
+                    remark:        'OCR 批量导入时自动初始化',
+                    status:        'confirmed',
+                };
+                try {
+                    await HistoryDB.addOrder(initialOrder);
+                    ordersForBackfill = [initialOrder];
+                } catch (_) {}
+            }
+
+            // 补录历史分红
+            try {
+                await backfillHistoricalDividendOrdersForFund(
+                    code, nextFund, todayStr, ordersForBackfill
+                );
+            } catch (_) {}
+        }));
 
         await storageHelper.setAll({ myFunds: funds });
         showToast(`✅ 成功保存 ${toSave.length} 个资产！`, 'success');
