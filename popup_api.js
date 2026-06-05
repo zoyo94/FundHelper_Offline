@@ -224,6 +224,7 @@ async function fetchLiveInfo(code) {
                                     rate: typeof item.equityReturn !== 'undefined' ? parseFloat(item.equityReturn) : null,
                                     dividend: item.unitMoney || ''
                                 })).filter(d => d.date);
+                                // 仅在 url1（主接口）失败时才写 DB，避免每次刷新都写全量历史净值
                                 if (dbItems.length > 0 && !mainResult) {
                                     HistoryDB.batchPut(dbItems).catch(() => {});
                                 }

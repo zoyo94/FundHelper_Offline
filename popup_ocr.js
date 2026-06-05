@@ -619,6 +619,8 @@ async function _saveOCRItems() {
     try {
         const { myFunds } = await storageHelper.getAll(['myFunds']);
         const funds = myFunds || {};
+        // 在并发写入前，快照已有基金的 code 集合，用于准确判断"新增 vs 更新"
+        const existingCodes = new Set(Object.keys(funds));
         const todayStr = getToday();
 
         await Promise.all(toSave.map(async (a) => {
@@ -631,7 +633,7 @@ async function _saveOCRItems() {
 
             const manualDate = normalizePerfDate(a.addedDate || '');
             const nextAmount = safeFloat(a.amount, 0);
-            const nextShares = safeFloat(a.shares, 0);
+            const nextShares = roundShares(safeFloat(a.shares, 0));
 
             const nextFund = {
                 ...existing,
@@ -657,7 +659,8 @@ async function _saveOCRItems() {
             funds[code] = nextFund;
 
             // 写 initial 订单（仅新增资产且有持仓，已有持仓的基金跳过）
-            const isNewFund   = !existing.amount && !existing.shares;
+            // 用快照 existingCodes 判断：持仓归零的老基金 key 仍在集合里，不会误写重复 initial 订单
+            const isNewFund   = !existingCodes.has(code);
             const hasPosition = nextAmount > 0 || nextShares > 0;
             let ordersForBackfill = [];
             if (isNewFund && hasPosition) {
