@@ -9,7 +9,7 @@ Chrome 扩展（Manifest V3），用于离线追踪基金/期货资产。单页 
 ## 开发流程
 
 ### 测试修改
-1. 修改 `popup.js`、`popup.html` 或 `background.js` 代码
+1. 修改对应模块文件（`popup_*.js`、`popup.html`、`background.js` 等）
 2. 在 Chrome 中打开 `chrome://extensions/`
 3. 点击扩展卡片上的刷新图标
 4. 点击扩展图标打开 popup 进行测试
@@ -84,7 +84,7 @@ const storage = {
   - 使用 `nonNegativeFloat(value)` 确保非负浮点数（注：`nonNegative` 和 `nonNegativeInteger` 已废弃）
 - **数值格式化**：
   - 使用 `round2(num)` 处理所有金额（保留 2 位小数，带类型检查）
-  - 使用 `round6(num)` 处理所有份额（保留 6 位小数，带类型检查）
+  - 使用 `roundShares(num)` 处理所有份额（保留 2 位小数，和 App 口径一致）
   - 使用 `formatProfit(num, suffix)` 格式化收益显示（自动添加正负号，带类型检查）
 - **日期时间格式化**：
   - 使用 `getToday()` 获取 YYYY-MM-DD 格式字符串
@@ -118,7 +118,7 @@ chrome.storage.local.get(['myFunds'], (result) => { ... });
 {
   "005827": {
     amount: 10000.00,              // 当前持仓金额
-    shares: 9523.81,               // 当前持有份额 (保留6位小数)
+    shares: 9523.81,               // 当前持有份额 (保留2位小数)
     holdProfit: 1234.56,           // 累计收益 (历史总盈亏)
     yesterdayProfit: 123.45,       // 昨日收益 (上次结算的单日收益)
     group: "股票型",                // 分组名称
@@ -172,18 +172,11 @@ chrome.storage.local.get(['myFunds'], (result) => { ... });
 
 ### Worker 初始化模式
 
-Worker 采用**懒加载**和**缓存**策略，避免重复初始化：
+Worker 采用 `__TesseractDispatch` 代理模式（MV3 兼容），懒加载 + `window._tWorker` 缓存：
 ```javascript
-if (!window._tWorker) {
-    window._tWorker = await Tesseract.createWorker({
-        workerPath: chrome.runtime.getURL('worker.min.js'),
-        langPath: chrome.runtime.getURL('').replace(/\/$/, ''),
-        corePath: chrome.runtime.getURL('tesseract-core.wasm.js'),
-        logger: m => {}
-    });
-    await window._tWorker.loadLanguage('chi_sim');
-    await window._tWorker.initialize('chi_sim');
-}
+// 由 _getOCRWorker() 在 popup_ocr.js 内部管理，外部不需要直接操作
+// 初始化流程：load → loadLanguage('chi_sim') → initialize('chi_sim')
+// 识别调用：worker.recognize(imageData) → { data: { text } }
 ```
 
 ### CSP 要求
@@ -197,20 +190,33 @@ if (!window._tWorker) {
 
 没有 `wasm-unsafe-eval`，Tesseract WASM 将无法加载。
 
-### OCR 解析策略
+### OCR 解析策略与建仓流程
 
-1. 在 OCR 文本中查找 6 位数字基金代码
-2. 在代码上下 ±5 行范围内搜索金额/份额
-3. 向用户展示可编辑的结果表格
-4. 用户确认后批量保存
+1. 图片识别 / 文本解析 → 提取基金代码、金额、份额、收益
+2. 向用户展示可编辑结果表格（10列：代码、名称、持仓金额、持有收益、昨日收益、分组、**确认净值日**、**费率%**、**分红方式**）
+3. 顶部「批量填写」栏可一键将确认净值日/费率/分红方式应用到所有选中行
+4. 用户确认后批量保存，流程与正常新增资产一致：
+   - 写入 `myFunds`（含 `dividendMode`、`savedAcNetValue` 等完整字段）
+   - 对新基金写 `type: 'initial'` 订单到 HistoryDB
+   - 调用 `backfillHistoricalDividendOrdersForFund` 补录历史分红
 
 ## API 集成
 
 ### 多数据源
 
-- **天天基金**（`fundgz.1234567.com.cn`）- 实时基金估值
+- **天天基金**（`fundgz.1234567.com.cn`）- 实时基金估值（url1，主接口）
+- **东财历史净值**（`fund.eastmoney.com/pingzhongdata`）- 历史净值/分红/累计净值（url2，与 url1 并发请求）
 - **新浪**（`hq.sinajs.cn`）- 期货行情（通过 background 代理）
 - **腾讯**（`qt.gtimg.cn`）- 重仓股票行情
+
+### `fetchLiveInfo` 并发架构
+
+6位基金代码同时请求 url1 + url2（`Promise.allSettled`），合并结果：
+- url1 成功 → `mainResult`（估值、净值、名称）
+- url2 成功 → `fallbackResult`（累计净值、分红列表、前一交易日价格）；其历史净值数据**仅在 url1 失败时**才写入 HistoryDB（避免每次刷新触发大批量写盘）
+- 两者都成功 → merge：fallback 的 `acNetValue`/`dividendList`/`prevTradingDayPrice` 补充到 mainResult
+- 只有 url1 → 缺少分红检测字段，功能降级
+- 只有 url2 → 以 fallback 净值为基准，正常返回
 
 ### Background 代理用法
 
@@ -358,6 +364,30 @@ Background 会自动添加必需的请求头。
 
 ## 最近更新
 
+### v3.1.0 性能优化 + OCR 建仓补全 + Bug 修复（2026-05-27）
+
+#### 性能优化
+- ⚡ **fetchLiveInfo 并发**：url1（天天估值）+ url2（东财历史）改为 `Promise.allSettled` 同步请求，消除每次刷新 ~16s 串行等待，降至 ~8s
+- ⚡ **多处 IndexedDB 并发**：`backfillHistoricalDividendOrdersFromHistoryDB`、`cleanupDuplicateTradeLifecycleOrders`、`cleanupInitialOrdersForCode`、`deleteFunds`、`syncFundAddedDateFromTradeOrders` 均改为 `Promise.all`
+- ⚡ **loadData 并发优化**：名字恢复循环改为 `Promise.all`；`buildTradeOrdersMap` 提前启动与行情批量请求并发；三路 storage 写入并行
+- ⚡ **batchPut 守门**：历史净值只在 url1 失败时写入 IndexedDB，正常刷新路径不触发大批量写盘
+
+#### OCR 批量导入补全建仓信息
+- 📋 结果表格新增三列：**确认净值日**、**费率%**、**分红方式**，modal 从 600px 扩为 760px
+- 🎯 顶部「批量填写」栏：一键将三个字段应用到所有选中行
+- 💾 保存流程对齐正常新增资产：写入 `dividendMode`/`savedAcNetValue`/`addedDate`；新基金写 `type:initial` 订单到 HistoryDB；调用 `backfillHistoricalDividendOrdersForFund` 补录历史分红
+- 🔒 `isNewFund` 改用 `existingCodes` 快照判断，防止持仓归零基金误写重复 initial 订单
+
+#### 代码重构与清理
+- 🧹 `getSelectedFunds()` 辅助函数：提取4处重复的 myFunds fetch + selectedCodes 过滤
+- 🧹 `deriveAndValidateTradeInput()` 辅助函数：消除 backfillHistoricalTrade 两个18行重复验证块
+- 🧹 `_makeOCRItem()` 工厂函数：统一OCR item创建，确保新字段始终存在
+- 🧹 `popup_fund_detail.js`：删除16行重复计算 yesterdayRate 的 IIFE
+- 🧹 `popup_ocr.js`：合并两个执行相同赋值的 if/else if 分支
+- 🧹 `popup_trade.js`：统一 `isDividendType()` 调用，修复 `adj.type === 'dividend'` 漏判 dividend_reinvest
+- 🧹 删除 `popup_opt_utils.js`（未被加载的备胎工具文件）、`apiLogger` 调试套件
+- 🧹 清理死 CSS（`.modal-lead`、`profit-calendar-subtitle` 等）、三个旧 CONSTANTS 常量
+
 ### v3.0.0 架构重构 + IndexedDB（2026-05-22）
 - 🏗️ **模块化拆分**：单体 `popup.js`（8400 行）拆为 14 个职责单一的模块
 - 💾 **IndexedDB 持久化**：新增 `HistoryDB`（tradeOrders / 历史净值 / 状态快照 store），`chrome.storage.local` 只留配置与持仓快照
@@ -421,7 +451,7 @@ Background 会自动添加必需的请求头。
 - 📝 NAV 已自动反映分红影响（分红日 NAV 会下跌相应金额），无需额外调整
 
 ### v1.6 优化（2026-03-17）
-- `round6(num)` - 份额计算（保留 6 位小数）
+- `roundShares(num)` - 份额计算（保留 2 位小数，和 App 口径一致）
 - `formatProfit(num, suffix)` - 收益格式化（自动添加正负号）
 - `formatTime(date)` - 时间格式化 HH:MM
 - `formatDateTimeForFile(date)` - 文件名时间格式
@@ -452,9 +482,9 @@ Background 会自动添加必需的请求头。
 ### 添加新的批量操作
 
 1. 在 `popup.html` 的 FAB 菜单中添加按钮
-2. 在 popup.js 中创建 async 函数
-3. 使用 `selectedCodes` 获取选中的基金
-4. 通过 `storage.set()` 更新 storage
+2. 在 `popup_position_ui.js` 中创建 async 函数（用 `getSelectedFunds()` 获取选中基金）
+3. 使用 `selectedCodes` 获取选中的基金代码
+4. 通过 `storageHelper.setAll()` 更新 storage
 5. 调用 `loadData()` 刷新 UI
 6. 显示 toast 反馈
 
@@ -462,8 +492,8 @@ Background 会自动添加必需的请求头。
 
 1. 在 `manifest.json` 中添加 host 权限
 2. 如果有 CORS 问题 → 在 `background.js` 中添加代理逻辑
-3. 在 popup.js 中创建 fetch 函数
-4. 使用 `withTimeout(promise, ms, fallback)` 处理超时
+3. 在 `popup_api.js` 中创建 fetch 函数
+4. 使用 `withTimeout(promise, ms, fallback)` 处理超时（或 `Promise.allSettled` 并发多源）
 5. 更新 `fetchLiveInfo()` 使用新数据源
 
 ### 修改数据结构
@@ -495,6 +525,8 @@ Background 会自动添加必需的请求头。
 - [ ] 红利再投和现金分红模式切换正常
 - [ ] 通知中心正确记录各类操作和错误
 - [ ] OCR 批量添加正常工作（如有修改）
+- [ ] OCR 保存后 HistoryDB 有 type:initial 订单，myFunds 含 dividendMode/savedAcNetValue（如有修改）
+- [ ] 对已有持仓基金 OCR 导入不重写 initial 订单（如有修改）
 - [ ] 走势数据刷新后保留（如有修改）
 - [ ] Background 代理新浪 API 正常（如有修改）
 - [ ] 多选和批量操作正常
