@@ -21,8 +21,9 @@ FundHelper Offline 是一款功能强大的 Chrome 扩展，专为投资者设�
 - 🎯 **离线追踪** - 所有数据存储在本地，无需联网即可查看持仓
 - 📊 **实时估值** - 自动获取最新净值和估值，实时计算收益
 - 📈 **走势图表** - 今日估值走势图，支持刷新后数据保留
-- 🖼️ **OCR 识别** - 支持截图批量导入资产，自动识别代码和金额
+- 🖼️ **OCR 识别** - 支持截图批量导入资产，自动识别代码和金额；导入时可补填确认净值日、费率、分红方式，与手动新增完全一致
 - 💰 **收益计算** - 自动/手动日结算，按接口交易日准确计算昨日收益并保留当日首份备份
+- ⚡ **快速刷新** - 天天估值与东财历史净值并发请求，刷新耗时从 ~16s 降至 ~8s
 - 🔄 **加减仓管理** - T+1/T+2 确认机制，自动计算份额
 - 📁 **分组管理** - 自由分组，批量操作，灵活管理
 - 🎨 **现代 UI** - 深色主题，流畅动画，优雅交互
@@ -63,7 +64,7 @@ FundHelper Offline 是一款功能强大的 Chrome 扩展，专为投资者设�
 
 #### 添加资产
 - **手动添加**：输入代码、金额、份额等信息
-- **OCR 批量添加**：上传持仓截图，自动识别并批量导入
+- **OCR 批量添加**：上传持仓截图，自动识别并批量导入；结果表格支持编辑确认净值日、费率%、分红方式，「批量填写」栏可一键应用到选中行；保存流程与手动新增一致（写入 HistoryDB initial 订单 + 补录历史分红）
 - **支持类型**：基金（6位数字）、期货（字母+数字）
 
 #### 编辑资产
@@ -202,11 +203,11 @@ FundHelper_Offline/
 ├── tesseract.min.js           # OCR 核心库
 ├── worker.min.js              # OCR Worker
 ├── tesseract-core.wasm.js     # WASM 核心
-├── chi_sim.traineddata.gz     # 中文简体训练数据
+├── chi_sim.traineddata        # 中文简体训练数据
 └── README.md                  # 项目文档
 ```
 
-> v3.0.0 起 `popup.js` 已按职责拆分为 13 个模块（合计约 13,300 行），并将历史净值 / 状态 / 交易订单迁移至 IndexedDB（`HistoryDB`），`chrome.storage.local` 仅保留配置与持仓快照。
+> v3.0.0 起 `popup.js` 已按职责拆分为 13 个模块，并将历史净值 / 状态 / 交易订单迁移至 IndexedDB（`HistoryDB`），`chrome.storage.local` 仅保留配置与持仓快照。
 
 ### 代码优化亮点
 
@@ -269,7 +270,7 @@ function round2(num) {
 {
   "005827": {
     "amount": 10000.00,              // 当前持仓金额
-    "shares": 9523.81,               // 当前持有份额 (保留6位小数)
+    "shares": 9523.81,               // 当前持有份额 (保留2位小数)
     "holdProfit": 1234.56,           // 累计收益 (历史总盈亏)
     "yesterdayProfit": 123.45,       // 昨日收益 (上次结算的单日收益)
     "group": "股票型",                // 分组名称
@@ -384,7 +385,7 @@ function round2(num) {
 {
   "manifest_version": 3,
   "name": "资产收益助手",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "permissions": [
     "storage"
   ],
@@ -452,6 +453,13 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
 ---
 
 ## 📝 更新日志
+
+### v3.1.0 (2026-05-27) - 性能优化 + OCR 建仓补全 + Bug 修复
+- ⚡ **fetchLiveInfo 并发**：天天估值（url1）与东财历史净值（url2）改为 `Promise.allSettled` 同步请求，刷新耗时从 ~16s 降至 ~8s；历史净值仅在 url1 失败时写盘，正常刷新不触发大批量 DB 写入
+- ⚡ **多处并发优化**：分红补录、订单清理、名字恢复、删除基金等循环均改为 `Promise.all`，`buildTradeOrdersMap` 提前启动与行情请求并发
+- 📋 **OCR 建仓补全（方案A）**：结果表格新增确认净值日/费率%/分红方式三列，顶部「批量填写」栏一键应用到选中行；保存时写 `type:initial` 订单到 IndexedDB、补录历史分红、完整写入 `dividendMode`/`savedAcNetValue` 等字段，与手动新增资产完全一致
+- 🧹 **代码重构**：提取 `getSelectedFunds()`/`deriveAndValidateTradeInput()`/`_makeOCRItem()` 等辅助函数，统一 `isDividendType()` 调用，删除重复 IIFE 与死 CSS
+- 🐛 **Bug 修复**：修复 `batchPut` 守门丢失（并发重构引入）；修复 OCR `isNewFund` 用持仓金额判断导致零持仓老基金误写重复 initial 订单
 
 ### v3.0.0 (2026-05-22) - 架构重构与 IndexedDB 持久化
 - 🏗️ **模块化拆分**：8400 行单体 `popup.js` 按职责拆分为 13 个模块（api/history/perf/perf_chart/perf_panel/perf_state/perf_table/position_ui/trade/fund_detail/import_export/ocr 等）
@@ -524,7 +532,7 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
 - 🐛 **修复分红双重计算**：智能检查结算日期，避免分红被重复计入或漏掉
 
 ### v1.6 (2026-03-17) - 代码优化
-- 🛠️ `round6(num)` - 份额计算（保留6位小数）
+- 🛠️ `roundShares(num)` - 份额计算（保留2位小数，和 App 口径一致）
 - 🎨 `formatProfit(num, suffix)` - 收益格式化（自动添加正负号）
 - ⏰ `formatTime(date)` - 时间格式化 HH:MM
 - 📁 `formatDateTimeForFile(date)` - 文件名时间格式
