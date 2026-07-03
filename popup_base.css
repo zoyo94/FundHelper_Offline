@@ -1,0 +1,2415 @@
+/* ===== 基础重置 ===== */
+:root {
+    --bg-base: #07111f;
+    --bg-deep: #0b1728;
+    --surface-1: rgba(10, 22, 38, 0.88);
+    --surface-2: rgba(14, 29, 48, 0.92);
+    --surface-3: rgba(18, 42, 68, 0.74);
+    --line-soft: rgba(126, 170, 219, 0.12);
+    --line-mid: rgba(103, 146, 194, 0.28);
+    --text-main: #e5f0ff;
+    --text-soft: #9eb8d8;
+    --text-dim: #6f8fb3;
+    --brand: #4aa3ff;
+    --shadow-panel: 0 18px 46px rgba(0, 0, 0, 0.34);
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+body {
+    width: 580px;
+    height: 550px;
+    display: flex;
+    flex-direction: column;
+    font-family: "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    background:
+        radial-gradient(circle at top left, rgba(51, 143, 255, 0.2), transparent 32%),
+        radial-gradient(circle at top right, rgba(32, 197, 161, 0.12), transparent 24%),
+        linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-base) 100%);
+    color: var(--text-main);
+    position: relative;
+}
+
+body.is-fullscreen {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(rgba(255, 255, 255, 0.015), rgba(255, 255, 255, 0.015)),
+        repeating-linear-gradient(90deg, transparent 0 79px, rgba(255, 255, 255, 0.016) 79px 80px);
+    opacity: 0.4;
+}
+
+body>* {
+    position: relative;
+    z-index: 1;
+}
+
+/* ===== Header ===== */
+.header {
+    background: linear-gradient(135deg, rgba(16, 35, 58, 0.96) 0%, rgba(11, 25, 43, 0.94) 100%);
+    color: #e8f0ff;
+    padding: 12px 14px 10px;
+    font-weight: 700;
+    font-size: 14px;
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+    gap: 12px;
+    border-bottom: 1px solid var(--line-soft);
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.02);
+    position: relative;
+    z-index: 90;
+}
+
+.header-logo {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+    flex: 0 1 160px;
+}
+
+.header-logo::before {
+    content: '';
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    flex-shrink: 0;
+    background:
+        radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.26), transparent 32%),
+        linear-gradient(160deg, #49b0ff 0%, #1f7bff 55%, #1554c7 100%);
+    box-shadow: 0 10px 24px rgba(22, 119, 255, 0.28);
+    margin-top: 1px;
+}
+
+.header-title-block {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.header-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.25px;
+    color: #f4f8ff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.header-subtitle {
+    font-size: 10px;
+    line-height: 1.3;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(173, 203, 235, 0.72);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.header-actions {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex-shrink: 1;
+    margin-left: auto;
+}
+
+.header-icon-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 188, 232, 0.16);
+    background: rgba(255, 255, 255, 0.045);
+    color: #bed6f3;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: background 0.2s, color 0.2s, border-color 0.2s, transform 0.12s, box-shadow 0.2s;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.header-icon-glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 14px;
+    height: 14px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.header-icon-btn:hover,
+.header-icon-btn.active {
+    background: rgba(74, 163, 255, 0.18);
+    color: #eef6ff;
+    border-color: rgba(105, 177, 255, 0.34);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(8, 27, 50, 0.28);
+}
+
+.header-icon-btn:active {
+    transform: translateY(0);
+}
+
+.header-icon-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.25);
+}
+
+.refresh-control {
+    --refresh-progress: 1;
+    position: relative;
+    overflow: visible;
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    min-width: 116px;
+    min-height: 30px;
+    padding: 2px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.refresh-control::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(69, 196, 255, 0.22), rgba(33, 120, 255, 0.34));
+    transform: scaleX(var(--refresh-progress));
+    transform-origin: left center;
+    transition: transform 0.35s ease, background 0.2s ease, opacity 0.2s ease;
+    opacity: 0.94;
+    z-index: 0;
+    /* 原先靠父容器 overflow:hidden 裁出圆角，现在父容器改为 visible
+       （否则会连带裁切下拉菜单），改用 clip-path 自己裁圆角 */
+    clip-path: inset(0 round 999px);
+}
+
+.refresh-control:hover {
+    background: rgba(24, 144, 255, 0.14);
+    border-color: rgba(105, 177, 255, 0.28);
+}
+
+.refresh-control:focus-within {
+    border-color: rgba(105, 177, 255, 0.45);
+    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.12);
+}
+
+.refresh-control.is-medium::before {
+    background: linear-gradient(90deg, rgba(255, 196, 69, 0.24), rgba(255, 149, 0, 0.34));
+}
+
+.refresh-control.is-low::before {
+    background: linear-gradient(90deg, rgba(255, 117, 117, 0.26), rgba(255, 77, 79, 0.38));
+}
+
+.refresh-control.is-empty::before {
+    opacity: 0.28;
+}
+
+.refresh-control.is-refreshing::before {
+    background: linear-gradient(90deg, rgba(102, 187, 255, 0.28), rgba(61, 132, 255, 0.42));
+    transform: scaleX(1);
+    opacity: 1;
+}
+
+.refresh-control-divider {
+    position: relative;
+    z-index: 1;
+    width: 1px;
+    height: 16px;
+    background: rgba(120, 158, 199, 0.28);
+    margin: 0 2px;
+    flex-shrink: 0;
+    transition: background 0.2s, opacity 0.2s;
+}
+
+.refresh-interval-select {
+    position: relative;
+    z-index: 1;
+    width: 18px;
+    min-width: 18px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    color: transparent;
+    background: transparent;
+    box-shadow: none;
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    text-indent: -999px;
+    background-image: linear-gradient(45deg, transparent 50%, #7fb7ff 50%), linear-gradient(135deg, #7fb7ff 50%, transparent 50%);
+    background-position: calc(50% - 3px) calc(50% - 1px), calc(50% + 2px) calc(50% - 1px);
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+}
+
+.refresh-interval-select:hover {
+    opacity: 0.85;
+}
+
+.refresh-interval-select:focus {
+    box-shadow: none;
+}
+
+.refresh-interval-select option {
+    color: #c8d8f0;
+    font-size: 12px;
+    text-indent: 0;
+}
+
+.refresh-interval-select:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+body.is-fullscreen .refresh-control {
+    min-width: 80px;
+}
+
+@media (max-width: 640px) {
+    .refresh-control {
+        min-width: 114px;
+    }
+}
+
+#refreshBtn {
+    position: relative;
+    z-index: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 26px;
+    background: transparent;
+    border: none;
+    color: #dcecff;
+    padding: 0 10px 0 12px;
+    border-radius: 999px;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+#refreshBtn:hover {
+    color: #f2f8ff;
+}
+
+#refreshBtn:focus-visible {
+    outline: none;
+}
+
+.refresh-btn-inner {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 5px;
+    min-width: 0;
+}
+
+body.is-fullscreen #refreshBtn {
+    padding-left: 13px;
+}
+
+@media (max-width: 640px) {
+    #refreshBtn {
+        padding: 0 9px 0 11px;
+    }
+}
+
+#refreshBtn.spinning .refresh-btn-inner {
+    animation: pulseGlow 1s ease-in-out infinite;
+}
+
+#refreshBtn .refresh-text {
+    display: inline-block;
+}
+
+#refreshBtn .refresh-text:empty {
+    display: none;
+}
+
+#refreshBtn .refresh-text,
+#refreshBtn .refresh-icon {
+    position: relative;
+    z-index: 1;
+}
+
+#refreshBtn .refresh-text {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+}
+
+#refreshBtn .refresh-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+#refreshBtn.spinning .refresh-icon {
+    animation: spin 0.8s linear infinite;
+}
+
+.refresh-control>* {
+    position: relative;
+    z-index: 1;
+}
+
+.refresh-control .refresh-interval-select {
+    padding-left: 0;
+}
+
+.refresh-control.is-disabled #refreshBtn,
+.refresh-control.is-disabled .refresh-interval-select {
+    cursor: wait;
+}
+
+.refresh-control.is-refreshing #refreshBtn {
+    color: #e9f4ff;
+}
+
+.refresh-control.is-refreshing .refresh-interval-select {
+    opacity: 0.88;
+}
+
+@keyframes pulseGlow {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.72;
+    }
+}
+
+.market-ticker {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    flex: 1 1 220px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    overflow: hidden;
+}
+
+.market-ticker-track {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.market-ticker-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    cursor: default;
+}
+
+.market-ticker-copy:hover {
+    animation-play-state: paused !important;
+}
+
+.market-ticker-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.15px;
+    flex-shrink: 0;
+}
+
+.market-ticker-label {
+    color: #86a9cf;
+    white-space: nowrap;
+}
+
+.market-ticker-value {
+    color: #d8eaff;
+    font-variant-numeric: tabular-nums;
+}
+
+.market-ticker-empty {
+    font-size: 11px;
+    color: #7f9ab9;
+    font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.market-ticker-item.is-index .market-ticker-label {
+    color: #a0b8d8;
+}
+
+/* ===== 指数设置面板 ===== */
+.index-settings-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    color: #d8eaff;
+    height: 420px;
+    min-height: 0;
+}
+
+/* 左栏：已添加 */
+.index-settings-left {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(103, 146, 194, 0.18);
+    border-radius: 14px;
+    background: rgba(7, 17, 31, 0.42);
+    padding: 12px;
+    min-height: 0;
+}
+
+/* 右栏：可选 */
+.index-settings-right {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(103, 146, 194, 0.18);
+    border-radius: 14px;
+    background: rgba(7, 17, 31, 0.3);
+    padding: 12px;
+    min-height: 0;
+}
+
+.index-settings-col-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #7f9fc4;
+    letter-spacing: 0.35px;
+    text-transform: uppercase;
+    margin-bottom: 9px;
+    flex-shrink: 0;
+}
+
+/* 已选列表 */
+.index-settings-selected-grid {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.index-settings-selected-grid::-webkit-scrollbar {
+    width: 3px;
+}
+
+.index-settings-selected-grid::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.index-settings-selected-grid::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 2px;
+}
+
+.index-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 9px;
+    cursor: grab;
+    transition: background 0.15s;
+    border: 1px solid rgba(103, 146, 194, 0.12);
+    background: rgba(12, 26, 44, 0.52);
+    user-select: none;
+}
+
+.index-card:hover {
+    background: rgba(22, 48, 78, 0.68);
+    border-color: rgba(105, 177, 255, 0.24);
+}
+
+.index-card.dragging {
+    opacity: 0.4;
+    cursor: grabbing;
+}
+
+.index-card.drag-over {
+    border-top: 2px solid rgba(0, 153, 255, 0.6);
+}
+
+.index-card-drag-handle {
+    color: rgba(255, 255, 255, 0.18);
+    font-size: 11px;
+    letter-spacing: -1px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.index-card-title {
+    font-size: 12px;
+    color: #c8d8f0;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.index-card-price {
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-width: 60px;
+    text-align: right;
+}
+
+.index-card-rate {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    min-width: 52px;
+    text-align: right;
+}
+
+.index-card-remove {
+    font-size: 13px;
+    color: rgba(255, 77, 79, 0.4);
+    cursor: pointer;
+    flex-shrink: 0;
+    width: 18px;
+    text-align: center;
+    transition: color 0.15s;
+    line-height: 1;
+}
+
+.index-card-remove:hover {
+    color: #ff4d4f;
+}
+
+.index-card-up .index-card-price,
+.index-card-up .index-card-rate {
+    color: #ff6168;
+}
+
+.index-card-down .index-card-price,
+.index-card-down .index-card-rate {
+    color: #4dd38a;
+}
+
+.index-card-none .index-card-price,
+.index-card-none .index-card-rate {
+    color: #4a6a90;
+}
+
+.index-settings-empty {
+    padding: 24px 0;
+    text-align: center;
+    color: #3a5a7a;
+    font-size: 12px;
+}
+
+/* 右栏：分组可选 */
+.index-settings-all-list {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.index-settings-all-list::-webkit-scrollbar {
+    width: 3px;
+}
+
+.index-settings-all-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.index-settings-all-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 2px;
+}
+
+.index-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.index-group-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #3a5a7a;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.index-group-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.index-tag-item {
+    padding: 4px 8px;
+    background: rgba(10, 22, 38, 0.58);
+    border: 1px solid rgba(103, 146, 194, 0.18);
+    border-radius: 999px;
+    font-size: 11px;
+    color: #7f9ab9;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.index-tag-item:hover {
+    background: rgba(26, 58, 92, 0.62);
+    color: #d8eaff;
+    border-color: rgba(105, 177, 255, 0.25);
+}
+
+.index-tag-item.active {
+    background: rgba(24, 144, 255, 0.18);
+    border-color: rgba(91, 168, 240, 0.44);
+    color: #b9ddff;
+}
+
+.index-tag-item.active:hover {
+    background: rgba(0, 153, 255, 0.18);
+}
+
+#modalOverlay[data-mode="index-settings"] .modal-box {
+    max-width: 640px;
+    width: 92%;
+}
+
+#modalOverlay[data-mode="index-settings"] .modal-msg {
+    margin-bottom: 0;
+    padding: 0;
+}
+
+.index-settings-row:hover {
+    background: rgba(26, 58, 92, 0.52);
+}
+
+.index-settings-row input[type=checkbox] {
+    accent-color: #1890ff;
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+}
+
+.index-settings-code {
+    margin-left: auto;
+    font-size: 11px;
+    color: #7f9ab9;
+    font-variant-numeric: tabular-nums;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+#fullscreenBtn {
+    font-size: 15px;
+}
+
+body.is-fullscreen #fullscreenBtn {
+    display: none;
+}
+
+.refresh-control:has(#refreshBtn.spinning) {
+    border-color: rgba(105, 177, 255, 0.35);
+    background: rgba(24, 144, 255, 0.16);
+}
+
+.refresh-control:has(#refreshBtn.spinning) .refresh-control-divider {
+    background: rgba(120, 183, 255, 0.4);
+}
+
+.refresh-control:has(#refreshBtn.spinning) .refresh-interval-select,
+.refresh-control:has(#refreshBtn.spinning) #refreshBtn {
+    color: #8ec5ff;
+}
+
+@supports not selector(:has(*)) {
+    .refresh-control.is-refreshing {
+        border-color: rgba(105, 177, 255, 0.35);
+        background: rgba(24, 144, 255, 0.16);
+    }
+
+    .refresh-control.is-refreshing .refresh-control-divider {
+        background: rgba(120, 183, 255, 0.4);
+    }
+
+    .refresh-control.is-refreshing .refresh-interval-select,
+    .refresh-control.is-refreshing #refreshBtn {
+        color: #8ec5ff;
+    }
+}
+
+.refresh-control.is-disabled {
+    opacity: 0.85;
+}
+
+input,
+select {
+    padding: 6px 8px;
+    background: rgba(6, 16, 29, 0.88);
+    border: 1px solid rgba(86, 127, 172, 0.34);
+    border-radius: 10px;
+    font-size: 12px;
+    color: #c8d8f0;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+input::placeholder {
+    color: #6f8fb3;
+}
+
+input:focus,
+select:focus {
+    border-color: #1890ff;
+    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.15);
+}
+
+select option {
+    background: #08111f;
+}
+
+button {
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 10px;
+    transition: filter 0.15s, transform 0.1s;
+}
+
+button:hover {
+    filter: brightness(1.15);
+}
+
+button:active {
+    transform: scale(0.96);
+}
+
+/* ===== 统计栏 ===== */
+.summary-bar {
+    padding: 12px 14px 8px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 8px;
+    font-size: 11px;
+    color: #6a8aaa;
+    flex-shrink: 0;
+}
+
+.summary-item {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 12px 12px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(16, 35, 58, 0.84), rgba(11, 23, 38, 0.9));
+    border: 1px solid rgba(92, 132, 176, 0.16);
+    text-align: left;
+    line-height: 1.25;
+    box-shadow: var(--shadow-panel);
+    position: relative;
+    overflow: hidden;
+}
+
+.summary-item::after {
+    content: '';
+    position: absolute;
+    inset: auto auto -18px -18px;
+    width: 66px;
+    height: 66px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(74, 163, 255, 0.15), transparent 68%);
+    pointer-events: none;
+}
+
+.summary-label {
+    max-width: 100%;
+    font-size: 10px;
+    color: #89a9cb;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.15;
+}
+
+.summary-item b {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: #f2f7ff;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.summary-item b.up {
+    color: #f5222d;
+}
+
+.summary-item b.down {
+    color: #39b56e;
+}
+
+/* ===== 筛选栏 ===== */
+.filter-bar {
+    position: relative;
+    margin: 0 14px 10px;
+    padding: 10px 12px;
+    background: linear-gradient(180deg, rgba(14, 29, 48, 0.9), rgba(10, 22, 38, 0.94));
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    border: 1px solid var(--line-soft);
+    border-radius: 16px;
+    box-shadow: var(--shadow-panel), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    flex-wrap: wrap;
+    overflow: visible;
+    z-index: 80;
+}
+
+.filter-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 0 1 auto;
+}
+
+.filter-left select {
+    min-width: 0;
+    width: 124px;
+    max-width: 100%;
+    flex: 0 1 124px;
+}
+
+.multi-select-filter {
+    position: relative;
+    min-width: 0;
+    width: 132px;
+    max-width: 100%;
+    flex: 0 1 132px;
+    z-index: 90;
+}
+
+.multi-select-trigger {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 7px 10px;
+    background: rgba(7, 17, 31, 0.88);
+    border: 1px solid rgba(93, 132, 176, 0.42);
+    border-radius: 8px;
+    color: #c8d8f0;
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.multi-select-trigger:hover {
+    border-color: #3a5a82;
+}
+
+.multi-select-filter[data-state="multi"] .multi-select-trigger,
+.multi-select-filter[data-state="one"] .multi-select-trigger {
+    border-color: rgba(105, 177, 255, 0.58);
+}
+
+.multi-select-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
+
+.multi-select-arrow {
+    color: #6f8fb3;
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.multi-select-popover {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 156px;
+    max-width: 180px;
+    max-height: 184px;
+    overflow-y: auto;
+    background: #08111f;
+    border: 1px solid rgba(82, 119, 160, 0.36);
+    border-radius: 10px;
+    padding: 5px;
+    z-index: 1000;
+    box-shadow: 0 14px 26px rgba(0, 0, 0, 0.48);
+    backdrop-filter: none;
+}
+
+.multi-select-popover[hidden] {
+    display: none;
+}
+
+.multi-select-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 26px;
+    padding: 4px 7px 4px 9px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: #8fa6c2;
+    cursor: pointer;
+    user-select: none;
+    background: transparent;
+    position: relative;
+    border: 1px solid transparent;
+}
+
+.multi-select-option:hover {
+    background: rgba(35, 63, 96, 0.58);
+    color: #d4e5fa;
+    border-color: rgba(111, 154, 202, 0.14);
+}
+
+.multi-select-option input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    position: absolute;
+}
+
+.multi-select-option-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.multi-select-option-mark {
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    color: transparent;
+    font-size: 11px;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+
+.multi-select-option:has(input[type="checkbox"]:checked) {
+    color: #f0f7ff;
+    background: #123154;
+    border-color: rgba(93, 168, 240, 0.32);
+}
+
+.multi-select-option:has(input[type="checkbox"]:checked) .multi-select-option-mark {
+    color: #ffffff;
+    background: #238cf2;
+}
+
+.multi-select-option.is-all:has(input[type="checkbox"]:checked)::before {
+    content: '';
+    position: absolute;
+    left: -1px;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    border-radius: 999px;
+    background: #4aa3ff;
+}
+
+.multi-select-option.is-all {
+    margin-bottom: 4px;
+    color: #d8e8fb;
+    font-weight: 600;
+}
+
+.header-ticker-wrap {
+    display: flex;
+    align-items: center;
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    gap: 6px;
+    padding: 2px 10px 0;
+    border: 1px solid rgba(150, 190, 232, 0.1);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.035);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.header-ticker-wrap .market-ticker {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 100%;
+    justify-content: flex-start;
+}
+
+.header-ticker-wrap .market-ticker-track {
+    justify-content: flex-start;
+    overflow: hidden;
+}
+
+.header-ticker-wrap .market-ticker-copy {
+    display: flex;
+    align-items: center;
+    width: max-content;
+    gap: 32px;
+    padding-right: 32px;
+}
+
+.header-ticker-wrap .market-ticker-copy.is-animating {
+    animation: ticker-scroll 30s linear infinite;
+}
+
+.header-ticker-wrap .market-ticker-item {
+    font-size: 11px;
+    gap: 8px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
+/* 统一着色：红涨绿跌 */
+.market-ticker-item.is-up,
+.market-ticker-item.is-up .market-ticker-value,
+.market-ticker-item.is-limit-up .market-ticker-value {
+    color: #ff5252;
+    font-weight: 500;
+}
+
+.market-ticker-item.is-down,
+.market-ticker-item.is-down .market-ticker-value,
+.market-ticker-item.is-limit-down .market-ticker-value {
+    color: #2ecc71;
+    font-weight: 500;
+}
+
+.market-ticker-item .market-ticker-price,
+.market-ticker-item .market-ticker-change,
+.market-ticker-item .market-ticker-value {
+    font-weight: 600;
+}
+
+.market-ticker-mv {
+    opacity: 0.7;
+    font-size: 10px;
+    margin-left: 2px;
+}
+
+@keyframes ticker-scroll {
+    from {
+        transform: translateX(0);
+    }
+
+    to {
+        transform: translateX(-50%);
+    }
+}
+
+.filter-bar label,
+.filter-label {
+    font-size: 11px;
+    color: #6f8fb3;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+/* 筛选栏广度数据样式 */
+.filter-breadth {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    margin: 0 4px;
+    color: #a0c2e8;
+    flex: 1;
+    justify-content: center;
+    min-width: 120px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.filter-breadth-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.filter-breadth-label {
+    color: #6f8fb3;
+    opacity: 0.8;
+}
+
+.filter-breadth-value {
+    font-weight: 700;
+    font-family: "JetBrains Mono", "Roboto Mono", monospace;
+}
+
+.filter-breadth-item.is-up .filter-breadth-value,
+.filter-breadth-item.is-limit-up .filter-breadth-value {
+    color: #ff4d4f;
+}
+
+.filter-breadth-item.is-down .filter-breadth-value,
+.filter-breadth-item.is-limit-down .filter-breadth-value {
+    color: #26b47a;
+}
+
+.filter-action-btn {
+    width: 34px;
+    height: 34px;
+    min-height: 34px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(24, 144, 255, 0.2), rgba(24, 144, 255, 0.08));
+    border: 1px solid rgba(105, 177, 255, 0.32);
+    color: #d6ebff;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0;
+    border-radius: 12px;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 6px 18px rgba(5, 17, 34, 0.24);
+    transition: transform 0.12s, border-color 0.2s, box-shadow 0.2s, background 0.2s, color 0.2s;
+}
+
+#profitCalendarBtn {
+    max-width: none;
+}
+
+.filter-action-btn:hover {
+    background: linear-gradient(135deg, rgba(24, 144, 255, 0.3), rgba(24, 144, 255, 0.13));
+    color: #f0f7ff;
+    border-color: rgba(145, 202, 255, 0.52);
+    transform: translateY(-1px);
+}
+
+.filter-action-btn:active {
+    transform: translateY(0);
+}
+
+.profit-calendar-modal {
+    white-space: normal;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.profit-calendar-toolbar,
+.profit-calendar-month-summary,
+.profit-calendar-detail {
+    border: 1px solid rgba(103, 146, 194, 0.18);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(14, 29, 48, 0.93), rgba(9, 20, 35, 0.95));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.profit-calendar-toolbar {
+    padding: 10px 12px;
+}
+
+.profit-calendar-caption {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.profit-calendar-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+}
+
+.profit-calendar-title {
+    font-size: 14px;
+    color: #f3f8ff;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    min-width: 0;
+}
+
+.profit-calendar-meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 5px;
+}
+
+.profit-calendar-meta-item,
+.profit-calendar-detail-badge,
+.profit-calendar-month-summary-days {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(64, 103, 148, 0.42);
+    background: rgba(10, 22, 38, 0.42);
+    color: #bfd6f5;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.15px;
+    white-space: nowrap;
+}
+
+.profit-calendar-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    align-items: center;
+    padding: 0 4px;
+}
+
+.profit-calendar-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.profit-calendar-nav-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid rgba(103, 146, 194, 0.24);
+    background: rgba(19, 39, 66, 0.86);
+    color: #d6e4ff;
+    font-size: 15px;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.profit-calendar-nav-btn:hover {
+    border-color: rgba(105, 177, 255, 0.42);
+    background: rgba(31, 65, 105, 0.9);
+}
+
+.profit-calendar-nav-btn.close-btn {
+    margin-left: auto;
+    color: #ffb3b3;
+    background: rgba(129, 35, 35, 0.38);
+    border-color: rgba(200, 50, 50, 0.44);
+}
+
+.profit-calendar-nav-btn.close-btn:hover {
+    background: rgba(160, 40, 40, 0.45);
+    border-color: rgba(250, 100, 100, 0.55);
+}
+
+.profit-calendar-month {
+    min-width: 104px;
+    padding: 7px 12px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: #f3f8ff;
+    border-radius: 10px;
+    background: rgba(10, 22, 38, 0.66);
+    border: 1px solid rgba(42, 74, 114, 0.5);
+}
+
+.profit-calendar-weekdays,
+.profit-calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 5px;
+}
+
+.profit-calendar-grid.view-month {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.profit-calendar-grid.view-year {
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+}
+
+.profit-calendar-grid.view-month .profit-calendar-day-btn,
+.profit-calendar-grid.view-year .profit-calendar-day-btn {
+    min-height: 72px;
+}
+
+.profit-calendar-grid.view-month .profit-calendar-day-label,
+.profit-calendar-grid.view-year .profit-calendar-day-label {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.profit-calendar-view-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 10px;
+    border: 1px solid rgba(42, 74, 114, 0.55);
+    background: rgba(10, 22, 38, 0.66);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.profit-calendar-view-btn {
+    min-width: 28px;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #94adcc;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.profit-calendar-view-btn:hover {
+    color: #d6e4ff;
+}
+
+.profit-calendar-view-btn.is-active {
+    background: linear-gradient(180deg, #1f4e8a, #163a6a);
+    color: #f3f8ff;
+    border-color: rgba(91, 145, 213, 0.7);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.profit-calendar-weekdays {
+    padding: 0 2px;
+}
+
+.profit-calendar-weekday {
+    text-align: center;
+    font-size: 10px;
+    color: #6f8fb3;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.profit-calendar-cell {
+    min-height: 56px;
+    border-radius: 10px;
+    border: 1px dashed rgba(42, 74, 114, 0.42);
+    background: rgba(8, 14, 24, 0.18);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+.profit-calendar-cell.empty {
+    background: rgba(8, 14, 24, 0.14);
+    min-height: 56px;
+}
+
+.profit-calendar-day-btn {
+    position: relative;
+    width: 100%;
+    min-height: 56px;
+    border: 1px solid rgba(42, 74, 114, 0.62);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(15, 31, 52, 0.96), rgba(11, 24, 41, 0.94));
+    color: #c8d8f0;
+    padding: 8px 8px 7px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: stretch;
+    gap: 5px;
+    cursor: pointer;
+    text-align: left;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.profit-calendar-day-badge {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 15px;
+    color: #fff;
+    background: linear-gradient(135deg, #d4380d, #ff4d4f);
+    border-radius: 8px;
+    text-align: center;
+    letter-spacing: 0;
+    box-shadow: 0 1px 3px rgba(212, 56, 13, 0.5);
+    pointer-events: none;
+}
+
+.profit-calendar-day-btn:hover {
+    border-color: #4d80b7;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(6, 16, 30, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.profit-calendar-day-btn.is-today {
+    box-shadow: inset 0 0 0 1px rgba(24, 144, 255, 0.45), 0 0 0 1px rgba(24, 144, 255, 0.12);
+}
+
+.profit-calendar-day-btn.is-selected {
+    border-color: #91caff;
+    box-shadow: 0 0 0 1px rgba(145, 202, 255, 0.24), 0 8px 18px rgba(8, 24, 46, 0.2);
+    transform: translateY(-1px);
+}
+
+.profit-calendar-day-btn.is-selected:hover {
+    box-shadow: 0 0 0 1px rgba(145, 202, 255, 0.3), 0 10px 20px rgba(8, 24, 46, 0.22);
+}
+
+.profit-calendar-day-btn:focus-visible {
+    outline: none;
+}
+
+.profit-calendar-day-btn.is-selected:not(.has-data) {
+    background: linear-gradient(180deg, rgba(21, 42, 69, 0.96), rgba(14, 30, 50, 0.94));
+}
+
+.profit-calendar-day-btn:not(.has-data):not(.is-selected) {
+    background: linear-gradient(180deg, rgba(14, 29, 48, 0.94), rgba(11, 24, 41, 0.92));
+}
+
+.profit-calendar-day-btn:not(.has-data) .profit-calendar-day-label {
+    color: #d8e4f5;
+}
+
+.profit-calendar-day-btn:not(.has-data) .profit-calendar-day-value {
+    color: #88a2bf;
+}
+
+.profit-calendar-day-btn.has-data {
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+}
+
+.profit-calendar-day-btn.has-data.positive {
+    background: linear-gradient(180deg, rgba(27, 73, 19, var(--calendar-alpha, 0.16)), rgba(17, 43, 13, calc(var(--calendar-alpha, 0.16) + 0.06)));
+    border-color: rgba(149, 222, 100, 0.3);
+}
+
+.profit-calendar-day-btn.has-data.negative {
+    background: linear-gradient(180deg, rgba(93, 29, 29, var(--calendar-alpha, 0.16)), rgba(54, 18, 18, calc(var(--calendar-alpha, 0.16) + 0.06)));
+    border-color: rgba(255, 163, 158, 0.3);
+}
+
+.profit-calendar-day-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #f3f8ff;
+}
+
+.profit-calendar-day-value {
+    font-size: 10px;
+    line-height: 1.3;
+    color: #d6e4ff;
+    word-break: break-word;
+}
+
+.profit-calendar-day-btn.has-data.positive .profit-calendar-day-value {
+    color: #c7f59f;
+}
+
+.profit-calendar-day-btn.has-data.negative .profit-calendar-day-value {
+    color: #ffc1c1;
+}
+
+.profit-calendar-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #7fa2c9;
+    font-size: 10px;
+    line-height: 1;
+}
+
+.profit-calendar-legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.profit-calendar-legend-dot.positive {
+    background: #95de64;
+}
+
+.profit-calendar-legend-dot.negative {
+    background: #ff9c9c;
+}
+
+.profit-calendar-legend-dot.neutral {
+    background: #69b1ff;
+}
+
+
+.profit-calendar-empty {
+    padding: 24px 10px;
+    text-align: center;
+    color: #6f8fb3;
+    font-size: 12px;
+}
+
+.profit-calendar-month-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 12px;
+}
+
+.profit-calendar-month-summary-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #c8d8f0;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.profit-calendar-month-summary-total {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.1px;
+    color: #c8d8f0;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.profit-calendar-month-summary-total-prefix {
+    color: #9eb8d8;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.1px;
+}
+
+.profit-calendar-month-summary-total.positive {
+    color: #95de64;
+}
+
+.profit-calendar-month-summary-total.negative {
+    color: #ff9c9c;
+}
+
+.profit-calendar-detail {
+    margin-top: 0 !important;
+    padding: 10px 12px;
+}
+
+.profit-calendar-detail-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(42, 74, 114, 0.44);
+}
+
+.profit-calendar-detail-date {
+    font-size: 12px;
+    color: #f3f8ff;
+    font-weight: 700;
+}
+
+.profit-calendar-detail-total {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.profit-calendar-detail-badge.positive {
+    color: #c7f59f;
+    border-color: rgba(149, 222, 100, 0.3);
+}
+
+.profit-calendar-detail-badge.negative {
+    color: #ffc1c1;
+    border-color: rgba(255, 163, 158, 0.3);
+}
+
+.profit-calendar-detail-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.profit-calendar-detail-summary {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.profit-calendar-detail-count {
+    color: #7fa2c9;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.profit-calendar-detail-total.positive {
+    color: #95de64;
+}
+
+.profit-calendar-detail-total.negative {
+    color: #ff9c9c;
+}
+
+.profit-calendar-detail-empty {
+    font-size: 11px;
+    color: #7fa2c9;
+    padding: 4px 0 2px;
+    line-height: 1.5;
+}
+
+.profit-calendar-detail-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 196px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.profit-calendar-detail-list::-webkit-scrollbar {
+    width: 5px;
+}
+
+.profit-calendar-detail-list::-webkit-scrollbar-thumb {
+    background: #35577f;
+    border-radius: 999px;
+}
+
+.profit-calendar-detail-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(11, 28, 47, 0.84);
+    border: 1px solid rgba(42, 74, 114, 0.42);
+    font-size: 11px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.profit-calendar-detail-name {
+    color: #d6e4ff;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.profit-calendar-detail-dividend {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    color: #ffb37a;
+    background: rgba(255, 122, 56, 0.14);
+    border: 1px solid rgba(255, 122, 56, 0.32);
+    border-radius: 999px;
+    padding: 1px 6px;
+    white-space: nowrap;
+    line-height: 1.3;
+    flex-shrink: 0;
+}
+
+.profit-calendar-detail-values {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    white-space: nowrap;
+}
+
+.profit-calendar-detail-combined {
+    font-size: 9px;
+    color: #88a2bf;
+    font-weight: 600;
+}
+
+.profit-calendar-detail-combined.positive {
+    color: #95de64;
+}
+
+.profit-calendar-detail-combined.negative {
+    color: #ff9c9c;
+}
+
+.profit-calendar-detail-dividend-total {
+    font-size: 10px;
+    color: #ffb37a;
+    background: rgba(255, 122, 56, 0.12);
+    border: 1px solid rgba(255, 122, 56, 0.28);
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-weight: 600;
+    margin-left: 4px;
+}
+
+.profit-calendar-detail-profit {
+    font-weight: 700;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.profit-calendar-detail-profit.positive {
+    color: #95de64;
+}
+
+.profit-calendar-detail-profit.negative {
+    color: #ff9c9c;
+}
+
+#modalOverlay[data-mode="profit-calendar"] {
+    align-items: flex-start !important;
+    justify-content: center !important;
+    overflow-y: auto;
+    padding: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .modal-box {
+    max-width: 580px;
+    width: min(580px, 100vw);
+    min-height: auto;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+    display: block;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .modal-msg {
+    color: inherit;
+    margin: 0 !important;
+    padding: 0 !important;
+    flex: initial;
+}
+
+@media (max-width: 520px) {
+    .profit-calendar-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .profit-calendar-nav {
+        justify-content: space-between;
+    }
+
+    .profit-calendar-meta {
+        gap: 5px;
+    }
+
+    .profit-calendar-weekdays,
+    .profit-calendar-grid {
+        gap: 6px;
+    }
+
+    .profit-calendar-day-btn,
+    .profit-calendar-cell,
+    .profit-calendar-cell.empty {
+        min-height: 54px;
+    }
+
+    .profit-calendar-day-btn {
+        padding: 7px 6px;
+    }
+
+    .profit-calendar-day-value {
+        font-size: 9px;
+    }
+
+    .profit-calendar-detail {
+        padding: 8px 10px;
+    }
+}
+
+@media (max-width: 420px) {
+    .filter-bar {
+        gap: 8px;
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .filter-left {
+        gap: 7px;
+    }
+
+    .filter-action-btn {
+        padding: 6px 10px;
+    }
+
+    .profit-calendar-meta-item,
+    .profit-calendar-detail-badge {
+        padding-left: 7px;
+        padding-right: 7px;
+    }
+}
+
+@media (max-width: 380px) {
+
+    .profit-calendar-weekdays,
+    .profit-calendar-grid {
+        gap: 5px;
+    }
+
+    .profit-calendar-day-btn,
+    .profit-calendar-cell,
+    .profit-calendar-cell.empty {
+        min-height: 50px;
+        border-radius: 10px;
+    }
+
+    .profit-calendar-day-label {
+        font-size: 11px;
+    }
+
+    .profit-calendar-day-value {
+        font-size: 8px;
+        line-height: 1.25;
+    }
+}
+
+#modalOverlay[data-mode="profit-calendar"] .modal-title,
+#modalOverlay[data-mode="profit-calendar"] .modal-footer,
+#modalOverlay[data-mode="profit-calendar"] .modal-input {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .modal-msg {
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .modal-btn {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+#modalOverlay[data-mode="profit-calendar"] .modal-btn-cancel {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(120, 144, 178, 0.26);
+    color: #d6e4ff;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .modal-btn-cancel:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+#modalOverlay[data-mode="profit-calendar"] .modal-btn-ok {
+    background: linear-gradient(135deg, #1677ff, #3b8cff);
+    color: #fff;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .modal-btn-ok:hover {
+    filter: brightness(1.08);
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-row:hover {
+    border-color: rgba(105, 177, 255, 0.42);
+    background: rgba(14, 33, 54, 0.96);
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-weekdays {
+    margin-bottom: -2px;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid {
+    align-items: stretch;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-label,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-value,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-total {
+    font-variant-numeric: tabular-nums;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-date,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-title,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-month {
+    letter-spacing: 0.2px;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-modal {
+    overflow: hidden;
+    padding: 8px 8px 0;
+    box-sizing: border-box;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-name {
+    padding-right: 6px;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-nav-btn,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn,
+#modalOverlay[data-mode="profit-calendar"] .filter-action-btn {
+    transition: filter 0.15s, transform 0.12s, border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-nav-btn:active,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn:active {
+    transform: scale(0.98);
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid button {
+    overflow: hidden;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-caption,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-header {
+    min-width: 0;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-date {
+    min-width: 0;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-header>* {
+    min-width: 0;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-total {
+    flex-shrink: 0;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-date {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-meta,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-heading,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-summary {
+    max-width: 100%;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn.has-data.positive:hover {
+    border-color: rgba(149, 222, 100, 0.5);
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn.has-data.negative:hover {
+    border-color: rgba(255, 163, 158, 0.5);
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn:not(.has-data):hover {
+    border-color: rgba(105, 177, 255, 0.34);
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-month,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-row,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-toolbar,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail {
+    backdrop-filter: blur(8px);
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-weekdays {
+    position: relative;
+    z-index: 1;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn {
+    position: relative;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 40%);
+    opacity: 0.85;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-label,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-value {
+    position: relative;
+    z-index: 1;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn.is-selected::after {
+    opacity: 1;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn.is-selected .profit-calendar-day-label {
+    color: #ffffff;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn.is-selected .profit-calendar-day-value {
+    color: #f4f9ff;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn.is-selected.has-data.positive .profit-calendar-day-value {
+    color: #dcffbf;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn.is-selected.has-data.negative .profit-calendar-day-value {
+    color: #ffd0d0;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-cell.empty {
+    opacity: 0.72;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-modal>* {
+    min-width: 0;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-list,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid {
+    contain: layout paint;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-toolbar,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail {
+    contain: layout paint;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-row {
+    will-change: transform;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn.is-selected,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn:hover,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-row:hover {
+    z-index: 1;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid>* {
+    min-width: 0;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-value {
+    min-height: 26px;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-list {
+    margin-right: -2px;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-empty {
+    word-break: break-word;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-title,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-month,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-total {
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.16);
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-weekday {
+    user-select: none;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid {
+    user-select: none;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-list {
+    user-select: text;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-nav {
+    user-select: none;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn {
+    font-weight: 600;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn .profit-calendar-day-value {
+    font-weight: 600;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-row:last-child {
+    margin-bottom: 1px;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-list:empty {
+    display: none;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-toolbar,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-month {
+    position: relative;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-toolbar::before,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 42%);
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-toolbar>*,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail>* {
+    position: relative;
+    z-index: 1;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-total:not(.positive):not(.negative) {
+    color: #c8d8f0;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn:not(.has-data) .profit-calendar-day-value {
+    color: #88a2bf;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn.is-today .profit-calendar-day-label::after {
+    content: ' · 今';
+    font-size: 9px;
+    font-weight: 600;
+    color: #91caff;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn.is-selected.is-today .profit-calendar-day-label::after {
+    color: #d6ebff;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-weekdays {
+    margin-top: -2px;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail {
+    margin-top: 0;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-title,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-date {
+    max-width: 100%;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-caption {
+    flex: 1;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn.has-data.positive .profit-calendar-day-label {
+    color: #efffe3;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn.has-data.negative .profit-calendar-day-label {
+    color: #fff1f0;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-header {
+    flex-wrap: wrap;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-nav-btn,
+#modalOverlay[data-mode="profit-calendar"] .modal-btn {
+    font-weight: 700;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-row,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-nav-btn,
+#modalOverlay[data-mode="profit-calendar"] .modal-btn-cancel {
+    -webkit-tap-highlight-color: transparent;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn:focus-visible,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-nav-btn:focus-visible,
+#modalOverlay[data-mode="profit-calendar"] .modal-btn:focus-visible {
+    outline: 2px solid rgba(145, 202, 255, 0.72);
+    outline-offset: 1px;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid button:focus-visible {
+    position: relative;
+    z-index: 2;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn .profit-calendar-day-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-name,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-profit {
+    line-height: 1.4;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-nav-btn,
+#modalOverlay[data-mode="profit-calendar"] .modal-btn-cancel,
+#modalOverlay[data-mode="profit-calendar"] .modal-btn-ok {
+    min-height: 32px;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-btn,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-row,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-toolbar,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-month {
+    box-sizing: border-box;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail-total,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-value,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-day-label {
+    letter-spacing: 0.1px;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid button,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-nav button {
+    appearance: none;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-modal {
+    position: relative;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-modal::before {
+    content: '';
+    position: absolute;
+    top: -80px;
+    right: -60px;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(24, 144, 255, 0.12), transparent 68%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-modal>* {
+    position: relative;
+    z-index: 1;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid {
+    position: relative;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    border-radius: 16px;
+    border: 1px solid rgba(31, 59, 93, 0.32);
+    pointer-events: none;
+}
+
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-weekdays,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-grid,
+#modalOverlay[data-mode="profit-calendar"] .profit-calendar-detail {
+    padding-left: 2px;
+    padding-right: 2px;
+}
+

@@ -50,10 +50,10 @@ async function openFundDetail(code) {
         const downClass = 'down';
 
         const html = `
-            <div style="padding: 18px 16px 0; background: transparent;">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px;">
-                   <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
-                      <div style="font-size:12px; color:#4a6a90; font-weight:600;">基金代码: ${code}</div>
+            <div class="detail-hero-section">
+                <div class="detail-topline">
+                   <div>
+                      <div class="detail-code-pill">基金代码: ${code}</div>
                    </div>
                    <div class="estimation-box">
                       <div class="estimation-label">最后更新 / 估值时间</div>
@@ -61,7 +61,7 @@ async function openFundDetail(code) {
                    </div>
                 </div>
 
-                <div style="display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:16px; margin-bottom:18px; border-bottom: 1px solid rgba(64, 103, 148, 0.36); padding: 14px; border-radius: 14px; background: linear-gradient(180deg, rgba(15, 31, 52, 0.56), rgba(11, 24, 41, 0.42)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);">
+                <div class="detail-metric-grid compact">
                     <div class="detail-info-item">
                         <span class="detail-info-label">单位净值</span>
                         <span class="detail-info-value bold">${unitValue.toFixed(4)}</span>
@@ -84,7 +84,7 @@ async function openFundDetail(code) {
                     </div>
                 </div>
 
-                <div style="display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:16px; padding: 14px; margin-bottom: 14px; border-radius: 14px; border: 1px solid rgba(64, 103, 148, 0.36); background: linear-gradient(180deg, rgba(15, 31, 52, 0.56), rgba(11, 24, 41, 0.42)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);">
+                <div class="detail-metric-grid hero">
                     <div class="detail-info-item">
                         <span class="detail-info-label">持仓金额</span>
                         <span class="detail-info-value hero">${holdAmount.toFixed(2)}</span>
@@ -104,18 +104,18 @@ async function openFundDetail(code) {
                 </div>
             </div>
 
-            <div class="detail-chart-section" style="padding: 0 16px 24px; margin-top:-5px;">
-                <div style="font-size:11px;color:#4a6a90;margin-bottom:8px; display:flex; justify-content:space-between;">
-                    <span>📈 今日估值走势 (${getToday()})</span>
-                    <span style="font-size:10px; opacity:0.6;">${getIntradayChartRangeLabel()}</span>
+            <div class="detail-chart-section compact">
+                <div class="detail-chart-heading">
+                    <span>今日估值走势 (${getToday()})</span>
+                    <span class="detail-chart-range">${getIntradayChartRangeLabel()}</span>
                 </div>
-                <div style="position:relative;">
+                <div class="detail-chart-wrap">
                     <canvas id="detailChart" style="width:100%;height:220px;display:block;"></canvas>
-                    <div id="chartTooltip" style="display:none;position:absolute;background:rgba(10,21,37,0.9);border:1px solid #1e3a5f;border-radius:6px;padding:6px 10px;pointer-events:none;min-width:120px;"></div>
+                    <div id="chartTooltip" style="display:none;position:absolute;padding:6px 10px;pointer-events:none;min-width:120px;"></div>
                 </div>
             </div>
 
-            <div style="height: 10px; background: transparent; border-top: 1px solid rgba(64, 103, 148, 0.24);"></div>
+            <div class="detail-section-separator"></div>
 
             <div class="detail-tabs">
                 <div class="detail-tab active" data-tab="holdings">前10重仓股票</div>
@@ -281,7 +281,7 @@ async function loadMyReturnPeriod(code, period, isStale) {
     const isStaleRequest = () => isStale() || _myReturnState[code]?.requestId !== requestId;
 
     try {
-        summary.innerHTML = `<span style="font-size:12px; color:#4a6a90;">正在加载 ${getMyReturnPeriodLabel(period)} 数据...</span>`;
+        summary.innerHTML = `<span class="detail-inline-status">正在加载 ${getMyReturnPeriodLabel(period)} 数据...</span>`;
 
         const { dailyProfitHistory } = await storageHelper.getAll(['dailyProfitHistory']);
         if (isStaleRequest()) return;
@@ -317,7 +317,7 @@ async function loadMyReturnPeriod(code, period, isStale) {
         const filteredHistory = fullHistory.filter(h => h.date >= startStr && h.date <= endStr);
 
         if (filteredHistory.length === 0) {
-            summary.innerHTML = `<span style="font-size:12px; color:#4a6a90;">${getMyReturnPeriodLabel(period)} 暂无收益记录</span>`;
+            summary.innerHTML = `<span class="detail-inline-status">${getMyReturnPeriodLabel(period)} 暂无收益记录</span>`;
             listPreview.innerHTML = '<div class="perf-nav-empty">暂无收益记录</div>';
             const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -341,7 +341,7 @@ async function loadMyReturnPeriod(code, period, isStale) {
     } catch (err) {
         console.error('[loadMyReturnPeriod] 失败:', err);
         if (!isStaleRequest()) {
-            summary.innerHTML = '<span style="font-size:12px; color:#ff4d4f;">加载失败</span>';
+            summary.innerHTML = '<span class="detail-inline-status error">加载失败</span>';
         }
     }
 }

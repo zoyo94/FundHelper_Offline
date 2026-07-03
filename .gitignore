@@ -4,6 +4,7 @@
 # IDE
 .vscode/
 .idea/
+.workbuddy/
 
 # User exports / sample data
 trade_orders_*.csv

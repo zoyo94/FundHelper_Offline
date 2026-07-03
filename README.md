@@ -174,8 +174,8 @@ FundHelper Offline 是一款功能强大的 Chrome 扩展，专为投资者设�
 ### 核心技术栈
 
 - **Chrome Extension Manifest V3** - 最新扩展规范
-- **Vanilla JavaScript** - 无框架依赖，轻量高效
-- **Tesseract.js v4** - 离线 OCR 识别引擎
+- **Vanilla JavaScript** - 无框架依赖，轻量高效，25 个职责单一的模块
+- **Tesseract.js v4** - 离线 OCR 识别引擎（按需懒加载）
 - **Chrome Storage API** - 本地数据持久化
 - **Canvas API** - 走势图表绘制
 - **Eastmoney/Tencent/Sina API** - 多源指数行情数据
@@ -184,34 +184,79 @@ FundHelper Offline 是一款功能强大的 Chrome 扩展，专为投资者设�
 
 ```
 FundHelper_Offline/
-├── manifest.json              # 扩展配置文件 (v3.0.0)
-├── popup.html                 # 主界面 HTML + 全部样式
-├── popup.js                   # 入口与全局状态 (~600 行)
-├── popup_api.js               # 多源 API 拉取（天天/新浪/腾讯/东财）
-├── popup_history.js           # IndexedDB 持久化 (HistoryDB)
-├── popup_perf.js              # 业绩走势 / 弹窗主流程
-├── popup_perf_chart.js        # ECharts 走势图绘制
-├── popup_perf_panel.js        # 业绩面板布局
-├── popup_perf_state.js        # 业绩缓存与会话状态
-├── popup_perf_table.js        # 业绩表格渲染
-├── popup_position_ui.js       # FAB 菜单 / 批量操作弹窗
-├── popup_trade.js             # 交易订单 (加仓/减仓/分红)
-├── popup_fund_detail.js       # 基金详情弹窗
-├── popup_import_export.js     # 数据导入导出 (JSON / 交易订单 CSV)
-├── popup_ocr.js               # OCR 批量识别 (Tesseract.js)
-├── background.js              # 后台服务 (代理新浪 API)
-├── tesseract.min.js           # OCR 核心库
-├── worker.min.js              # OCR Worker
-├── tesseract-core.wasm.js     # WASM 核心
-├── chi_sim.traineddata        # 中文简体训练数据
-└── README.md                  # 项目文档
+├── manifest.json                    # 扩展配置文件 (v3.2.0)
+├── popup.html                       # 主界面 HTML (275 行，纯结构)
+│
+├── popup_base.css                   # 基础样式：重置 / Header / 指数面板 / 统计栏 / 筛选栏
+├── popup_components.css             # 组件样式：表格 / Toast / Modal / 表单弹窗 / 响应式
+├── popup_overlay.css                # 弹窗样式：居中操作弹窗 / 基金详情 / 刷新间隔
+│
+├── popup.js                         # 配置 / 全局状态 / 通用工具 (~590 行)
+├── popup_history.js                 # IndexedDB 持久化 (HistoryDB)
+├── background.js                    # 后台服务 (代理新浪 API)
+│
+├── popup_api.js                     # 多源行情接口 (天天/东财/新浪/腾讯)
+├── popup_fund_detail.js             # 基金详情弹窗数据装载
+├── popup_ocr.js                     # OCR 批量识别 (Tesseract.js 懒加载)
+├── popup_import_export.js           # 数据导入导出 (JSON / CSV)
+│
+├── popup_trade.js                   # 交易归一化 / 持仓快照 / 订单 CRUD / 迁移
+├── popup_trade_dividend.js          # 分红检测 / 自动录入 / 历史补录
+├── popup_trade_settlement.js        # 结算运行时 / 挂起调整 / 状态持久化
+├── popup_trade_utils.js             # 交易日计算 / 份额金额计算 / 撤销截止
+├── popup_trade_form.js              # 交易表单 / 加减仓 / 历史补录 / 基金编辑器
+│
+├── popup_batch_ops.js               # 批量操作：分组 / 清仓 / 删除 / 重算
+├── popup_center_menu.js             # 居中弹窗菜单 / 待确认交易 / 清除订单
+├── popup_ui.js                      # Toast / Modal / 通知中心
+│
+├── popup_perf_cache.js              # 业绩缓存 / 状态 / 周期配置 / 工具函数
+├── popup_perf_init.js               # 初始化 / 事件绑定 / 刷新间隔选择器
+├── popup_perf_data.js               # 数据加载 / 行情刷新 / 指数行情
+├── popup_perf_render.js             # 表格渲染 / 选中状态 / 删除基金
+├── popup_perf_chart.js              # Canvas 走势图绘制
+├── popup_perf_panel.js              # 业绩面板布局
+├── popup_perf_state.js              # 业绩缓存与会话状态
+├── popup_perf_table.js              # 业绩表格渲染
+│
+├── popup_settlement_rollback.js     # 撤销结算 / 备份管理 / 份额推导
+├── popup_settlement_run.js          # 手动/自动日结算 / 状态持久化
+│
+├── tesseract.min.js                 # OCR 核心库 (按需懒加载)
+├── worker.min.js                    # OCR Worker
+├── tesseract-core.wasm.js           # WASM 核心
+├── chi_sim.traineddata              # 中文简体训练数据
+└── README.md                        # 项目文档
 ```
 
-> v3.0.0 起 `popup.js` 已按职责拆分为 13 个模块，并将历史净值 / 状态 / 交易订单迁移至 IndexedDB（`HistoryDB`），`chrome.storage.local` 仅保留配置与持仓快照。
+> v3.2.0 架构优化：CSS 从 HTML 内联提取为 3 个独立文件；JS 从 14 个模块进一步拆分为 25 个职责单一的模块，最大文件从 4710 行降至 1463 行；OCR 引擎改为按需懒加载；`fetchLiveInfo` 从 233 行单体函数拆分为 5 个子函数。
 
 ### 代码优化亮点
 
-#### 1. 统一的 Storage 访问层（带错误处理）
+#### 1. CSS 模块化拆分
+- 4530 行内联 `<style>` 提取为 3 个独立 CSS 文件（base / components / overlay）
+- popup.html 从 4784 行缩减至 275 行，改样式不再需要在 HTML 中翻找
+
+#### 2. JS 模块化拆分（14 → 25 个模块）
+- 原始 `popup_perf.js`（4710 行）拆分为 4 个文件：缓存 / 初始化 / 数据加载 / 渲染
+- 原始 `popup_settlement.js`（2121 行）拆分为 2 个文件：撤销结算 / 日结算运行时
+- 原始 `popup_trade.js`（1473 行）拆分为 3 个文件：核心 / 分红 / 结算
+- 原始 `popup_position_ui.js`（1833 行）拆分为 3 个文件：批量操作 / 交易表单 / 居中菜单
+- 最大文件从 4710 行降至 1463 行，超过 500 行的文件从 8 个降至 6 个
+
+#### 3. OCR 引擎懒加载
+- Tesseract 三个脚本从 `<script>` 硬编码改为点击"传图识别"时动态加载
+- 不使用 OCR 功能时不再加载 WASM 核心，弹窗打开速度提升
+
+#### 4. fetchLiveInfo 函数拆分
+- 233 行单体函数拆分为 5 个子函数，每个只做一件事：
+  - `fetchLiveInfo()` — 主路由
+  - `_fetchOutOfMarketFund()` — 场外基金并发请求 + 合并
+  - `_parseFundgzResponse()` — 解析天天基金估值
+  - `_parseEastmoneyResponse()` — 解析东财历史净值
+  - `_fetchOnMarketFundSina()` / `_fetchFuturesSina()` — 场内基金 / 期货
+
+#### 5. 统一的 Storage 访问层（带错误处理）
 ```javascript
 const storage = {
     async get(keys) {
@@ -239,7 +284,7 @@ const storage = {
 };
 ```
 
-#### 2. 数值格式化工具（带类型检查）
+#### 6. 数值格式化工具（带类型检查）
 ```javascript
 function round2(num) {
     if (typeof num !== 'number' || isNaN(num)) {
@@ -250,12 +295,12 @@ function round2(num) {
 }
 ```
 
-#### 3. 全面使用 async/await
+#### 7. 全面使用 async/await
 - 消除回调地狱
 - 代码更清晰易读
 - 错误处理更统一
 
-#### 4. 走势数据持久化
+#### 8. 走势数据持久化
 - 自动保存到 `chrome.storage.local`
 - 刷新页面数据不丢失
 - 第二天自动清理旧数据
@@ -385,7 +430,7 @@ function round2(num) {
 {
   "manifest_version": 3,
   "name": "资产收益助手",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "permissions": [
     "storage"
   ],
@@ -453,6 +498,31 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
 ---
 
 ## 📝 更新日志
+
+### v3.2.0 (2026-07-03) - 架构优化 + 结算修复 + UI 增强
+
+#### 架构优化
+- 🎨 **CSS 外联**：4530 行内联 `<style>` 提取为 `popup_base.css` / `popup_components.css` / `popup_overlay.css` 三个文件，popup.html 从 4784 行缩减至 275 行
+- 📦 **JS 模块化拆分**：14 个模块进一步拆分为 25 个职责单一的模块
+  - `popup_perf.js`（4710 行）→ 4 个文件：缓存 / 初始化 / 数据加载 / 渲染
+  - `popup_settlement.js`（2121 行）→ 2 个文件：撤销结算 / 日结算运行时
+  - `popup_trade.js`（1473 行）→ 3 个文件：核心 / 分红 / 结算
+  - `popup_position_ui.js`（1833 行）→ 3 个文件：批量操作 / 交易表单 / 居中菜单
+  - 最大文件从 4710 行降至 1463 行
+- ⚡ **OCR 懒加载**：Tesseract 三个脚本从 `<script>` 硬编码改为点击"传图识别"时动态加载，不使用 OCR 时不加载 WASM 核心
+- 🔧 **fetchLiveInfo 拆分**：233 行单体函数拆为 5 个子函数（路由 / 场外基金 / 估值解析 / 净值解析 / 期货）
+- 🧹 **清理调试日志**：移除 6 处残留 `console.log`
+
+#### 结算系统修复
+- 🐛 **QDII/封闭期基金不结算**：去掉 `shouldAutoSettleFund` / `hasFreshYesterdayProfit` / `recordDailyProfitHistory` 三处对 `dominantMarketPrevPriceDate` 的强制过滤，改为按每个基金自己的 `prevPriceDate` 独立结算，净值日期滞后的基金也能正确更新收益
+- 🐛 **普通加仓允许填过去日期**：添加校验，到账日期不能早于今天，引导用户使用「补录历史交易」功能
+- 🐛 **`backfillHistoricalTrade` 中 `live` 变量未定义**：补上 `const live = await fetchLiveInfo(code)`
+
+#### UI 增强
+- 🎨 **汇总栏百分比**：昨日收益/当日估值/累计收益均显示百分比，总资产显示本金
+- 🎨 **全屏模式隐藏全屏按钮**
+- 🎨 **刷新间隔下拉菜单**：颜色改为深蓝主题一致，尺寸缩小，触发按钮透明无边框
+- 🎨 **涨跌停数据居中显示**
 
 ### v3.1.0 (2026-05-27) - 性能优化 + OCR 建仓补全 + Bug 修复
 - ⚡ **fetchLiveInfo 并发**：天天估值（url1）与东财历史净值（url2）改为 `Promise.allSettled` 同步请求，刷新耗时从 ~16s 降至 ~8s；历史净值仅在 url1 失败时写盘，正常刷新不触发大批量 DB 写入

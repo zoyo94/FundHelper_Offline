@@ -4,6 +4,32 @@ let _batchFillDate = '';
 let _batchFillFee = '';
 let _batchFillMode = 'cash';
 
+// ---- Tesseract 懒加载 ----
+let _tesseractLoadPromise = null;
+
+function _loadTesseractScripts() {
+    if (_tesseractLoadPromise) return _tesseractLoadPromise;
+    if (typeof __TesseractDispatch !== 'undefined') return Promise.resolve();
+
+    const scripts = [
+        'tesseract-core.wasm.js',
+        'worker.min.js',
+        'tesseract.min.js',
+    ];
+    _tesseractLoadPromise = (async () => {
+        for (const src of scripts) {
+            await new Promise((resolve, reject) => {
+                const el = document.createElement('script');
+                el.src = src;
+                el.onload = resolve;
+                el.onerror = () => reject(new Error(`加载 ${src} 失败`));
+                document.head.appendChild(el);
+            });
+        }
+    })();
+    return _tesseractLoadPromise;
+}
+
 function _sendToTesseract(action, payload) {
     return new Promise((resolve, reject) => {
         const jobId = 'job_' + Math.random().toString(36).slice(2);
@@ -22,8 +48,10 @@ async function _getOCRWorker(onLog) {
     if (window._tWorker) return window._tWorker;
     const extRoot = chrome.runtime.getURL('').replace(/\/$/, '');
 
+    await _loadTesseractScripts();
+
     if (typeof __TesseractDispatch === 'undefined') {
-        throw new Error('__TesseractDispatch 未定义，请确认 popup.html 已加载 worker.min.js');
+        throw new Error('__TesseractDispatch 未定义，Tesseract 脚本加载失败');
     }
 
     await _sendToTesseract('load', {

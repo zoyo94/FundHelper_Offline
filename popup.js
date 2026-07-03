@@ -485,7 +485,7 @@ function round2(num) {
 }
 
 /**
- * 数值格式化工具（保留 6 位小数，用于份额计算，带类型检查）
+ * 数值格式化工具（保留 6 位小数，用于高精度非份额计算，带类型检查）
  */
 function round6(num) {
     if (typeof num !== 'number' || isNaN(num)) {
@@ -493,6 +493,10 @@ function round6(num) {
         return 0;
     }
     return safeFloat(num.toFixed(6));
+}
+
+function roundShares(num) {
+    return round2(safeFloat(num, 0));
 }
 
 function round4(num) {

@@ -37,23 +37,31 @@ const HistoryDB = {
                         store.createIndex('date', 'date', { unique: false });
                     }
 
-                    if (e.oldVersion < 3 && db.objectStoreNames.contains('tradeHistory')) {
+                    if (e.oldVersion < 3 && db.objectStoreNames.contains('tradeHistory') && db.objectStoreNames.contains(this.orderStore)) {
                         const transaction = e.target.transaction;
-                        const oldStore = transaction.objectStore('tradeHistory');
-                        const newStore = transaction.objectStore(this.orderStore);
+                        let oldStore = null;
+                        let newStore = null;
+                        try {
+                            oldStore = transaction.objectStore('tradeHistory');
+                            newStore = transaction.objectStore(this.orderStore);
+                        } catch (err) {
+                            console.warn('[HistoryDB] 跳过旧交易流水迁移:', err);
+                        }
 
-                        oldStore.openCursor().onsuccess = (event) => {
-                            const cursor = event.target.result;
-                            if (cursor) {
-                                const oldData = cursor.value;
-                                newStore.add({
-                                    ...oldData,
-                                    status: oldData.status || 'confirmed',
-                                    createTime: Date.now()
-                                });
-                                cursor.continue();
-                            }
-                        };
+                        if (oldStore && newStore) {
+                            oldStore.openCursor().onsuccess = (event) => {
+                                const cursor = event.target.result;
+                                if (cursor) {
+                                    const oldData = cursor.value;
+                                    newStore.add({
+                                        ...oldData,
+                                        status: oldData.status || 'confirmed',
+                                        createTime: Date.now()
+                                    });
+                                    cursor.continue();
+                                }
+                            };
+                        }
                     }
                 };
                 request.onsuccess = (e) => {
@@ -281,6 +289,7 @@ const HistoryDB = {
             normalizedOrders.forEach(order => {
                 const payload = { ...order };
                 delete payload.id;
+                delete payload.orderId;
                 const request = store.add({
                     ...payload,
                     createTime: payload.createTime || Date.now()

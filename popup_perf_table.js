@@ -36,6 +36,74 @@ function calcAccumulatedHoldDays(item, today = getToday()) {
     return baseDays + cycleDays;
 }
 
+// 从交易流水重算累计持有天数：累加每一轮 (建仓日→清仓日) + 当前在持轮 (建仓日→今天)
+// 与 calculatePositionSnapshotFromTradeOrders 保持完全一致的份额/日期口径，确保自洽可重算
+function calculateHoldDaysFromOrders(orders = [], today = getToday()) {
+    if (typeof normalizeTradeRecordList !== 'function') return null;
+
+    const confirmedOrders = normalizeTradeRecordList(orders, { source: 'order' })
+        .filter(order => order.status === 'confirmed')
+        .sort(compareTradeExecutionOrder);
+
+    if (!confirmedOrders.length) return null;
+
+    let shares = 0;
+    let openDate = '';      // 本轮建仓日期
+    let totalDays = 0;
+    let everOpened = false;  // 流水中是否出现过有效建仓（否则数据不足，回退 holdDaysBase）
+
+    const addCycle = (startStr, endStr) => {
+        const start = parseYmdDate(startStr);
+        const end = parseYmdDate(endStr);
+        if (!start || !end) return;
+        totalDays += Math.max(0, Math.floor((end.getTime() - start.getTime()) / CONSTANTS.DAY_MS));
+    };
+
+    confirmedOrders.forEach(order => {
+        const displayType = getTradeDisplayType(order);
+        const tradeDate = getTradeMarkerDate(order) || getTradeRecordDate(order) || '';
+        const shareEffect = getTradeShareEffect(order);
+
+        if (displayType === 'initial') {
+            shares = Math.max(0, roundShares(Math.abs(shareEffect)));
+            openDate = shares > 0 ? tradeDate : '';
+            if (openDate) everOpened = true;
+            return;
+        }
+
+        if (displayType === 'add' || displayType === 'dividend_reinvest') {
+            if (shares <= 0 && shareEffect > 0) {
+                openDate = tradeDate || openDate;
+            }
+            shares = Math.max(0, roundShares(shares + shareEffect));
+            if (shares > 0 && !openDate) {
+                openDate = tradeDate || '';
+            }
+            if (shares > 0 && openDate) everOpened = true;
+            return;
+        }
+
+        if (displayType === 'remove' || displayType === 'clear') {
+            shares = Math.max(0, roundShares(shares + shareEffect));
+            if (displayType === 'clear' || shares <= 0.001) {
+                if (openDate) addCycle(openDate, tradeDate);   // 用真实清仓日，而非今天
+                shares = 0;
+                openDate = '';
+            }
+        }
+    });
+
+    // 流水里从未出现过建仓（如「清仓」按钮删光历史后只剩一条 remove）→ 数据不足，回退 holdDaysBase
+    if (!everOpened) return null;
+
+    // 当前仍在持仓：累加 建仓日 → 今天
+    if (shares > 0 && openDate) {
+        addCycle(openDate, today);
+    }
+
+    return totalDays;
+}
+
 function normalizePerfRateValue(value) {
     if (value === null || value === undefined) return null;
     if (typeof value !== 'number' || Number.isNaN(value)) return null;
@@ -99,8 +167,14 @@ function createEmptyFundPerfDailyEntry(asOfDate) {
     };
 }
 
-function buildFundPerfDisplayData(code, fundItem) {
-    const holdDays = calcAccumulatedHoldDays(fundItem);
+function buildFundPerfDisplayData(code, fundItem, orders = null) {
+    // 优先从交易流水重算（自洽、可修正历史脏数据）；无流水时回退到 holdDaysBase + addedDate
+    let holdDays = Array.isArray(orders) && orders.length
+        ? calculateHoldDaysFromOrders(orders)
+        : null;
+    if (holdDays === null) {
+        holdDays = calcAccumulatedHoldDays(fundItem);
+    }
     const cached = fundPerfDailyCacheByCode[code];
     return {
         holdDays,
@@ -113,13 +187,16 @@ function buildFundPerfDisplayData(code, fundItem) {
     };
 }
 
-async function hydrateFundPerfCache(funds, codes) {
+async function hydrateFundPerfCache(funds, codes, tradeOrdersMap = null) {
     await ensureFundPerfDailyCacheLoaded();
     const codeSet = new Set(codes);
     const nextDisplayCache = {};
 
     codes.forEach(code => {
-        nextDisplayCache[code] = buildFundPerfDisplayData(code, funds[code] || null);
+        const orders = tradeOrdersMap && typeof tradeOrdersMap.get === 'function'
+            ? tradeOrdersMap.get(code)
+            : null;
+        nextDisplayCache[code] = buildFundPerfDisplayData(code, funds[code] || null, orders);
     });
     fundPerfCache = nextDisplayCache;
 
@@ -233,12 +310,20 @@ async function fetchAllFundPerfData(fundsOverride = null) {
         const codes = allFundsData.map(d => d.code);
         const today = getToday();
 
+        // 持有天数从交易流水重算，与主加载链路保持一致
+        const tradeOrdersMap = typeof buildTradeOrdersMap === 'function'
+            ? await buildTradeOrdersMap(codes).catch(() => null)
+            : null;
+        const ordersOf = (code) => (tradeOrdersMap && typeof tradeOrdersMap.get === 'function'
+            ? tradeOrdersMap.get(code)
+            : null);
+
         let cacheChanged = false;
 
         const syncedFlags = await storageHelper.get('fullHistorySyncedFlags', {});
 
         for (const code of codes) {
-            fundPerfCache[code] = buildFundPerfDisplayData(code, funds[code] || null);
+            fundPerfCache[code] = buildFundPerfDisplayData(code, funds[code] || null, ordersOf(code));
 
             const cached = fundPerfDailyCacheByCode[code];
             if (cached?.asOfDate === today && syncedFlags[code] && PERF_FIELDS.every(field => field === 'holdDays' || cached[field] !== null && cached[field] !== undefined)) {
@@ -253,7 +338,7 @@ async function fetchAllFundPerfData(fundsOverride = null) {
                     asOfDate: today,
                     ...fetchedPerf
                 };
-                fundPerfCache[code] = buildFundPerfDisplayData(code, funds[code] || null);
+                fundPerfCache[code] = buildFundPerfDisplayData(code, funds[code] || null, ordersOf(code));
                 cacheChanged = true;
 
                 const tr = document.querySelector(`#fundTableBody tr[data-code="${code}"]`);
@@ -272,7 +357,7 @@ async function fetchAllFundPerfData(fundsOverride = null) {
                     : createEmptyFundPerfDailyEntry(today);
 
                 fundPerfDailyCacheByCode[code] = fallbackEntry;
-                fundPerfCache[code] = buildFundPerfDisplayData(code, funds[code] || null);
+                fundPerfCache[code] = buildFundPerfDisplayData(code, funds[code] || null, ordersOf(code));
                 cacheChanged = true;
             }
 

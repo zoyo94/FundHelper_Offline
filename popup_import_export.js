@@ -302,7 +302,10 @@ async function exportBackupFundsData() {
         lastDayProfits: backupFunds.lastDayProfits,
         dailyProfitHistory: backupFunds.dailyProfitHistory,
         tradeHistoryDB: backupFunds.tradeHistoryDB || [],
-        metadata: getBackupExportMetadata(backupFunds)
+        metadata: {
+            ...getBackupExportMetadata(backupFunds),
+            fundDailyStateDB: backupFunds.fundDailyStateDB || []
+        }
     });
 
     const backupDateTag = (backupFunds.backupDate || getToday()).replace(/-/g, '');
@@ -385,7 +388,6 @@ function importFundsData(event) {
                     if (Array.isArray(importData.fundDailyStateDB)) {
                         await HistoryDB.replaceStateRecords(importData.fundDailyStateDB);
                     }
-                    console.log('[Import] 成功从备份中恢复交易流水账');
                 } catch (dbErr) {
                     console.error('[Import] 恢复 HistoryDB 失败:', dbErr);
                 }

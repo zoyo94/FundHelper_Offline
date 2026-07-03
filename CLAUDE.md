@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-Chrome 扩展（Manifest V3），用于离线追踪基金/期货资产。单页 popup 应用，支持 OCR 批量导入、实时估值和收益计算。配置与持仓快照存 `chrome.storage.local`，交易订单与历史净值/状态存 IndexedDB（`HistoryDB`，v3.0.0 起）。
+Chrome 扩展（Manifest V3），用于离线追踪基金/期货资产。单页 popup 应用，支持 OCR 批量导入、实时估值和收益计算。配置与持仓快照存 `chrome.storage.local`，交易订单与历史净值/状态存 IndexedDB（`HistoryDB`，v3.0.0 起）。当前版本 v3.2.0。
 
 ## 开发流程
 
@@ -26,21 +26,21 @@ Chrome 扩展（Manifest V3），用于离线追踪基金/期货资产。单页 
 ### 组件交互
 
 ```
-popup.html (UI 界面 + 全部 CSS)
+popup.html (UI 结构)
+popup_base.css / popup_components.css / popup_overlay.css
     ↓
 popup.js (入口、全局状态、CONFIG、列设置、置顶) ─┐
 popup_history.js (HistoryDB / IndexedDB 持久化) │
-popup_trade.js (交易订单规范化与确认)            │
+popup_trade*.js (交易订单、分红、表单、结算状态) │
 popup_api.js (东财/天天/新浪/腾讯 行情拉取)       │
-popup_perf_table.js (基金表格 + 区间涨跌幅缓存)   │
-popup_perf_state.js (业绩缓存 / 周期配置)         │
-popup_perf_chart.js (业绩图表 / ECharts)          │
-popup_perf_panel.js (业绩面板 DOM 渲染)           ├─→ chrome.storage.local
-popup_fund_detail.js (详情弹窗数据装载)           │   + IndexedDB
-popup_ocr.js (Tesseract.js 批量录入)              │
-popup_import_export.js (JSON/CSV 导入导出)        │
-popup_position_ui.js (FAB 菜单 / 加减仓 / 批量)   │
-popup_perf.js (主数据加载、结算、modal 工具)    ─┘
+popup_batch_ops.js (批量操作)                    │
+popup_center_menu.js (居中菜单 / 待确认交易)      │
+popup_ui.js (Toast / Modal / 通知中心)            ├─→ chrome.storage.local
+popup_settlement*.js (日结算 / 撤销 / 备份)       │   + IndexedDB
+popup_perf*.js (缓存、初始化、数据加载、渲染、图表)│
+popup_fund_detail.js (详情弹窗数据装载)           │
+popup_ocr.js (Tesseract.js 懒加载批量录入)        │
+popup_import_export.js (JSON/CSV 导入导出)      ─┘
     ↓
 background.js (仅用于新浪/东财 API 的 CORS 代理)
 ```
@@ -337,7 +337,17 @@ Background 会自动添加必需的请求头。
 - 包含“导出当前数据”和“导出备份数据”两个导出入口
 - 当前样式是轻量面板化设计，不改原有展开交互模型，只做对齐和视觉优化
 
-## 代码组织（v3.0.0 模块化后）
+### 持有天数重算机制
+
+- **优先计算逻辑**：业绩展示时，基金的累计持有天数优先从该基金的历史交易流水中重算（调用 `calculateHoldDaysFromOrders`）；只有在无交易流水时，才回退到基于 `holdDaysBase + addedDate` 估算。
+- **重算规则（多轮循环累加）**：
+  - **排序**：所有已确认订单按交易生效时间升序排序。
+  - **建仓**：当订单为 `initial`，或者处于当前无持仓（份额为 0）状态下且发生了 `add` 或 `dividend_reinvest` 时，标记本轮建仓生效日（`openDate`）。
+  - **清仓**：当订单类型为 `clear` 或扣减后份额降至 `0.001` 及以下时，计算本轮持有天数（`clearDate - openDate`）并累加到总持有天数中，然后重置持仓份额为 0，并将 `openDate` 置空。
+  - **在持天数**：若当前依然在持（遍历完全部订单后份额大于 0 且 `openDate` 不为空），则额外将当前一轮的在持天数（`today - openDate`）累加到总持有天数中。
+- **容错回退**：若历史流水数据不全（例如没有建仓订单仅有清仓记录），系统将回退到读取 `holdDaysBase` 属性值作为持有天数。
+
+## 代码组织（v3.2.0 模块化后）
 
 按模块功能划分，添加新功能前先确认它属于哪个域：
 
@@ -345,24 +355,54 @@ Background 会自动添加必需的请求头。
 | --- | --- |
 | `popup.js` | CONFIG / CONSTANTS、全局状态、低层 storage、列设置、置顶、调试守门 |
 | `popup_history.js` | IndexedDB (`HistoryDB`) — tradeOrders / 历史净值 / 状态快照 |
-| `popup_trade.js` | 交易订单规范化、迁移、待确认交易、分红自动检测 |
+| `popup_trade.js` | 交易订单规范化、迁移、持仓快照、订单 CRUD |
+| `popup_trade_dividend.js` | 分红检测、自动录入、历史分红补录 |
+| `popup_trade_settlement.js` | 结算运行时、挂起调整、状态持久化 |
+| `popup_trade_utils.js` | 交易日计算、份额/金额计算、撤销截止 |
+| `popup_trade_form.js` | 加仓/减仓/分红表单、历史补录、基金编辑器、FAB 菜单 |
 | `popup_api.js` | 多源行情拉取（东财主/备、天天、新浪代理、腾讯）、指数行情 |
 | `popup_perf_table.js` | 基金表格渲染、区间涨跌幅日级缓存 |
 | `popup_perf_state.js` | 业绩走势缓存、周期常量 |
 | `popup_perf_chart.js` | 业绩图表 / 走势图 / 详情弹窗布局 |
 | `popup_perf_panel.js` | 业绩面板 DOM 渲染 |
 | `popup_fund_detail.js` | 基金详情弹窗（走势、净值、重仓股） |
-| `popup_ocr.js` | OCR 批量录入（Tesseract.js v4） |
+| `popup_ocr.js` | OCR 批量录入（Tesseract.js v4，按需懒加载） |
 | `popup_import_export.js` | JSON 全量导入导出、交易订单 CSV 导入导出 |
-| `popup_position_ui.js` | FAB 菜单、加仓/减仓/分红/清仓、批量操作弹窗 |
-| `popup_perf.js` | 主数据加载 `loadData()`、自动结算、modal 工具（`showAlert`/`showConfirm`/`showFormModal`） |
+| `popup_batch_ops.js` | 批量操作：分组/清仓/删除/重算份额 |
+| `popup_center_menu.js` | 居中弹窗菜单、待确认交易、清除订单 |
+| `popup_ui.js` | Toast / Modal / 通知中心 |
+| `popup_settlement_rollback.js` | 撤销结算、备份管理、份额推导、收益日历 |
+| `popup_settlement_run.js` | 手动/自动日结算、状态持久化、刷新间隔选择器 |
+| `popup_perf_cache.js` | 业绩缓存、状态、周期配置、工具函数 |
+| `popup_perf_init.js` | 初始化、事件绑定 |
+| `popup_perf_data.js` | 数据加载、行情刷新、指数行情 |
+| `popup_perf_render.js` | 表格渲染、选中状态、汇总统计 |
 | `background.js` | CORS 代理（`FETCH_SINA` / `FETCH_JSON`） |
 
-**关键执行顺序**（`loadData()` 中）：分红检测 → 自动结算 → 待确认交易处理。该顺序在 `popup_perf.js` 的 `_loadDataImpl()` 强制约束。
+**关键执行顺序**（`loadData()` 中）：分红检测 → 自动结算 → 待确认交易处理。该顺序在 `popup_perf_data.js` 的 `_loadDataImpl()` 强制约束。
 
-加载顺序由 `popup.html` 末尾 `<script>` 决定（popup.js 最先、popup_perf.js 最后，因为 popup_perf 依赖前面所有模块）。
+加载顺序由 `popup.html` 末尾 `<script>` 决定（popup.js 最先、popup_perf_render.js 最后，因为后者依赖前面所有模块）。
 
 ## 最近更新
+
+### v3.2.0 架构优化 + 结算修复 + UI 增强（2026-07-03）
+
+#### 架构优化
+- 🎨 **CSS 外联**：4530 行内联 `<style>` 提取为 `popup_base.css` / `popup_components.css` / `popup_overlay.css`，popup.html 从 4784 行缩减至 275 行
+- 📦 **JS 模块化拆分**：14 个模块进一步拆分为 25 个职责单一的模块，最大文件从 4710 行降至 1463 行
+- ⚡ **OCR 懒加载**：Tesseract 三个脚本从 `<script>` 硬编码改为点击"传图识别"时动态加载
+- 🔧 **fetchLiveInfo 拆分**：233 行单体函数拆为 5 个子函数
+
+#### 结算系统修复
+- 🐛 **QDII/封闭期基金不结算**：去掉 `shouldAutoSettleFund` / `hasFreshYesterdayProfit` / `recordDailyProfitHistory` 三处对 `dominantMarketPrevPriceDate` 的强制过滤，改为按每个基金自己的 `prevPriceDate` 独立结算
+- 🐛 **普通加仓允许填过去日期**：添加校验，到账日期不能早于今天，引导用户使用「补录历史交易」
+- 🐛 **`backfillHistoricalTrade` 中 `live` 变量未定义**：补上 `const live = await fetchLiveInfo(code)`
+
+#### UI 增强
+- 🎨 **汇总栏百分比**：昨日收益/当日估值/累计收益均显示百分比，总资产显示本金
+- 🎨 **全屏模式隐藏全屏按钮**
+- 🎨 **刷新间隔下拉菜单**：颜色改为深蓝主题一致，尺寸缩小，触发按钮透明无边框
+- 🎨 **涨跌停数据居中显示**
 
 ### v3.1.0 性能优化 + OCR 建仓补全 + Bug 修复（2026-05-27）
 
@@ -482,7 +522,7 @@ Background 会自动添加必需的请求头。
 ### 添加新的批量操作
 
 1. 在 `popup.html` 的 FAB 菜单中添加按钮
-2. 在 `popup_position_ui.js` 中创建 async 函数（用 `getSelectedFunds()` 获取选中基金）
+2. 在 `popup_batch_ops.js` 或对应职责模块中创建 async 函数（用 `getSelectedFunds()` 获取选中基金）
 3. 使用 `selectedCodes` 获取选中的基金代码
 4. 通过 `storageHelper.setAll()` 更新 storage
 5. 调用 `loadData()` 刷新 UI
