@@ -551,6 +551,69 @@ function escapeHtml(value) {
     }[ch]));
 }
 
+function normalizeSearchText(value) {
+    return safeString(value, '').toLowerCase();
+}
+
+function splitSearchKeywords(query) {
+    return normalizeSearchText(query).split(/\s+/).filter(Boolean);
+}
+
+function createSearchMatcher(query, fieldGetters = []) {
+    const keywords = splitSearchKeywords(query);
+    if (keywords.length === 0) return () => true;
+    const getters = safeArray(fieldGetters, []).filter(fn => typeof fn === 'function');
+    return (item) => {
+        const haystack = getters.map(fn => normalizeSearchText(fn(item))).join(' ');
+        return keywords.every(keyword => haystack.includes(keyword));
+    };
+}
+
+const fundSearchController = (() => {
+    let inputEl = null;
+    let query = '';
+    const changeListeners = [];
+    const fieldGetters = [
+        item => item?.code,
+        item => item?.name,
+        item => item?.group
+    ];
+
+    function emitChange() {
+        for (const fn of changeListeners) {
+            try { fn(); } catch (_) {}
+        }
+    }
+
+    return {
+        bind() {
+            inputEl = document.getElementById('fundSearchInput');
+            if (!inputEl) return;
+            query = inputEl.value || '';
+            inputEl.addEventListener('input', () => {
+                query = inputEl.value || '';
+                emitChange();
+            });
+            inputEl.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                if (!inputEl.value) return;
+                inputEl.value = '';
+                query = '';
+                emitChange();
+            });
+        },
+        matches(item) {
+            return createSearchMatcher(query, fieldGetters)(item);
+        },
+        isEmpty() {
+            return splitSearchKeywords(query).length === 0;
+        },
+        onChange(fn) {
+            if (typeof fn === 'function') changeListeners.push(fn);
+        }
+    };
+})();
+
 let fundDetailFitPage = false;
 let fundDetailResizeObserver = null;
 let fundDetailLayoutFrameId = null;

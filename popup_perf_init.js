@@ -25,6 +25,8 @@ async function initializePopup() {
         notificationBtn: document.getElementById('notificationBtn'),
         columnConfigBtn: document.getElementById('columnConfigBtn'),
         columnConfigPanel: document.getElementById('columnConfigPanel'),
+        allOrdersBtn: document.getElementById('allOrdersBtn'),
+        fundSearchInput: document.getElementById('fundSearchInput'),
         totalAmount: document.getElementById('totalAmount'),
         totalTodayProfit: document.getElementById('totalTodayProfit'),
         totalTotalProfit: document.getElementById('totalTotalProfit'),
@@ -53,6 +55,7 @@ async function initializePopup() {
     elements.exportBtn.onclick = exportFundsData;
     elements.importBtn.onclick = () => elements.importFile.click();
     if (elements.profitCalendarBtn) elements.profitCalendarBtn.onclick = () => openProfitCalendar();
+    if (elements.allOrdersBtn) elements.allOrdersBtn.onclick = () => openAllOrdersModal();
 
     // 绑定通知中心按钮
     if (elements.notificationBtn) {
@@ -104,6 +107,11 @@ async function initializePopup() {
 
     groupFilterController.bind();
     groupFilterController.onChange(() => {
+        clearSelection();
+        renderTable();
+    });
+    fundSearchController.bind();
+    fundSearchController.onChange(() => {
         clearSelection();
         renderTable();
     });
@@ -673,4 +681,3 @@ window.addEventListener('beforeunload', () => {
         refreshCountdownTimer = null;
     }
 });
-

@@ -305,6 +305,188 @@ function showHtmlModal(title, html, footerBtns = null) {
     setModalVisibility(true);
 }
 
+function getOrderDisplayDate(order = {}) {
+    return normalizePerfDate(
+        order.orderDate
+        || order.date
+        || order.effectiveDate
+        || order.targetDate
+        || order.confirmedDate
+        || ''
+    );
+}
+
+function getOrderConfirmTime(order = {}) {
+    const confirmedDate = normalizePerfDate(order.confirmedDate || order.confirmDate || '');
+    if (confirmedDate) return confirmedDate;
+    if (order.status !== 'confirmed') return '待确认';
+    return normalizePerfDate(order.targetDate || order.effectiveDate || order.date || '') || '—';
+}
+
+function getOrderDisplayAmount(order = {}) {
+    if (isDividendType(order.type) && safeFloat(order.dividendAmount, 0) > 0) {
+        return safeFloat(order.dividendAmount, 0);
+    }
+    return safeFloat(order.amount, 0);
+}
+
+function getOrderDisplayShares(order = {}) {
+    const confirmedShares = safeFloat(order.confirmedShares, 0);
+    if (confirmedShares > 0) return confirmedShares;
+    return safeFloat(order.shares, 0);
+}
+
+function formatOrderAmount(value, digits = 2, zeroText = '0.00') {
+    const num = safeFloat(value, 0);
+    if (num === 0) return zeroText;
+    return num.toFixed(digits);
+}
+
+function formatOrderOptionalNumber(value, digits = 2) {
+    const num = safeFloat(value, 0);
+    return num > 0 ? num.toFixed(digits) : '—';
+}
+
+function buildOrderSearchMatcher(query) {
+    return createSearchMatcher(query, [
+        order => getOrderDisplayDate(order),
+        order => order?.code,
+        order => order?.name,
+        order => order?.group,
+        order => getOrderDisplayAmount(order),
+        order => getOrderDisplayShares(order),
+        order => getTradeExecutionNav(order),
+        order => order?.fee,
+        order => getOrderConfirmTime(order),
+        order => getTradeDisplayLabel(order),
+        order => order?.remark
+    ]);
+}
+
+async function openAllOrdersModal() {
+    showHtmlModal('所有订单', '<div class="orders-loading">订单加载中...</div>', [getCloseFooterButton()]);
+    elements.modalOverlay.dataset.mode = 'all-orders';
+
+    let orders = [];
+    try {
+        orders = await HistoryDB.getAllOrders();
+    } catch (error) {
+        console.error('[Orders] 读取订单失败:', error);
+        elements.modalMsg.innerHTML = '<div class="orders-empty">订单读取失败</div>';
+        showToast('订单读取失败', 'error');
+        return;
+    }
+
+    const html = `
+        <div class="orders-modal">
+            <div class="orders-toolbar">
+                <input id="ordersSearchInput" class="orders-search-input" type="search" placeholder="搜索日期/代码/名称/金额" aria-label="搜索订单">
+                <span id="ordersResultCount" class="orders-result-count"></span>
+            </div>
+            <div class="orders-table-wrap">
+                <table class="orders-table">
+                    <colgroup>
+                        <col class="oc-index">
+                        <col class="oc-date">
+                        <col class="oc-confirm">
+                        <col class="oc-type">
+                        <col class="oc-code">
+                        <col class="oc-name">
+                        <col class="oc-amount">
+                        <col class="oc-shares">
+                        <col class="oc-nav">
+                        <col class="oc-fee">
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th>序号</th>
+                            <th>日期</th>
+                            <th>确认时间</th>
+                            <th>类型</th>
+                            <th>代码</th>
+                            <th>名称</th>
+                            <th>金额</th>
+                            <th>份数</th>
+                            <th>净值</th>
+                            <th>手续费</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ordersTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
+    elements.modalMsg.innerHTML = html;
+    const searchInput = document.getElementById('ordersSearchInput');
+    const countEl = document.getElementById('ordersResultCount');
+    const tbody = document.getElementById('ordersTableBody');
+
+    const renderOrders = () => {
+        const query = searchInput?.value || '';
+        const matcher = buildOrderSearchMatcher(query);
+        const filteredOrders = orders.filter(matcher);
+        const fragment = document.createDocumentFragment();
+
+        filteredOrders.forEach((order, index) => {
+            const tr = document.createElement('tr');
+            const typeLabel = getTradeDisplayLabel(order);
+            const typeColor = getTradeDisplayColor(order);
+            const cells = [
+                String(index + 1),
+                getOrderDisplayDate(order) || '—',
+                getOrderConfirmTime(order),
+                typeLabel,
+                order.code || '—',
+                order.name || '—',
+                formatOrderAmount(getOrderDisplayAmount(order)),
+                formatOrderOptionalNumber(getOrderDisplayShares(order)),
+                formatOrderOptionalNumber(getTradeExecutionNav(order), 4),
+                formatOrderAmount(order.fee, 2)
+            ];
+            cells.forEach((text, cellIndex) => {
+                const td = document.createElement('td');
+                td.textContent = text;
+                if (cellIndex === 3) {
+                    td.className = 'order-type';
+                    td.style.color = typeColor;
+                }
+                if ([6, 7, 8, 9].includes(cellIndex)) td.className = 'num';
+                tr.appendChild(td);
+            });
+            fragment.appendChild(tr);
+        });
+
+        if (filteredOrders.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 10;
+            td.className = 'orders-empty-cell';
+            td.textContent = orders.length === 0 ? '暂无订单记录' : '没有匹配的订单';
+            tr.appendChild(td);
+            fragment.appendChild(tr);
+        }
+
+        tbody.replaceChildren(fragment);
+        if (countEl) {
+            countEl.textContent = orders.length === filteredOrders.length
+                ? `共 ${orders.length} 条`
+                : `${filteredOrders.length} / ${orders.length} 条`;
+        }
+    };
+
+    if (searchInput) {
+        searchInput.addEventListener('input', renderOrders);
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape' || !searchInput.value) return;
+            searchInput.value = '';
+            renderOrders();
+        });
+        searchInput.focus();
+    }
+    renderOrders();
+}
+
 function showFormModal({ title, subTitle = '', fields = [], actionText = '确认', layout = 'auto', formClass = '', onRender = null } = {}) {
     return new Promise(resolve => {
         const onCancel = createResolveAndCloseHandler(resolve, null);

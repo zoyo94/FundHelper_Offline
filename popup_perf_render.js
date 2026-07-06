@@ -41,7 +41,9 @@ function _renderAmountWithExtra(el, amount, extraText) {
 }
 
 function renderTable() {
-    let displayData = allFundsData.filter(item => groupFilterController.matches(item));
+    let displayData = allFundsData.filter(item =>
+        groupFilterController.matches(item) && fundSearchController.matches(item)
+    );
     displayData.sort((a, b) => {
         // 置顶基金优先排在最前面
         const aPinned = pinnedFunds.has(a.code) ? 1 : 0;

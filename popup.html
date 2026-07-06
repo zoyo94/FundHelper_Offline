@@ -142,10 +142,14 @@
                 <div id="groupFilterPopover" class="multi-select-popover" role="listbox" aria-multiselectable="true" hidden></div>
             </div>
             <datalist id="groupList"></datalist>
+            <div class="filter-search">
+                <input id="fundSearchInput" type="search" placeholder="搜索代码/名称/分组" aria-label="搜索基金">
+            </div>
         </div>
         <div id="filterBreadth" class="filter-breadth">
             <!-- 广度数据由 JS 动态渲染 -->
         </div>
+        <button id="allOrdersBtn" class="filter-action-btn" title="所有订单" aria-label="所有订单" type="button">≣</button>
         <button id="columnConfigBtn" class="filter-action-btn" title="列显示设置" aria-label="列显示设置" aria-expanded="false" type="button">☷</button>
         <div id="columnConfigPanel" role="dialog" aria-label="列显示设置"></div>
         <button id="profitCalendarBtn" class="filter-action-btn" title="收益日历" aria-label="收益日历" type="button">◷</button>

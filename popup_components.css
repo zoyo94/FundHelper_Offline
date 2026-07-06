@@ -636,7 +636,13 @@ body:not(.is-fullscreen) .filter-left .multi-select-filter {
     flex-basis: 128px;
 }
 
-body:not(.is-fullscreen) #profitCalendarBtn {
+body:not(.is-fullscreen) .filter-left .filter-search {
+    width: 145px;
+    flex-basis: 145px;
+}
+
+body:not(.is-fullscreen) #profitCalendarBtn,
+body:not(.is-fullscreen) #allOrdersBtn {
     width: 32px;
     min-width: 32px;
     height: 32px;
@@ -989,4 +995,3 @@ body.is-fullscreen table {
     opacity: 1;
     transform: rotate(45deg);
 }
-

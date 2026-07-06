@@ -276,6 +276,20 @@ const HistoryDB = {
         });
     },
 
+    async getAllOrders() {
+        const db = await this.init();
+        return new Promise((resolve) => {
+            const tx = db.transaction(this.orderStore, 'readonly');
+            const store = tx.objectStore(this.orderStore);
+            const request = store.getAll();
+            request.onsuccess = () => {
+                const orders = normalizeTradeRecordList(request.result || [], { source: 'order' });
+                resolve(orders.sort((a, b) => compareTradeExecutionOrder(b, a)));
+            };
+            request.onerror = () => resolve([]);
+        });
+    },
+
     async replaceOrders(orders = []) {
         const db = await this.init();
         const normalizedOrders = normalizeTradeRecordList(orders, { source: 'order' });
