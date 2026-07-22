@@ -22,6 +22,14 @@ function syncAutoDetectedDividendEntry(existingAdj, dividend, todayStr, shares =
         existingAdj.dividendDate = dividend.date;
         changed = true;
     }
+    if (existingAdj.date !== dividend.date) {
+        existingAdj.date = dividend.date;
+        changed = true;
+    }
+    if (existingAdj.orderDate !== dividend.date) {
+        existingAdj.orderDate = dividend.date;
+        changed = true;
+    }
     if (existingAdj.perShare !== dividend.perShare) {
         existingAdj.perShare = dividend.perShare;
         changed = true;
@@ -128,6 +136,18 @@ function isSameRecordedDividendEvent(record, dividend, expectedAmount = 0) {
     return false;
 }
 
+function isSettlementFallbackForDividend(record, dividend) {
+    if (!record?.inferredBySettlement || !dividend?.date || !isDividendType(record.type)) return false;
+
+    const expectedArrivalDate = normalizePerfDate(calculateDividendArrivalDate(dividend.date));
+    if (!expectedArrivalDate) return false;
+
+    const normalized = normalizeTradeRecord(record);
+    return [normalized.dividendDate, normalized.orderDate, normalized.date]
+        .map(value => normalizePerfDate(value || ''))
+        .some(value => value === expectedArrivalDate);
+}
+
 function getSettlementFallbackDividendDate(item, fallbackDate, fallbackPerShare = 0) {
     if (!item || !fallbackDate) return fallbackDate || '';
     const fallbackDateValue = new Date(fallbackDate);
@@ -179,9 +199,25 @@ async function ensureAutoDetectedDividendEntry(item, code, dividend, todayStr, n
     const existingOrder = candidateRecords.find(record =>
         isSameRecordedDividendEvent(record, dividend, expectedAmount)
     );
+    const fallbackOrder = candidateRecords.find(record =>
+        record !== existingOrder && isSettlementFallbackForDividend(record, dividend)
+    );
+
+    // 结算层可能先按到账日生成兜底分红单，历史接口稍后才返回真实分红日。
+    // 两条同时存在时保留真实分红日订单，并移除到账日兜底单。
+    if (existingOrder && fallbackOrder?.id) {
+        await HistoryDB.deleteOrder(fallbackOrder.id).catch(() => {});
+        const fallbackIndex = candidateRecords.indexOf(fallbackOrder);
+        if (fallbackIndex >= 0) candidateRecords.splice(fallbackIndex, 1);
+        const runtimeOrders = safeArray(runtimeTradeOrdersMap.get(code), []);
+        runtimeTradeOrdersMap.set(code, runtimeOrders.filter(record => record?.id !== fallbackOrder.id));
+        debugDividendTrace(code, 'auto-dividend-remove-settlement-duplicate', {
+            source, dividend, existingOrder, fallbackOrder
+        });
+    }
 
     if (existingOrder) {
-        if (source === 'api' && existingOrder.inferredBySettlement) {
+        if ((source === 'api' || source === 'history_db') && existingOrder.inferredBySettlement) {
             const synced = syncAutoDetectedDividendEntry(existingOrder, dividend, todayStr, shares);
             if (synced && existingOrder.id) {
                 await HistoryDB.updateOrder(existingOrder.id, existingOrder).catch(() => {});
@@ -196,6 +232,17 @@ async function ensureAutoDetectedDividendEntry(item, code, dividend, todayStr, n
             source, dividend, expectedAmount, existingOrder
         });
         return false;
+    }
+
+    if (fallbackOrder) {
+        const synced = syncAutoDetectedDividendEntry(fallbackOrder, dividend, todayStr, shares);
+        if (synced && fallbackOrder.id) {
+            await HistoryDB.updateOrder(fallbackOrder.id, fallbackOrder).catch(() => {});
+        }
+        debugDividendTrace(code, 'auto-dividend-sync-settlement-fallback', {
+            source, synced, dividend, fallbackOrder
+        });
+        return synced;
     }
 
     const notification = await addAutoDetectedDividend(item, code, dividend, todayStr, source === 'fallback');
@@ -333,4 +380,3 @@ async function debugFundDividendBackfillFromHistoryDB(code, addedDate = '') {
         orders: normalizeTradeRecordList(orders, { source: 'order' }).filter(order => isDividendType(order.type))
     };
 }
-

@@ -23,6 +23,9 @@ const CONFIG = {
     MARKET_BREADTH_STORAGE_KEY: 'marketBreadthSnapshot',
     PINNED_FUNDS_STORAGE_KEY: 'pinnedFunds',   // 置顶基金存储 key
     INDEX_SETTINGS_STORAGE_KEY: 'indexSettings',
+    LIVE_API_SETTINGS_STORAGE_KEY: 'liveApiSettings',
+    LIVE_API_PROFILES_STORAGE_KEY: 'liveApiProfiles',
+    LIVE_API_ACTIVE_PROFILE_STORAGE_KEY: 'liveApiActiveProfileId',
     INDEX_QUOTES_STORAGE_KEY: 'indexQuotesSnapshot', // 指数行情快照存储 key
     MANUAL_PAUSE_STORAGE_KEY: 'isManuallyPaused',   // 手动暂停自动刷新存储 key
     TRADE_DATA_MIGRATION_STORAGE_KEY: 'tradeDataMigrationVersion',

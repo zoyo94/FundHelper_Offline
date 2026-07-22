@@ -1,5 +1,73 @@
 // ==================== 业绩走势图表 / 详情弹窗布局域 ====================
 
+// 从交易流水构建持仓区间列表：[{ open: 'YYYY-MM-DD', close: 'YYYY-MM-DD'|null }]
+// close 为 null 表示至今仍在持仓。用于 tooltip 正确显示"持有第 N 天"，避免清仓后继续累加。
+function buildHoldingPeriodsFromTrades(tradeHistory, fallbackAddedDate = '') {
+    const periods = [];
+    const orders = (typeof normalizeTradeRecordList === 'function' && Array.isArray(tradeHistory))
+        ? normalizeTradeRecordList(tradeHistory, { source: 'order' })
+            .filter(order => order.status === 'confirmed')
+            .sort(compareTradeExecutionOrder)
+        : [];
+
+    let shares = 0;
+    let openDate = '';
+
+    orders.forEach(order => {
+        const displayType = getTradeDisplayType(order);
+        const tradeDate = getTradeMarkerDate(order) || getTradeRecordDate(order) || '';
+        const shareEffect = getTradeShareEffect(order);
+
+        if (displayType === 'initial') {
+            shares = Math.max(0, roundShares(Math.abs(shareEffect)));
+            openDate = shares > 0 ? tradeDate : '';
+            return;
+        }
+        if (displayType === 'add' || displayType === 'dividend_reinvest') {
+            if (shares <= 0 && shareEffect > 0) openDate = tradeDate || openDate;
+            shares = Math.max(0, roundShares(shares + shareEffect));
+            if (shares > 0 && !openDate) openDate = tradeDate || '';
+            return;
+        }
+        if (displayType === 'remove' || displayType === 'clear') {
+            shares = Math.max(0, roundShares(shares + shareEffect));
+            if (displayType === 'clear' || shares <= 0.001) {
+                if (openDate) periods.push({ open: openDate, close: tradeDate || openDate });
+                shares = 0;
+                openDate = '';
+            }
+        }
+    });
+
+    if (shares > 0 && openDate) {
+        periods.push({ open: openDate, close: null });
+    }
+
+    // 无可用流水时回退到 addedDate（至今在持），保持旧行为
+    if (!periods.length && fallbackAddedDate) {
+        periods.push({ open: normalizePerfDate(fallbackAddedDate), close: null });
+    }
+
+    return periods;
+}
+
+// 计算某日在哪个持仓区间内，返回"持有第 N 天"（1 起）；清仓后 / 建仓前返回 null
+function holdDayForDate(periods, dateStr) {
+    const d = parseYmdDate(dateStr);
+    if (!d) return null;
+    const t = d.getTime();
+    for (const period of periods) {
+        const open = parseYmdDate(period.open);
+        if (!open) continue;
+        const openT = open.getTime();
+        if (t < openT) continue;
+        const close = period.close ? parseYmdDate(period.close) : null;
+        if (close && t > close.getTime()) continue;   // 已在此区间之后清仓
+        return Math.floor((t - openT) / CONSTANTS.DAY_MS) + 1;
+    }
+    return null;
+}
+
 function hidePerformanceTooltip() {
     const tooltip = document.getElementById('perfChartTooltip');
     if (tooltip) tooltip.style.display = 'none';
@@ -880,14 +948,14 @@ function drawPerfChartWithComparison(canvas, chartData, comparisonData = null) {
         const fundClr = fundR >= 0 ? '#ff7875' : '#73d13d';
         let html = `<div style="font-size:10px;color:#8aacce;margin-bottom:4px;">${date}</div>`;
 
-        if (perfState && perfState.addedDate) {
-            const d1 = parseYmdDate(perfState.addedDate);
-            const d2 = parseYmdDate(date);
-            if (d1 && d2) {
-                const diff = Math.floor((d2.getTime() - d1.getTime()) / (24 * 3600 * 1000));
-                if (diff >= 0) {
-                    html = `<div style="font-size:10px;color:#8aacce;margin-bottom:4px;">${date} (持有第 ${diff + 1} 天)</div>`;
-                }
+        if (perfState) {
+            const periods = buildHoldingPeriodsFromTrades(
+                Array.isArray(perfState.tradeHistory) ? perfState.tradeHistory : [],
+                perfState.sourceFund?.addedDate || perfState.addedDate || ''
+            );
+            const holdDay = holdDayForDate(periods, date);
+            if (holdDay !== null) {
+                html = `<div style="font-size:10px;color:#8aacce;margin-bottom:4px;">${date} (持有第 ${holdDay} 天)</div>`;
             }
         }
 

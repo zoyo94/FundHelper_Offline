@@ -22,6 +22,7 @@ async function initializePopup() {
         marketTicker: document.getElementById('marketTicker'),
         marketTickerTrack: document.getElementById('marketTickerTrack'),
         indexSettingsBtn: document.getElementById('indexSettingsBtn'),
+        apiSettingsBtn: document.getElementById('apiSettingsBtn'),
         notificationBtn: document.getElementById('notificationBtn'),
         columnConfigBtn: document.getElementById('columnConfigBtn'),
         columnConfigPanel: document.getElementById('columnConfigPanel'),
@@ -48,6 +49,7 @@ async function initializePopup() {
 
     // 初始化通知中心
     await notificationCenter.init();
+    await restoreLiveApiSettings();
 
     elements.addBtn.onclick = () => openFundEditor(null);
     if (elements.batchGroupBtn) elements.batchGroupBtn.onclick = () => batchChangeGroup();
@@ -60,6 +62,10 @@ async function initializePopup() {
     // 绑定通知中心按钮
     if (elements.notificationBtn) {
         elements.notificationBtn.onclick = () => notificationCenter.show();
+    }
+    if (elements.apiSettingsBtn) {
+        elements.apiSettingsBtn.onclick = () => openLiveApiSettings();
+        updateLiveApiSettingsButton();
     }
     if (elements.modalOverlay) {
         elements.modalOverlay.onclick = (e) => {

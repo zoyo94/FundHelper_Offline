@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-Chrome 扩展（Manifest V3），用于离线追踪基金/期货资产。单页 popup 应用，支持 OCR 批量导入、实时估值和收益计算。配置与持仓快照存 `chrome.storage.local`，交易订单与历史净值/状态存 IndexedDB（`HistoryDB`，v3.0.0 起）。当前版本 v3.2.0。
+Chrome 扩展（Manifest V3），用于离线追踪基金/期货资产。单页 popup 应用，支持 OCR 批量导入、实时估值和收益计算。配置与持仓快照存 `chrome.storage.local`，交易订单与历史净值/状态存 IndexedDB（`HistoryDB`，v3.0.0 起）。当前版本 v3.3.0。
 
 ## 开发流程
 

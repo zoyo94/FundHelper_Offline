@@ -480,6 +480,21 @@ function recordDailyProfitHistory(history, funds, priceUpdates, dominantMarketPr
             const item = funds[code];
             if (!item) continue;
 
+            // shares=0 的已清仓基金：仍需存档客观行情（供历史回溯用），但不写入收益日历
+            const hasShares = item.shares > 0;
+
+            // 同步存档昨日的客观行情到行情表 (fundHistory)，无论是否有持仓都存，保持净值库完整
+            HistoryDB.put({
+                code: code,
+                name: item.name,
+                date: settlementDate,
+                price: priceUpdate.price,
+                acPrice: priceUpdate.acNetValue || null,
+                rate: priceUpdate.rate
+            }).catch(() => {});
+
+            if (!hasShares) continue; // 无持仓，跳过收益计算和 byCode 写入
+
             const profit = calculateRecordedYesterdayProfitValue(item, priceUpdate, settlementDate);
             byCode[code] = profit;
 
@@ -494,16 +509,6 @@ function recordDailyProfitHistory(history, funds, priceUpdates, dominantMarketPr
                 holdDays: item.holdDaysBase || 0,
                 name: item.name,
                 group: item.group
-            }).catch(() => {});
-
-            // 同步存档昨日的客观行情到行情表 (fundHistory)
-            HistoryDB.put({
-                code: code,
-                name: item.name,
-                date: settlementDate,
-                price: priceUpdate.price,
-                acPrice: priceUpdate.acNetValue || null,
-                rate: priceUpdate.rate
             }).catch(() => {});
         }
 

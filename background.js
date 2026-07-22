@@ -38,4 +38,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
         return true;
     }
+
+    if (message.type === 'FETCH_TEXT') {
+        const url = message.url;
+        const defaultHeaders = {
+            'Referer': 'https://fund.eastmoney.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        };
+        const headers = message.headers && typeof message.headers === 'object'
+            ? { ...defaultHeaders, ...message.headers }
+            : defaultHeaders;
+
+        fetch(url, { headers })
+            .then(async res => {
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                const text = await res.text();
+                sendResponse({ success: true, data: text });
+            })
+            .catch(err => {
+                console.error('[background] FETCH_TEXT 请求失败:', url, err);
+                sendResponse({ success: false, error: err.message });
+            });
+        return true;
+    }
 });

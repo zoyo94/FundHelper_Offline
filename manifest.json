@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "资产收益助手",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "实时资产收益追踪器，支持基金/期货、OCR识别、指数行情与自动结算",
   "permissions": [
     "storage"
@@ -14,6 +14,9 @@
   },
   "host_permissions": [
     "https://fundgz.1234567.com.cn/*",
+    "https://fundcomapi.tiantianfunds.com/*",
+    "https://fundcomapi.eastmoney.com/*",
+    "https://stock.finance.sina.com.cn/*",
     "https://hq.sinajs.cn/*",
     "https://fund.eastmoney.com/*",
     "https://fundsuggest.eastmoney.com/*",
@@ -22,6 +25,10 @@
     "https://push2ex.eastmoney.com/*",
     "https://qt.gtimg.cn/*",
     "https://query1.finance.yahoo.com/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
   "action": {
     "default_popup": "popup.html"

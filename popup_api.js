@@ -59,6 +59,60 @@ function proxyFetchJson(url, { timeout = 5000, headers = {} } = {}) {
     });
 }
 
+function proxyFetchText(url, { timeout = 5000, headers = {} } = {}) {
+    return new Promise((resolve) => {
+        let resolved = false;
+        const timer = setTimeout(() => {
+            if (!resolved) {
+                resolved = true;
+                resolve(null);
+            }
+        }, timeout);
+
+        chrome.runtime.sendMessage({ type: 'FETCH_TEXT', url, headers }, (response) => {
+            if (resolved) return;
+            resolved = true;
+            clearTimeout(timer);
+
+            if (chrome.runtime.lastError) {
+                resolve(null);
+                return;
+            }
+
+            if (response && response.success && typeof response.data === 'string') {
+                resolve(response.data);
+            } else {
+                resolve(null);
+            }
+        });
+    });
+}
+
+async function fetchLiveApiText(url, timeout = CONFIG.API_TIMEOUT) {
+    const direct = await withTimeout(
+        fetch(url)
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.text();
+            })
+            .catch((err) => {
+                console.warn('[live-api] 直连失败, 尝试 Background 代理:', url, err.message);
+                return null;
+            }),
+        timeout,
+        null
+    );
+    if (direct !== null) return direct;
+
+    return proxyFetchText(url, {
+        timeout,
+        headers: {
+            'Referer': 'https://fund.eastmoney.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+    });
+}
+
 function withTimeout(promise, ms, fallback) {
     const timer = new Promise(resolve => setTimeout(() => resolve(fallback), ms));
     return Promise.race([promise, timer]);
@@ -114,16 +168,20 @@ async function fetchLiveInfo(code) {
  * 场外基金 / 场内基金：天天基金估值 + 东财历史净值，并发请求后合并
  */
 async function _fetchOutOfMarketFund(cleanCode) {
-    const url1 = `https://fundgz.1234567.com.cn/js/${cleanCode}.js?rt=${Date.now()}`;
-    const url2 = `https://fund.eastmoney.com/pingzhongdata/${cleanCode}.js?v=${Date.now()}`;
-
-    const [r1, r2] = await Promise.allSettled([
-        fetch(url1).then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.text(); }),
-        fetch(url2).then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.text(); })
+    const url1 = buildLiveApiUrl(cleanCode);
+    const [t1, t2] = await Promise.all([
+        fetchConfiguredLiveApiText(url1).catch((error) => {
+            console.warn('[live-api] 主估值接口请求失败:', cleanCode, error.message);
+            return null;
+        }),
+        fetchPrioritizedHistoryText(cleanCode).catch(() => null)
     ]);
 
+    const r1 = t1 !== null ? { status: 'fulfilled', value: t1 } : { status: 'rejected', reason: new Error('请求估值接口失败') };
+    const r2 = t2 !== null ? { status: 'fulfilled', value: t2 } : { status: 'rejected', reason: new Error('请求历史接口失败') };
+
     const mainResult = _parseFundgzResponse(r1, cleanCode);
-    const fallbackResult = _parseEastmoneyResponse(r2, cleanCode, !!mainResult);
+    const fallbackResult = await _parseEastmoneyResponse(r2, cleanCode, !!mainResult);
 
     if (mainResult && fallbackResult) {
         mainResult.acNetValue = fallbackResult.acNetValue;
@@ -178,10 +236,7 @@ function _parseFundgzResponse(settled, cleanCode) {
     }
     try {
         const text = settled.value;
-        const jsonMatch = text.match(/jsonpgz\((.*)\)/);
-        if (!jsonMatch) return null;
-
-        const d = JSON.parse(jsonMatch[1]);
+        const d = parseConfiguredLiveApiResponse(text);
         if (!d || (!d.gsz && !d.dwjz)) {
             debugDividendTrace(cleanCode, 'fetch-main-invalid-data', {});
             return null;
@@ -189,7 +244,7 @@ function _parseFundgzResponse(settled, cleanCode) {
 
         const dwjz = parseFloat(d.dwjz) || 0;
         const gsz = parseFloat(d.gsz || d.dwjz) || 0;
-        const gszzl = parseFloat(d.gszzl) || 0;
+        const gszzl = d.dataKind === 'nav' ? null : (parseFloat(d.gszzl) || 0);
 
         debugDividendTrace(cleanCode, 'fetch-main-success', {
             prevPrice: dwjz, price: gsz,
@@ -210,10 +265,54 @@ function _parseFundgzResponse(settled, cleanCode) {
     }
 }
 
+function _buildEastmoneyHistoryItems(cleanCode, netWorthData, acMap = new Map()) {
+    return safeArray(netWorthData, []).map(item => ({
+        code: cleanCode,
+        date: item.x ? timestampToDate(item.x) : '',
+        price: parseFloat(item.y),
+        acPrice: acMap.get(item.x) || null,
+        rate: typeof item.equityReturn !== 'undefined' ? parseFloat(item.equityReturn) : null,
+        dividend: item.unitMoney || ''
+    })).filter(item => item.date && item.price > 0);
+}
+
+async function _persistEastmoneyHistoryGap(cleanCode, dbItems, hasMainResult) {
+    if (!Array.isArray(dbItems) || dbItems.length === 0) return;
+
+    if (!hasMainResult) {
+        await HistoryDB.batchPut(dbItems).catch(() => {});
+        return;
+    }
+
+    const latestLocal = await HistoryDB.getLatest(cleanCode).catch(() => null);
+    const latestLocalDate = normalizePerfDate(latestLocal?.date || '');
+    const latestRemoteDate = normalizePerfDate(dbItems[dbItems.length - 1]?.date || '');
+
+    if (!latestLocalDate) {
+        await HistoryDB.batchPut(dbItems).catch(() => {});
+        return;
+    }
+
+    // 直接全量比对当前获取到的历史净值数据
+    // 现代浏览器中查询 IndexedDB 几千条数据只需几毫秒，全量比对可以彻底解决无论 1 个月还是 1 年未打开导致的断层
+    if (dbItems.length === 0) return;
+
+    const checkStartDate = dbItems[0].date;
+    const localRange = await HistoryDB.getRange(cleanCode, checkStartDate, latestRemoteDate).catch(() => []);
+    const localDateSet = new Set(localRange.map(item => item.date));
+
+    // 筛选出本地没有的记录进行补全
+    const missingItems = dbItems.filter(item => !localDateSet.has(item.date));
+
+    if (missingItems.length > 0) {
+        await HistoryDB.batchPut(missingItems).catch(() => {});
+    }
+}
+
 /**
  * 解析东财历史净值接口 (fund.eastmoney.com/pingzhongdata)
  */
-function _parseEastmoneyResponse(settled, cleanCode, hasMainResult) {
+async function _parseEastmoneyResponse(settled, cleanCode, hasMainResult) {
     if (settled.status !== 'fulfilled') {
         debugDividendTrace(cleanCode, 'fetch-fallback-error', { message: settled.reason?.message });
         return null;
@@ -280,20 +379,12 @@ function _parseEastmoneyResponse(settled, cleanCode, hasMainResult) {
             }))
         });
 
-        // 写历史净值到 DB（仅主接口失败时）
-        if (Array.isArray(netWorthData) && !hasMainResult) {
-            const dbItems = netWorthData.map(item => ({
-                code: cleanCode,
-                date: item.x ? timestampToDate(item.x) : '',
-                price: parseFloat(item.y),
-                acPrice: acMapInner.get(item.x) || null,
-                rate: typeof item.equityReturn !== 'undefined' ? parseFloat(item.equityReturn) : null,
-                dividend: item.unitMoney || ''
-            })).filter(d => d.date);
-            if (dbItems.length > 0) {
-                HistoryDB.batchPut(dbItems).catch(() => {});
-            }
-        }
+        // 写历史净值到 DB：主接口失败时全量兜底；主接口成功时只补本地缺口日期，供收益历史回溯拆分多日收益。
+        await _persistEastmoneyHistoryGap(
+            cleanCode,
+            _buildEastmoneyHistoryItems(cleanCode, netWorthData, acMapInner),
+            hasMainResult
+        );
 
         return {
             name, rate: null, price: gsz,
@@ -732,9 +823,7 @@ async function refreshMarketBreadth(forceSkip = false) {
 
 async function fetchComparisonData(code, startDate, endDate) {
     try {
-        const url = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`;
-        const res = await fetch(url);
-        const text = await res.text();
+        const text = await fetchPrioritizedHistoryText(code);
 
         const parseDataArray = (data) => {
             if (!Array.isArray(data)) return null;
@@ -838,9 +927,7 @@ async function fetchFundNetValues(code, startDate, endDate, pageSize = 200, { pr
             }
         }
 
-        const url2 = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`;
-        const res2 = await fetch(url2);
-        const text = await res2.text();
+        const text = await fetchPrioritizedHistoryText(code);
 
         const match = text.match(/var\s+Data_netWorthTrend\s*=\s*(\[[\s\S]+?\]);/);
         const acMatchInner = text.match(/var\s+Data_ACWorthTrend\s*=\s*(\[[\s\S]+?\]);/);

@@ -90,19 +90,7 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
         }
 
         if (!skipLiveRequests && codes.length > 0) {
-            for (let i = 0; i < codes.length; i += CONFIG.BATCH_SIZE) {
-                const batch = codes.slice(i, i + CONFIG.BATCH_SIZE);
-                const batchResults = await fetchBatchLiveInfo(
-                    batch,
-                    CONFIG.API_TIMEOUT,
-                    code => ({ name: `[超时]${code}`, rate: 0, price: 0, prevPrice: 0 })
-                );
-                fetchedData.push(...batchResults);
-                // 批次间短暂延迟，避免请求过于密集
-                if (i + CONFIG.BATCH_SIZE < codes.length) {
-                    await new Promise(resolve => setTimeout(resolve, CONFIG.BATCH_DELAY));
-                }
-            }
+            fetchedData = await fetchPrioritizedLiveInfo(codes);
             await Promise.all([
                 persistLiveSnapshot(
                     fetchedData
@@ -621,4 +609,3 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
         }
     }
 }
-
