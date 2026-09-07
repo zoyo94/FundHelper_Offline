@@ -1,4 +1,4 @@
-var centerModalOverlay = null;
+let centerModalOverlay = null;
 function initCenterModal() {
     centerModalOverlay = document.createElement('div');
     centerModalOverlay.className = 'center-modal-overlay';
@@ -22,7 +22,7 @@ function showCenterMenu(code) {
                 <span class="modal-link" id="transactionLink">交易记录 ></span>
             </div>
             <div class="center-modal-info">
-                <span class="info-name">${fund.name}</span>
+                <span class="info-name">${escapeHtml(fund.name)}</span>
                 <span class="info-code">#${fund.code}</span>
             </div>
             <div class="center-modal-actions">
@@ -90,7 +90,7 @@ async function clearFundOrders(code) {
         }
 
         const ok = await showConfirm(
-            `确认清空 [${code}] 的全部订单吗？\n\n当前订单数：${orders.length}\n基金：${fund.name || code}\n\n这会删除该基金在订单库中的所有交易记录，并将该基金恢复为未建仓状态。`,
+            `确认清空 [${code}] 的全部订单吗？\n\n当前订单数：${orders.length}\n基金：${fund.name || code}\n\n这会删除该基金在订单库中的所有交易记录（持仓金额/份额不受影响），同时清除收益日历中该基金的历史记录。`,
             '清空订单确认',
             true
         );
@@ -105,17 +105,25 @@ async function clearFundOrders(code) {
             nextFunds[code].addedDate = null;
         }
 
+        // 清理收益日历：byCode 与 dividendsByCode 都要剔除此基金，
+        // 且重建条目时必须保留其他基金的分红字段（原实现会连坐删除 totalDividend/dividendsByCode）
         const nextHistory = { ...(dailyProfitHistory || {}) };
         Object.keys(nextHistory).forEach(date => {
             const entry = nextHistory[date];
-            if (!entry?.byCode || !Object.prototype.hasOwnProperty.call(entry.byCode, code)) return;
-            const nextByCode = { ...entry.byCode };
+            if (!entry) return;
+            const hasProfit = entry.byCode && Object.prototype.hasOwnProperty.call(entry.byCode, code);
+            const hasDividend = entry.dividendsByCode && Object.prototype.hasOwnProperty.call(entry.dividendsByCode, code);
+            if (!hasProfit && !hasDividend) return;
+            const nextByCode = { ...(entry.byCode || {}) };
             delete nextByCode[code];
+            const nextDividends = { ...(entry.dividendsByCode || {}) };
+            delete nextDividends[code];
             const totalProfit = round2(Object.values(nextByCode).reduce((sum, value) => sum + (Number(value) || 0), 0));
-            if (Object.keys(nextByCode).length === 0) {
+            const totalDividend = round2(Object.values(nextDividends).reduce((sum, value) => sum + (Number(value) || 0), 0));
+            if (Object.keys(nextByCode).length === 0 && Object.keys(nextDividends).length === 0) {
                 delete nextHistory[date];
             } else {
-                nextHistory[date] = { totalProfit, byCode: nextByCode };
+                nextHistory[date] = { totalProfit, byCode: nextByCode, dividendsByCode: nextDividends, totalDividend };
             }
         });
 
@@ -252,15 +260,41 @@ async function showPendingTransactions(code) {
                 '改为红利再投'
             );
             if (!ok) return;
+            // 必须真正完成"转再投"：按分红日净值折算份额并加到持仓，
+            // 否则只改类型不改份额，分红既不发现金也不增份额，凭空消失
+            const navPrice = safeFloat(adj.dividendNavPrice || adj.confirmedPrice || adj.orderNav, 0);
+            if (!(navPrice > 0)) {
+                await showAlert('该分红单缺少分红日净值，无法折算再投份额。');
+                return;
+            }
+            const dividendAmount = safeFloat(adj.dividendAmount, 0);
+            const reinvestShares = roundShares(dividendAmount / navPrice);
+            if (!(reinvestShares > 0)) {
+                await showAlert('折算后的再投份额为 0，无法转换。');
+                return;
+            }
+            const todayStr = getToday();
             adj.type = 'dividend_reinvest';
             adj.status = 'confirmed';
+            adj.confirmedDate = todayStr;
+            adj.confirmedPrice = navPrice;
+            adj.shares = reinvestShares;
+            adj.confirmedShares = reinvestShares;
+            adj.reinvestApplied = true;
             if (adj.orderId) {
                 await persistTradeOrder(adj, {
                     ...adj,
                     type: 'dividend_reinvest'
                 }).catch(() => {});
             }
-            showToast(`✅ ${code} 分红${adj.dividendAmount}元已改为红利再投`, 'success');
+            // 同步持仓：份额增加、持仓成本增加（与结算层红利再投口径一致）；
+            // 持仓金额按分红净值同步增加，避免下次结算前 amount/shares 口径脱节
+            fund.shares = roundShares((fund.shares || 0) + reinvestShares);
+            fund.amount = round2((fund.amount || 0) + dividendAmount);
+            fund.positionCost = round2((fund.positionCost || 0) + dividendAmount);
+            funds[code] = fund;
+            await storageHelper.setAll({ myFunds: funds });
+            showToast(`✅ ${code} 分红${dividendAmount}元已转为 ${reinvestShares} 份再投`, 'success');
             elements.modalMsg.innerHTML = renderList();
             loadData();
             return;

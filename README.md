@@ -1,8 +1,8 @@
-# FundHelper Offline - 离线资产收益追踪器
+# FundHelper - 本地私有资产收益追踪器
 
 <div align="center">
 
-**Chrome Extension MV3 | 基金/期货离线追踪 | OCR 批量导入 | 实时估值走势**
+**Chrome Extension MV3 | 纯本地存储 (Local-First) | 实时估值走势 | OCR 批量导入**
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-blue?logo=google-chrome)](https://www.google.com/chrome/)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-green)](https://developer.chrome.com/docs/extensions/mv3/)
@@ -14,17 +14,23 @@
 
 ## 📖 项目简介
 
-FundHelper Offline 是一款功能强大的 Chrome 扩展，专为投资者设计，提供离线资产收益追踪、实时估值监控、OCR 批量导入等功能。支持基金、期货等多种资产类型，数据完全本地存储，保护您的隐私。
+FundHelper 是一款纯本地存储 (Local-First)、隐私优先的 Chrome 资产追踪扩展。所有资产持仓、交易订单与历史快照完全存放在您的浏览器本地（IndexedDB & LocalStorage），不经过任何中转服务器或云端。
+
+> [!NOTE]
+> **联网与离线功能说明**：
+> - 🌐 **实时行情需要联网**：最新基金估值、历史净值及大盘指数需要请求金融公开数据接口。
+> - 🔒 **数据管理完全本地**：资产查看、收益计算、OCR 截图识别、历史订单管理及备份导出 100% 本地处理，断网亦可查看已存持仓。
 
 ### ✨ 核心特性
 
-- 🎯 **离线追踪** - 所有数据存储在本地，无需联网即可查看持仓
-- 📊 **实时估值** - 自动获取最新净值和估值，实时计算收益
+- 🔒 **纯本地存储** - 零账号注册，所有资产与订单数据仅保存在您本地浏览器中
+- 📊 **实时估值** - 自动拉取最新净值和估值，实时计算持仓与累计收益
+- 💰 **持仓累计收益** - 新增持仓成本追踪，独立展示当前持有部分的盈亏，与累计收益互补
 - 📈 **走势图表** - 今日估值走势图，支持刷新后数据保留
-- 🖼️ **OCR 识别** - 支持截图批量导入资产，自动识别代码和金额；导入时可补填确认净值日、费率、分红方式，与手动新增完全一致
-- 💰 **收益计算** - 自动/手动日结算，按接口交易日准确计算昨日收益并保留当日首份备份
-- ⚡ **快速刷新** - 天天估值与东财历史净值并发请求，刷新耗时从 ~16s 降至 ~8s
-- 🔄 **加减仓管理** - T+1/T+2 确认机制，自动计算份额
+- 🖼️ **OCR 识别** - 本地 WASM 识别截图批量导入资产，自动提取代码与金额
+- 💰 **收益计算** - 自动/手动日结算，按接口交易日准确计算昨日收益并保留首份备份
+- ⚡ **快速刷新** - 估值与历史净值并发请求，刷新耗时大幅缩短
+- 🔄 **加减仓管理** - T+1/T+2 确认机制，自动计算份额与交割状态
 - 📁 **分组管理** - 自由分组，批量操作，灵活管理
 - 🎨 **现代 UI** - 深色主题，流畅动画，优雅交互
 - ⚙️ **列显示控制** - 顶部齿轮面板按需开关列，偏好自动持久化，全屏列独立生效
@@ -111,7 +117,8 @@ FundHelper Offline 是一款功能强大的 Chrome 扩展，专为投资者设�
 #### 收益展示
 - **当日预估收益**：基于实时估值计算
 - **昨日收益**：上次结算的实际收益
-- **持有收益**：累计总收益
+- **持仓累计收益**：当前持有部分的盈亏（amount - positionCost），不含已卖出仓位
+- **累计收益**：全部历史盈亏，含已卖出仓位 + 现金分红
 - **总收益**：持有收益 + 当日预估收益
 
 ### 4️⃣ 实时估值走势
@@ -152,9 +159,9 @@ FundHelper Offline 是一款功能强大的 Chrome 扩展，专为投资者设�
 - 文件名自动带时间戳
 
 #### 导出备份数据
-- 从 FAB 菜单导出当天首份结算前快照
-- 适合在撤销前后对比差异
-- 当天尚未生成备份时会给出明确提示
+- 从 FAB 菜单导出最近一次结算前快照（备份在每天首次结算前自动生成）
+- 适合在撤销前后对比差异，也可追溯任意历史结算日的数据
+- 备份不是今天生成时会提示备份日期并二次确认；从未产生过备份时才拒绝导出
 
 #### 导入数据
 - 支持导入之前导出的 JSON 文件
@@ -184,8 +191,8 @@ FundHelper Offline 是一款功能强大的 Chrome 扩展，专为投资者设�
 
 ```
 FundHelper_Offline/
-├── manifest.json                    # 扩展配置文件 (v3.2.0)
-├── popup.html                       # 主界面 HTML (275 行，纯结构)
+├── manifest.json                    # 扩展配置文件 (v3.6.0)
+├── popup.html                       # 主界面 HTML (311 行，纯结构)
 │
 ├── popup_base.css                   # 基础样式：重置 / Header / 指数面板 / 统计栏 / 筛选栏
 ├── popup_components.css             # 组件样式：表格 / Toast / Modal / 表单弹窗 / 响应式
@@ -219,7 +226,8 @@ FundHelper_Offline/
 ├── popup_perf_state.js              # 业绩缓存与会话状态
 ├── popup_perf_table.js              # 业绩表格渲染
 │
-├── popup_settlement_rollback.js     # 撤销结算 / 备份管理 / 份额推导
+├── popup_settlement_rollback.js     # 撤销结算 / 备份管理 / 份额推导 (核心算法)
+├── popup_profit_calendar_ui.js      # 收益日历 UI (纯展示层，按月/年/全周期切换)
 ├── popup_settlement_run.js          # 手动/自动日结算 / 状态持久化
 │
 ├── tesseract.min.js                 # OCR 核心库 (按需懒加载)
@@ -229,7 +237,7 @@ FundHelper_Offline/
 └── README.md                        # 项目文档
 ```
 
-> v3.2.0 架构优化：CSS 从 HTML 内联提取为 3 个独立文件；JS 从 14 个模块进一步拆分为 25 个职责单一的模块，最大文件从 4710 行降至 1463 行；OCR 引擎改为按需懒加载；`fetchLiveInfo` 从 233 行单体函数拆分为 5 个子函数。
+> v3.5.0 架构演进：从 `popup_settlement_rollback.js` 拆分出纯展示层 `popup_profit_calendar_ui.js`；重构 `<colgroup>` 定宽与 `updateStickyLeft` 动态冻结列；新增 `calculatePositionCostFromOrders` 与 `calculateTotalInvestedCostFromOrders` 解决累计收益率分母失真；全链路统一 `escapeHtml()` XSS 防御；完善 MV3 `declarativeNetRequest` 规则解决天天基金 F10 请求 Referer 限制。
 
 ### 代码优化亮点
 
@@ -316,7 +324,8 @@ function round2(num) {
   "005827": {
     "amount": 10000.00,              // 当前持仓金额
     "shares": 9523.81,               // 当前持有份额 (保留2位小数)
-    "holdProfit": 1234.56,           // 累计收益 (历史总盈亏)
+    "holdProfit": 1234.56,           // 累计收益 (含已卖出盈亏 + 现金分红)
+    "positionCost": 8765.44,        // 持仓成本 (买入总额 - 现金分红 - 按比例减仓)
     "yesterdayProfit": 123.45,       // 昨日收益 (上次结算的单日收益)
     "group": "股票型",                // 分组名称
     "dividendMode": "cash",          // 分红方式: "cash"(现金分红) | "reinvest"(红利再投)
@@ -430,14 +439,29 @@ function round2(num) {
 {
   "manifest_version": 3,
   "name": "资产收益助手",
-  "version": "3.3.0",
+  "version": "3.6.0",
   "permissions": [
-    "storage"
+    "storage",
+    "declarativeNetRequestWithHostAccess"
   ],
   "host_permissions": [
     "https://fundgz.1234567.com.cn/*",
+    "https://fundcomapi.tiantianfunds.com/*",
+    "https://fundcomapi.eastmoney.com/*",
+    "https://stock.finance.sina.com.cn/*",
     "https://hq.sinajs.cn/*",
-    "https://fund.eastmoney.com/*"
+    "https://fund.eastmoney.com/*",
+    "http://fundf10.eastmoney.com/*",
+    "https://fundsuggest.eastmoney.com/*",
+    "https://fundmobapi.eastmoney.com/*",
+    "https://push2.eastmoney.com/*",
+    "https://push2ex.eastmoney.com/*",
+    "https://qt.gtimg.cn/*",
+    "https://query1.finance.yahoo.com/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
@@ -498,6 +522,133 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
 ---
 
 ## 📝 更新日志
+
+### v3.6.0 (2026-09-07) - 穿透稳定性治理 + 请求限流优化 + 节假日历年份修复
+
+#### 穿透估值：行情字段修正与请求合并
+- 🐛 **push2 行情字段映射修复（穿透此前必然失败的真因）**：`fetchStockQuotesBatch` 原请求 `fields=f43,f57,f58,f170` 并把 `f57` 当作股票代码。实测 push2 该字段集下 `f57` 是**数值字段而非代码字符串**，响应中根本不含代码 → `resultMap` 的键全为乱码 → `stockQuotes.get(s.code)` 永远 miss → `details` 恒为空 → 静默返回 null（不报错、不告警，极具迷惑性）。改为标准字段 `f12,f14,f2,f3`（f12=代码、f2=现价、f3=涨跌幅%，`fltt=2` 返回真实小数），并保留 `f12||f57` / `f2||f43` / `f3||f170` 双套兜底。
+- ⚡ **整次刷新只发 1 个行情请求（修复「这轮有估值、下轮又没有」的随机抖动）**：原先每只基金各自调用 `fetchPenetrationValuation` → 各发一个 push2 请求（14 只基金 ≈ 14 个并发），叠加晴雨表指数请求后东财直接 `ERR_EMPTY_RESPONSE` 丢包。改为四阶段：①判定需穿透的基金 → ②并行拉各基金持仓（命中缓存不触网）→ ③**汇总全部重仓股代码，整次刷新只发 1 个批量请求** → ④各基金复用共享行情计算。push2 请求数 **14 → 1**。
+- 🎯 **穿透定位定案：只兜底「无真实估值」的基金**：fundgz 给出真实盘中估值（`gsz≠dwjz`，有真实波动）时**直接用它、不穿透**；只有 `gsz==dwjz`（无真实波动）的伪估值才走穿透。同步撤回此前「交易时段内按日期强插穿透」的临时方案——那是拿穿透去覆盖 fundgz 更权威的盘中估算，属口径混乱。
+- 🐛 **已结算保护（复查新增）**：晚间官方净值公布后，fundgz 的 `dwjz` 切到今日净值并回 `gsz==dwjz`（无波动伪估值）→ 门控判"无估值"→ 穿透触发，但此时 `prevPrice` **已包含今日涨幅**，再叠加今日重仓股涨幅 = 双重计入，夜间会显示虚高/虚低的错误估值。修复：`prevPriceDate === 今天`（今日净值已公布）时跳过穿透。盘中 `prevPriceDate` 恒为上一交易日，不影响日间穿透。
+
+#### 性能：持仓缓存补齐负缓存（持续限流的根因之一）
+- 🐛 **`fetchFundHoldingsWithCache` 只缓存非空结果**，导致纯债/无股票基金（`stockCodes=[]`）的「空结论」永不进缓存 → 每轮刷新都重跑「mobapi 失败 + pingzhongdata」两次请求。用户组合里 8 只债基 ≈ **每次刷新 16 个纯冗余请求**，与 push2 共享东财域名风控额度，是限流的持续来源。
+- ✅ 改为**分级 TTL 负缓存**：有持仓 12h / 确认无股票 6h / 源不可用（网络·限流）10min。同时把 `tryFetchPingzhongdata` 的返回语义拆开——「成功确认无持仓」返回空持仓对象、「抓取失败/被限流」返回 `null`，让调用方能区分二者并采用不同 TTL（否则限流会被误当成"这基金没股票"而长期缓存）。异常路径同样进短 TTL 负缓存。
+
+#### 节假日历：年份覆盖判定修复
+- 🐛 **当年法定节假日可能永久缺失**：`ensureTradingCalendar` 拉取「当年+次年」时用 `fetchedYear` 记录**最后一次成功**的年份。若当年拉取失败、次年成功，`fetchedYear` 会被写成次年并持久化 → 此后 `cached.year >= currentYear` 恒成立 → **当年数据再也不会补拉**，只能退化到周末规则，国庆/春节前的 T+1/T+2 确认日会算错。
+- 🐛 **判断侧同源问题**：`isTradingDayDate` 用 `_tradingCalendar.year >= d.getFullYear()`，在只有次年数据时会拿次年的 `offDays/workDays` 去判断当年日期 → 当年法定假日不在集合中，被**误判为交易日**。
+- ✅ 两处改为按**年份集合** `years.includes(targetYear)` 判定覆盖；缓存结构新增 `years` 数组（保留 `year` 字段以兼容旧数据）。未覆盖时退化为周末规则——宁可少认节假日，也不能把假期当交易日。
+
+#### 可维护性
+- 🧹 **收敛穿透链路的刷屏日志**：`[holdings][mobapi]`（`Datas=null` 是本环境常态，每只基金每次刷新都打）、`[stock-quotes]` 三条成功日志、`[penetration]*` 系列，统一由全局开关 `PEN_DEBUG` 控制（默认关闭，console 保持干净；排查时在 console 执行 `PEN_DEBUG = true` 即可恢复全部诊断输出）。失败与异常告警（`console.warn`）一律保留。
+- 🗑️ 移除已完成使命的 `[diag][item-build]` 调试探针。
+
+### v3.5.0 (2026-08-27) - 持仓穿透估值引擎：门控修复 + 双源兜底（修复「无估值」）
+
+- 🐛 **穿透估值触发门控修复**：原 `popup_perf_data.js` 用 `hasUsableLiveEstimate(live)`（price>0 && rate≠null）判断是否「已有估值」而跳过穿透。但纯债/定开债/FOF 的 fundgz 返回 `gsz==dwjz`（price=昨收净值、rate=0 但非 null），被误判为有效估值，导致穿透引擎**从未触发**、这些基金在 15:00 前完全无盘中参考。
+- ✅ 新门控 `hasRealIntradayEstimate = hasUsableLiveEstimate && (|rate|>1e-4 || |price-prevPrice|>1e-4)`：仅当官方确实给出有意义的盘中涨跌时才跳过；`gsz==dwjz` 伪估值一律触发穿透。真有估值的基金（含真横盘）不受影响。
+- 🐛 **真实根因（多轮排查确认）**：`fundmobapi.eastmoney.com`（移动端持仓接口）在 Chrome 扩展 background 代理请求下被东财**差异化软失败**——返回 `Success=true` 但 `Datas=null`（沙箱/直连 curl 完全正常，含带扩展 `Origin: chrome-extension://` 头也正常）。同一环境下 `fund.eastmoney.com`（pingzhongdata，分红检测已验证可用）与 `hq.sinajs.cn` 均正常，证明是 fundmobapi 子域针对扩展环境的风控，非 Referer/UA/Origin 单一因素。
+- ✅ **双源兜底方案**：`fetchFundHoldingsWithCache` 改为「源1 fundmobapi（精确占比，首选）→ 源2 pingzhongdata（fund.eastmoney.com 子域，环境已验证可用，提取前十大 `stockCodes` + 股票总仓位 `Data_fundSharesPositions`，个股权重缺失时用总仓位等权分摊）」。任一源成功即用。
+- ✅ 沙箱端到端实测（001258）：pingzhongdata 等权近似 **+0.33% / estPrice 1.5762**，与 fundmobapi 精确口径 **+0.30% / 1.5757** 仅差 0.03%，精度足够；新浪 `hq.sinajs.cn` 经 FETCH_TEXT 代理拉重仓股实时行情，加权算法正确。
+- 📌 行为：二级债基/偏债混合（有股票持仓）15:00 前显示穿透估值 + `[穿透]` 徽章；纯债/定开债（无股票持仓）穿透返回 null，如实显示 `—`（符合既定口径）；纯债 FOF 底层全为债/ETF，盘中加权≈0 时显示穿透 0%；股票代码（如 000070）fundmobapi 无持仓、pingzhongdata 无 stockCodes，如实显示 `—`。
+
+### v3.5.0 (2026-08-26) - 收益日历合计实时重算 + 去重声明
+
+#### 日历合计与明细对账修复
+- 🐛 **日历「合计」实时按 byCode 求和、永不读脏字段**：`dailyProfitHistory.byCode` 是「那一天的真实经济效果」（acPrice 模型下已含分红经济效应），日历顶层合计改为 `ΣbyCode` 实时重算，与明细行 profit 之和严格自洽，杜绝历史上 `entry.totalProfit` 与 `byCode` 失同步造成的"明细加总 ≠ 合计"。
+- 🐛 **detail row 删除「合计 = profit + dividend」列**：原 combined 列在 acPrice 模型下与 profit 重复计算（acPrice 已含分红经济效应，+ dividend 即双计）。删除后单只基金行只剩真实盈亏，分红金额仅以 chip 旁注（"当笔为该日现金流入"），不再混入数字求和。
+- 🐛 **`normalizeDailyProfitHistory` 收敛脏数据**：原本优先用 `entry.totalProfit/totalDividend` 覆盖重算的 Σ值，会把历史上的脏字段固化下来。现改为强制以 byCode 之和为准——所有写入路径（`recordDailyProfitHistory` / `backfillMissingDailyProfitHistory` / `mergeDailyProfitHistories`）的末步都经过这道收敛，保证下次任意结算/日历打开后总量与明细恒等。
+
+#### 代码复用 / UI 减少重复
+- 🧹 新增共用 helper `sumEntryByCodeOnly(entry)` 与 `sumEntryCashDividends(entry)`，日历顶部「选中日合计」、月合计、年合计、历史合计、detail 颜色判断全部走同一套求和逻辑，删除 5 处重复手算（`Object.values(...).reduce(...)`），主页面"昨日收益列求和"沿用 `dailyProfitHistory.byCode` 同一份数据源，与日历完全一致。
+
+### v3.5.0 (2026-08-26) - 收益日历分红标注修复
+
+#### 收益日历分红落库修复
+- 🐛 **日历"分"标记与分红明细不再为空**：`backfillMissingDailyProfitHistory` 此前只统计 `status === 'confirmed'` 的分红订单，而自动检测到的分红在现金未到账前是 `pending` 单，导致已被检测出的分红（如 004433 / 021584）始终不出现在收益日历。现改为：只要交易流水里存在该自动分红单（无论到账与否），就在日历的 `dividendsByCode` 显式标注——除息日与每份金额均为已确定事实，不应因未到账而消失。仅「手动录入且仍 pending」的分红单不计入，避免误标。
+- 🐛 **手动「触发日结算」同样回填分红**：`manualSettlement` 原先只跑 `recordDailyProfitHistory`（只写收益、不写分红），现补跑一次历史回溯，使手动结算路径的日历也能显示分红。
+
+#### 僵尸参数清理
+- 🗑️ 移除 `reconcileDailyProfitHistory` 的 `dominantMarketPrevPriceDate` 僵尸门控（与 README 既定方向一致）：该参数非空才允许跑历史回溯，否则整体跳过，是上次 `dominantMarketPrevPriceDate` 清理遗漏的残留。移除后无论当日是否有主流市场净值日期，回溯都会执行，分红必落日历。
+- 🗑️ 删除已无调用方的 `getDominantMarketPrevPriceDate` 死函数及其在 `popup_perf_data.js` 的未使用局部变量。
+
+### v3.5.0 (2026-08-15) - 昨日收益严格化 + 区间涨幅官方接口 + 性能与 UI 修复
+
+#### 昨日收益口径严格化
+- 🐛 **昨日收益严格按自然日**：仅当 `prevPriceDate === 昨日` 才计入昨日收益，昨天无净值更新（节假日/QDII/定开债滞后）的基金显示为 —，并在下方橙色标注最近结算日期，不再用更早的结算收益冒充昨日
+- 🐛 **总额不再虚增**：`sumYesterdayProfit` 严格过滤，昨日无更新的基金不计入总额
+
+#### 区间涨跌幅对齐平台
+- ✨ **接入天天基金 FundMNPeriodIncrease 官方区间涨幅接口**（`fetchFundPeriodReturns`），与微众银行等平台数据源一致
+- 🐛 **走势图尖刺修复**：归一化序列优先用累计净值（acPrice），缺失处按相邻比例桥接，消除 acPrice/price 混用导致的尖刺
+- 🐛 **区间涨幅锚点修正**：目标日有净值用目标日，否则取前一交易日（平台口径）；缓存版本迭代 V2→V5
+
+#### 历史同步优化
+- ⚡ **每天仅首次刷新执行历史同步**：内存 + 存储双标记门控，避免每次刷新都重跑全量同步；新基金当天强制补齐
+- 🐛 **全量历史同步去除起始日期限制**：自动递归补齐，不再硬编码下界
+
+#### 性能与 UI
+- ⚡ **业绩刷新改分批并发**：`fetchAllFundPerfData` 由串行 `sleep(500)` 改为每批 5 个并发、批间 300ms 限流，20 基金从 ~10s 降至 ~2-3s
+- 🐛 **净值列内联 padding 修复**：删除 `tdNav.style.cssText` 内联 padding（曾覆盖 CSS 导致调 padding 无效），改由 CSS 统一控制
+- 🎨 **表格列宽收紧**：区间列 72→64，冻结列小幅收窄，`sticky left` 同步重算
+- 🎨 **列间距收紧**：`th,td` padding 全屏 `5px 4px` / 小窗 `5px 3px`，并修正小窗覆盖规则
+
+#### 代码清理
+- 🗑️ 删除过时诊断脚本 `diagnostic_161725.js`
+- 🐛 历史同步 `checkAndFillHistoryGaps` 改 `await` + try/catch，失败当天可重试
+
+### v3.5.0 (2026-08-24) - 收益日历 UI 解耦 + 累计成本计算重构 + 表格动态冻结列
+
+#### 架构与模块化
+- 📅 **收益日历 UI 独立模块化**：从 `popup_settlement_rollback.js` 拆分出纯展示层 `popup_profit_calendar_ui.js`（~586 行），使结算回滚算法（纯数据流与逆推推导）与日历弹窗/视图切换（DOM 渲染）完全解耦，大幅降低单文件体量与维护难度。
+- 📦 **依赖与引入规范**：在 `popup.html` 明确按层级组织脚本依赖，保持离线优先与轻量化原生加载。
+
+#### 金融收益与成本算法重构
+- 💰 **解决累计收益率分母失真**：新增 `calculateTotalInvestedCostFromOrders()` 与 `calculatePositionCostFromOrders()`：
+  - 精确累加 `initial`、`add`、`dividend_reinvest` 等已确认买入订单流水，作为累计收益率计算的真实投入本金分母，彻底解决多次减仓/清仓后使用 `amount - holdProfit` 导致分母接近 0 或失真的问题。
+  - 支持无完整流水时的 `amount - holdProfit` 兜底平滑回退。
+- 📊 **持仓累计收益与昨日收益语义对齐**：
+  - 严格展示昨日（自然日）真实结算收益，非最新结算日收益标注具体结算日期；
+  - 表格独立支持 `positionProfit`（持仓累计收益）列排序与汇总。
+
+#### 界面交互与布局优化
+- 📐 **`<colgroup>` 显式定宽与 `updateStickyLeft` 动态冻结**：
+  - 在 `popup.html` 中引入 `<colgroup>` 规范 18 列基准宽度，解决 `table-layout: fixed` 布局抖动；
+  - `popup.js` 新增 `updateStickyLeft()`，动态累加所有可见冻结列宽度，无论列开关如何配置，冻结列均可平滑前移对齐，不再出现错位或空白。
+- ⚙️ **列配置面板增强**：支持 `positionProfit` 列独立显隐持久化与一键重置默认布局。
+
+#### 安全与网络底层升级
+- 🔒 **全链路 XSS 防御**：对基金名称、重仓股票名/代码、估值时间、接口错误提示等全部统一加上 `escapeHtml()` 转义，阻断潜在 DOM 注入风险。
+- 🌐 **MV3 `declarativeNetRequest` 动态规则**：`background.js` 新增针对天天基金 F10（`FundArchivesDatas.aspx`）的 Referer 动态规则，稳定支持重仓股数据获取；重构 `popup_api_settings.js` 接口配置与点路径解析 (`getValueByPath`)。
+- 🛡️ **离线净值走势兜底**：`loadMyReturnPeriod` 增加 `HistoryDB` 本地日涨幅回退提取，确保未先查看业绩走势 tab 时收益分析依然完整可用。
+
+### v3.4.0 (2026-08-07) - 持仓累计收益 + 代码审查与统一
+
+#### 新功能：持仓累计收益
+- 💰 **新增 `positionCost` 字段**：从已确认订单流水反推当前持仓的实占成本
+  - 建仓/加仓：`cost += 买入金额`
+  - 减仓：`cost -= (卖出份额/当前份额) × cost`（按比例扣减）
+  - 现金分红：`cost -= 分红金额`（收回部分本金）
+  - 红利再投：`cost += 分红金额`（又买回去了）
+  - 清仓：`cost = 0`
+- 📊 **表格新增"持仓累计收益"列**：`positionProfit = amount - positionCost`
+  - 与"累计收益"（含已卖出盈亏）并列，互补对比
+  - 对于从未减仓的基金，两者理论一致
+- 🔄 **每次刷新自动重算**：`positionCost` 是派生值，不依赖手动维护
+- ⚙️ **列显示设置**：`TABLE_COLUMNS` 已加入 `positionProfit`，面板可开关
+- 🧪 **11 个边界测试** (`test_position_cost.js`)：覆盖建仓/加仓/减仓/清仓/清仓后再买入/频繁加减仓/超卖兜底/现金分红/红利再投/分红混合等场景，全部通过
+
+#### 代码审查修复
+- 🐛 **删除死代码**：移除 `popup_api_settings.js` 旧版 `openLiveApiSettings`（~102 行，已被新版覆盖）
+- 🐛 **QDII 昨日收益修复**：去掉 `getDisplayedYesterdayProfitFromHistory` 中 `dominantMarketPrevPriceDate` 强制置零，滞后净值基金正常显示
+- 🔒 **XSS 防御统一**：`fund.name`、股票名、错误信息、估值时间 4 处未转义 `innerHTML` 均补 `escapeHtml()`
+- ⚡ **backfill 增量化**：`reconcileDailyProfitHistory` 会话级缓存，同日同基金集合跳过重复 IndexedDB 全扫
+- 🧹 **priceUpdates 对齐**：`recordDailyProfitHistory` 移除 `dominantMarketPrevPriceDate` 强制过滤，与结算层一致
+- 🧹 **`var` → `let`**：`popup_center_menu.js:1`、`popup_trade.js:12` 两处统一声明风格
+
+#### UI 调整
+- 🎨 **汇总栏平铺 5 列**：`grid-template-columns: repeat(5, ...)`，顺序改为总资产→昨日收益→当日估值→持仓累计收益→累计收益
 
 ### v3.3.0 (2026-07-22) - 数据源管理 + 估值补缺
 
@@ -656,17 +807,20 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
 
 欢迎提交 Issue 和 Pull Request！
 
-### 开发环境
-1. Clone 项目
-2. 修改代码
-3. 在 Chrome 中加载测试
-4. 提交 PR
+### 开发环境与调试方法
+1. **Clone 项目**：下载或 Clone 源代码到本地
+2. **加载测试**：打开 Chrome `chrome://extensions/` → 开启「开发者模式」 → 点击「加载已解压的扩展程序」选择本项目目录
+3. **测试修改**：修改代码后，在 `chrome://extensions/` 页面点击卡片刷图标，即可重新打开 Popup 测试（无需构建步骤，纯原生开发）
+4. **调试技巧**：
+   - **Popup 控制台**：右键 popup 面板 → 检查 → Console 标签
+   - **Background Service Worker**：`chrome://extensions/` → 点击扩展卡片下方的 "service worker" 链接
+   - **存储检查**：Chrome DevTools → Application → Storage (Local Storage & IndexedDB)
 
 ### 代码规范
-- 使用 async/await 而非回调
-- 使用 `storage.get/set` 访问数据
-- 使用 `round2()` 格式化数值
-- 添加必要的注释
+- 全面使用 `async/await` 处理异步逻辑
+- 使用 `storageHelper.get()` / `storageHelper.set()` 访问存储
+- 数值计算统一使用 `round2()` 格式化处理
+- 关键数据结构与逻辑保持模块化与注释清晰
 
 ---
 

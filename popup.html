@@ -129,6 +129,7 @@
         <div class="summary-item"><span class="summary-label">总资产</span><b id="totalAmount">0.00</b></div>
         <div class="summary-item"><span class="summary-label">昨日收益</span><b id="totalYesterdayProfit">0.00</b></div>
         <div class="summary-item"><span class="summary-label">当日估值</span><b id="totalTodayProfit">0.00</b></div>
+        <div class="summary-item"><span class="summary-label">持仓累计收益</span><b id="totalPositionProfit">0.00</b></div>
         <div class="summary-item"><span class="summary-label">累计收益</span><b id="totalTotalProfit">0.00</b></div>
     </div>
 
@@ -168,6 +169,31 @@
 
     <div class="table-container">
         <table>
+            <!--
+              列宽定义（table-layout: fixed 必须为每列显式定宽）。
+              冻结列（序号/代码/名称/持仓/份额/净值）宽 550px，其余列自适应但最小 60px。
+              列显示/隐藏由 popup.js 的 setColumnVisibilityClass 同步到对应 <col> 的 width（隐藏时设为 0px）。
+            -->
+            <colgroup>
+                <col data-col="index" style="width:38px">
+                <col data-col="code" style="width:74px">
+                <col data-col="name" style="width:110px">
+                <col data-col="amount" style="width:86px">
+                <col data-col="shares" style="width:80px">
+                <col data-col="nav" style="width:116px">
+                <col data-col="holdDays" style="width:74px">
+                <col data-col="w1" style="width:64px">
+                <col data-col="m1" style="width:64px">
+                <col data-col="m3" style="width:64px">
+                <col data-col="m6" style="width:64px">
+                <col data-col="y1" style="width:64px">
+                <col data-col="ly" style="width:64px">
+                <col data-col="yesterdayProfit" style="width:88px">
+                <col data-col="todayProfit" style="width:88px">
+                <col data-col="positionProfit" style="width:88px">
+                <col data-col="holdProfit" style="width:88px">
+                <col data-col="actions" style="width:56px">
+            </colgroup>
             <thead>
                 <tr>
                     <th data-col="index">序号</th>
@@ -183,8 +209,9 @@
                     <th class="col-hide" data-col="m6">近6月</th>
                     <th class="col-hide" data-col="y1">近1年</th>
                     <th class="col-hide" data-col="ly">成立以来</th>
-                    <th class="sortable" data-sort="yesterdayProfit" data-col="yesterdayProfit">昨日收益</th>
+                    <th class="sortable" data-sort="yesterdayProfit" data-col="yesterdayProfit" title="严格显示昨日（自然日）真实收益；昨日无净值更新的基金显示为 —，可在净值列查看最近结算日期">昨日收益</th>
                     <th class="sortable" data-sort="todayProfit" data-col="todayProfit">估值收益</th>
+                    <th class="sortable" data-sort="positionProfit" data-col="positionProfit">持仓累计收益</th>
                     <th class="sortable" data-sort="holdProfit" data-col="holdProfit">累计收益</th>
                     <th class="col-hide" data-col="actions">操作</th>
                 </tr>
@@ -266,8 +293,10 @@
     <script src="popup_ui.js"></script>
     <!-- 实时估值接口配置 -->
     <script src="popup_api_settings.js"></script>
-    <!-- 撤销结算 / 备份管理 / 份额推导 -->
+    <!-- 撤销结算 / 备份管理 / 份额推导（算法核心） -->
     <script src="popup_settlement_rollback.js"></script>
+    <!-- 收益日历 UI（从 rollback 拆分，纯展示层） -->
+    <script src="popup_profit_calendar_ui.js"></script>
     <!-- 手动/自动日结算 / 状态持久化 -->
     <script src="popup_settlement_run.js"></script>
     <!-- 业绩缓存 / 状态 / 周期配置 -->

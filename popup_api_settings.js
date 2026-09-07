@@ -8,6 +8,46 @@ const LIVE_API_FIELD_DEFAULTS = Object.freeze({
     time: 'gztime'
 });
 
+const HOLDINGS_API_FIELD_DEFAULTS = Object.freeze({
+    stockCode: 'GPDM', stockName: 'GPJC', holdingPercent: 'JZBL', exchange: 'TEXCH', newExchange: 'NEWTEXCH'
+});
+const INDEX_API_FIELD_DEFAULTS = Object.freeze({
+    indexCode: 'f12', indexName: 'f14', price: 'f2', changeAmount: 'f4', changeRate: 'f3', marketValue: 'f20'
+});
+const BREADTH_API_FIELD_DEFAULTS = Object.freeze({
+    upCount: 'f104', downCount: 'f105', flatCount: 'f106', limitType: 't', limitCount: 'ct'
+});
+
+const API_FIELD_LAYOUTS = Object.freeze({
+    live: [
+        ['fieldCode', 'code', '基金代码字段路径'], ['fieldName', 'name', '名称字段路径'],
+        ['fieldPrevPrice', 'prevPrice', '上期净值字段路径'], ['fieldPrice', 'price', '当前估值字段路径'],
+        ['fieldRate', 'rate', '涨跌率字段路径'], ['fieldDate', 'date', '净值日期字段路径'],
+        ['fieldTime', 'time', '估值时间字段路径']
+    ],
+    history: [
+        ['fieldCode', 'code', '基金代码字段路径'], ['fieldName', 'name', '基金名称字段路径'],
+        ['fieldPrice', 'price', '单位净值字段路径'], ['fieldRate', 'rate', '净值涨跌幅字段路径'],
+        ['fieldDate', 'date', '净值日期字段路径']
+    ],
+    holdings: [
+        ['fieldCode', 'stockCode', '股票代码字段路径'], ['fieldName', 'stockName', '股票名称字段路径'],
+        ['fieldPrevPrice', 'holdingPercent', '持仓占比字段路径'], ['fieldPrice', 'exchange', '交易所字段路径'],
+        ['fieldRate', 'newExchange', '新交易所字段路径']
+    ],
+    index: [
+        ['fieldCode', 'indexCode', '指数代码字段路径'], ['fieldName', 'indexName', '指数名称字段路径'],
+        ['fieldPrevPrice', 'price', '指数点位字段路径'], ['fieldPrice', 'changeAmount', '涨跌额字段路径'],
+        ['fieldRate', 'changeRate', '涨跌幅字段路径'], ['fieldDate', 'marketValue', '市场规模字段路径']
+    ],
+    breadth: [
+        ['fieldCode', 'upCount', '上涨家数字段路径'], ['fieldName', 'downCount', '下跌家数字段路径'],
+        ['fieldDate', 'flatCount', '平盘家数字段路径'], ['fieldPrevPrice', 'limitType', '涨跌停类型字段路径'], ['fieldPrice', 'limitCount', '涨跌停家数字段路径']
+    ],
+    // 节假日历无字段映射：空布局让所有映射输入框在表单里自动隐藏
+    calendar: []
+});
+
 const DEFAULT_LIVE_API_SETTINGS = Object.freeze({
     source: 'fundgz',
     name: '天天基金',
@@ -57,6 +97,25 @@ const FUND_VALUATION_LAST_SETTINGS = Object.freeze({
     }
 });
 
+const FUND_VALUATION_LAST_SINGLE_SETTINGS = Object.freeze({
+    source: 'fundvaluationlast_single',
+    name: '天天基金新估值（逐个）',
+    urlTemplate: 'https://fundcomapi.tiantianfunds.com/mm/newCore/FundValuationLast?FCODES={code}&FIELDS=FCODE,SHORTNAME,GSZZL,GZTIME,GSZ,NAV,PDATE',
+    responseType: 'json',
+    dataPath: 'data',
+    dataKind: 'estimate',
+    requestMode: 'single',
+    fields: {
+        code: 'FCODE',
+        name: 'SHORTNAME',
+        prevPrice: 'NAV',
+        price: 'GSZ',
+        rate: 'GSZZL',
+        date: 'PDATE',
+        time: 'GZTIME'
+    }
+});
+
 const SINA_LIVE_API_SETTINGS = Object.freeze({
     source: 'sina',
     category: 'live',
@@ -77,6 +136,68 @@ const EASTMONEY_HISTORY_API_SETTINGS = Object.freeze({
     fields: { code: '', name: 'fS_name', prevPrice: '', price: 'y', rate: 'equityReturn', date: 'x', time: '' }
 });
 
+const FUND_HOLDINGS_API_SETTINGS = Object.freeze({
+    source: 'fund_holdings', category: 'holdings', enabled: true,
+    name: '基金前十重仓股票',
+    urlTemplate: 'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition?FCODE={code}&deviceid=Wap&plat=Wap&product=EFund&version=6.5.9',
+    secondaryUrlTemplate: 'http://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code={code}&topline=10&year=&month=&rt={random}',
+    responseType: 'json', dataPath: 'Datas.fundStocks', dataKind: 'estimate', requestMode: 'single',
+    fields: HOLDINGS_API_FIELD_DEFAULTS
+});
+
+const MARKET_INDEX_API_SETTINGS = Object.freeze({
+    source: 'market_index', category: 'index', enabled: true,
+    name: '市场指数行情',
+    urlTemplate: 'https://push2.eastmoney.com/api/qt/ulist.np/get?secids={secids}&ut=bd1d9ddb04089700cf9c27f6f7426281&invt=2&fields=f14,f12,f13,f2,f3,f4,f20',
+    responseType: 'json', dataPath: 'data.diff', dataKind: 'estimate', requestMode: 'batch',
+    fields: INDEX_API_FIELD_DEFAULTS
+});
+
+const MARKET_INDEX_TENCENT_API_SETTINGS = Object.freeze({
+    source: 'market_index_tencent', category: 'index', enabled: true,
+    name: '市场指数备用（腾讯）',
+    urlTemplate: 'https://qt.gtimg.cn/q={codes}',
+    responseType: 'tencent_index', dataPath: '', dataKind: 'estimate', requestMode: 'batch',
+    fields: INDEX_API_FIELD_DEFAULTS
+});
+
+const MARKET_INDEX_SINA_API_SETTINGS = Object.freeze({
+    source: 'market_index_sina', category: 'index', enabled: true,
+    name: '市场指数备用（新浪）',
+    urlTemplate: 'https://hq.sinajs.cn/list={codes}',
+    responseType: 'sina_index', dataPath: '', dataKind: 'estimate', requestMode: 'batch',
+    fields: INDEX_API_FIELD_DEFAULTS
+});
+
+const MARKET_INDEX_YAHOO_API_SETTINGS = Object.freeze({
+    source: 'market_index_yahoo', category: 'index', enabled: true,
+    name: '市场指数备用（Yahoo）',
+    urlTemplate: 'https://query1.finance.yahoo.com/v8/finance/chart/{code}?range=1d&interval=1d',
+    responseType: 'yahoo_index', dataPath: '', dataKind: 'estimate', requestMode: 'batch',
+    fields: INDEX_API_FIELD_DEFAULTS
+});
+
+const MARKET_BREADTH_API_SETTINGS = Object.freeze({
+    source: 'market_breadth', category: 'breadth', enabled: true,
+    name: '市场涨跌情况',
+    urlTemplate: 'https://push2.eastmoney.com/api/qt/ulist.np/get?secids=1.000001,0.399001&ut=bd1d9ddb04089700cf9c27f6f7426281&invt=2&fields=f14,f12,f13,f104,f105,f106',
+    secondaryUrlTemplate: 'https://push2ex.eastmoney.com/getStockCountChanges?type=4,8&ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wzchanges',
+    secondaryDataPath: 'data.ydlist',
+    responseType: 'json', dataPath: 'data.diff', dataKind: 'estimate', requestMode: 'batch',
+    fields: BREADTH_API_FIELD_DEFAULTS
+});
+
+const HOLIDAY_CALENDAR_API_SETTINGS = Object.freeze({
+    source: 'holiday_calendar', category: 'calendar', enabled: true,
+    name: '节假日历（holiday-cn）',
+    urlTemplate: 'https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/{year}.json',
+    responseType: 'json', dataPath: 'days', dataKind: 'estimate', requestMode: 'single',
+    fields: LIVE_API_FIELD_DEFAULTS
+});
+
+const API_CATEGORIES = Object.freeze(['live', 'history', 'holdings', 'index', 'breadth', 'calendar']);
+const API_CATEGORY_LABELS = Object.freeze({ live: '实时', history: '历史', holdings: '重仓', index: '指数', breadth: '涨跌', calendar: '日历' });
+
 let liveApiSettings = normalizeLiveApiSettings(null);
 let liveApiProfiles = [];
 let activeLiveApiProfileId = '';
@@ -85,25 +206,6 @@ function getLiveApiTimeout() {
     return liveApiSettings.source === 'wealthagent' ? 45000 : CONFIG.API_TIMEOUT;
 }
 
-function getLiveApiBatchSize() {
-    return liveApiSettings.source === 'wealthagent' ? 2 : CONFIG.BATCH_SIZE;
-}
-
-function getLiveApiBatchDelay() {
-    return liveApiSettings.source === 'wealthagent' ? 300 : CONFIG.BATCH_DELAY;
-}
-
-function isWealthAgentLiveApi() {
-    return liveApiSettings.source === 'wealthagent';
-}
-
-function isFundValuationLastApi() {
-    return liveApiSettings.source === 'fundvaluationlast';
-}
-
-function isBatchLiveApi() {
-    return liveApiSettings.requestMode === 'batch';
-}
 
 async function fetchConfiguredLiveApiText(url, timeout = getLiveApiTimeout()) {
     const controller = new AbortController();
@@ -115,6 +217,35 @@ async function fetchConfiguredLiveApiText(url, timeout = getLiveApiTimeout()) {
     } finally {
         clearTimeout(timer);
     }
+}
+
+function getConfiguredSystemApiHeaders(url) {
+    const headers = {
+        'Referer': 'https://fund.eastmoney.com/',
+        'Accept': 'application/json, text/plain, */*'
+    };
+    if (safeString(url, '').startsWith('http://fundf10.eastmoney.com/')) {
+        let code = '000001';
+        try {
+            code = new URL(url).searchParams.get('code') || code;
+        } catch (_) {}
+        headers.Referer = `http://fundf10.eastmoney.com/ccmx_${code}.html`;
+        headers.Accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+    }
+    return headers;
+}
+
+async function fetchConfiguredSystemApiText(url, timeout = 15000, headers = {}) {
+    const requiresProxy = safeString(url, '').startsWith('http://fundf10.eastmoney.com/');
+    if (typeof proxyFetchText === 'function') {
+        const proxied = await proxyFetchText(url, {
+            timeout,
+            headers: { ...getConfiguredSystemApiHeaders(url), ...headers }
+        });
+        if (proxied) return proxied;
+    }
+    if (requiresProxy) throw new Error('F10 备用接口未返回持仓数据');
+    return fetchConfiguredLiveApiText(url, timeout);
 }
 
 function mapConfiguredLiveApiData(data, settings = liveApiSettings) {
@@ -215,10 +346,10 @@ function parseSinaFundValuation(text, code, baseLive) {
 
     const closeTime = `${safeString(data?.time_range?.[1]?.[1], '15:00')}:00`;
     const point = [...points].reverse().find(item => safeString(item?.min_time, '') <= closeTime) || points[points.length - 1];
-    const estimateDate = normalizePerfDate(point?.pre_date || '');
+    const estimateDate = normalizePerfDate(point?.pre_date || data?.date || data?.gzdate || '') || getToday();
     const price = Number(point?.pre_nav);
     const rate = Number(point?.nav_pct);
-    if (estimateDate !== getToday() || !Number.isFinite(price) || !Number.isFinite(rate)) return null;
+    if (!Number.isFinite(price) || !Number.isFinite(rate)) return null;
 
     return {
         ...baseLive,
@@ -233,7 +364,9 @@ function parseSinaFundValuation(text, code, baseLive) {
 async function fetchSinaFundValuation(code, baseLive, settings = SINA_LIVE_API_SETTINGS) {
     const url = buildLiveApiUrl(code, settings);
     try {
-        const text = await fetchConfiguredLiveApiText(url, 10000);
+        const text = settings.category === 'holdings'
+            ? await fetchConfiguredSystemApiText(url, 10000)
+            : await fetchConfiguredLiveApiText(url, 10000);
         return parseSinaFundValuation(text, code, baseLive);
     } catch (error) {
         console.warn('[live-api] 新浪估值补缺失败:', code, error.message);
@@ -266,6 +399,17 @@ async function fetchFundValuationLastBatchLiveInfo(codes, settings = FUND_VALUAT
         items.forEach(item => resultByCode.set(String(item?.FCODE || ''), item));
     }
     const results = codes.map(code => ({ code, live: toFundValuationLastLiveInfo(resultByCode.get(code), code) }));
+    return results;
+}
+
+async function fetchFundValuationLastSingleLiveInfo(codes, settings = FUND_VALUATION_LAST_SINGLE_SETTINGS) {
+    const results = [];
+    for (const code of codes) {
+        const text = await fetchConfiguredLiveApiText(buildLiveApiUrl(code, settings), 10000);
+        const payload = JSON.parse(text);
+        const item = Array.isArray(payload?.data) ? payload.data[0] : payload?.data;
+        results.push({ code, live: toFundValuationLastLiveInfo(item, code) });
+    }
     return results;
 }
 
@@ -304,26 +448,40 @@ function normalizeLiveApiFields(fields, defaults = LIVE_API_FIELD_DEFAULTS) {
 }
 
 function normalizeLiveApiSettings(value) {
-    const source = ['fundgz', 'custom', 'wealthagent', 'fundvaluationlast', 'sina', 'eastmoney_history'].includes(value?.source) ? value.source : 'fundgz';
+    const source = ['fundgz', 'custom', 'wealthagent', 'fundvaluationlast', 'fundvaluationlast_single', 'sina', 'eastmoney_history', 'fund_holdings', 'market_index', 'market_index_tencent', 'market_index_sina', 'market_index_yahoo', 'market_breadth', 'holiday_calendar'].includes(value?.source) ? value.source : 'fundgz';
     const defaults = source === 'wealthagent'
         ? WEALTHAGENT_LIVE_API_SETTINGS
         : source === 'fundvaluationlast' ? FUND_VALUATION_LAST_SETTINGS
-            : source === 'sina' ? SINA_LIVE_API_SETTINGS
-                : source === 'eastmoney_history' ? EASTMONEY_HISTORY_API_SETTINGS : DEFAULT_LIVE_API_SETTINGS;
+            : source === 'fundvaluationlast_single' ? FUND_VALUATION_LAST_SINGLE_SETTINGS
+                : source === 'sina' ? SINA_LIVE_API_SETTINGS
+                    : source === 'eastmoney_history' ? EASTMONEY_HISTORY_API_SETTINGS
+                        : source === 'fund_holdings' ? FUND_HOLDINGS_API_SETTINGS
+                            : source === 'market_index' ? MARKET_INDEX_API_SETTINGS
+                                : source === 'market_index_tencent' ? MARKET_INDEX_TENCENT_API_SETTINGS
+                                    : source === 'market_index_sina' ? MARKET_INDEX_SINA_API_SETTINGS
+                                        : source === 'market_index_yahoo' ? MARKET_INDEX_YAHOO_API_SETTINGS
+                                            : source === 'market_breadth' ? MARKET_BREADTH_API_SETTINGS
+                                                : source === 'holiday_calendar' ? HOLIDAY_CALENDAR_API_SETTINGS : DEFAULT_LIVE_API_SETTINGS;
     const rawTemplate = safeString(value?.urlTemplate, defaults.urlTemplate);
+    const category = API_CATEGORIES.includes(value?.category) ? value.category : (defaults.category || 'live');
+    const categoryFieldDefaults = category === 'holdings' ? HOLDINGS_API_FIELD_DEFAULTS
+        : category === 'index' ? INDEX_API_FIELD_DEFAULTS
+            : category === 'breadth' ? BREADTH_API_FIELD_DEFAULTS : defaults.fields;
     return {
         source,
-        category: value?.category === 'history' ? 'history' : (defaults.category || 'live'),
+        category,
         enabled: value?.enabled === undefined ? defaults.enabled !== false : value.enabled !== false,
         name: safeString(value?.name, defaults.name),
         urlTemplate: source === 'fundvaluationlast'
             ? rawTemplate.replaceAll('{code}', '{codes}')
             : rawTemplate,
-        responseType: ['auto', 'json', 'jsonp', 'eastmoney_js'].includes(value?.responseType) ? value.responseType : defaults.responseType,
+        secondaryUrlTemplate: safeString(value?.secondaryUrlTemplate, defaults.secondaryUrlTemplate || ''),
+        secondaryDataPath: safeString(value?.secondaryDataPath, defaults.secondaryDataPath || ''),
+        responseType: ['auto', 'json', 'jsonp', 'eastmoney_js', 'tencent_index', 'sina_index', 'yahoo_index'].includes(value?.responseType) ? value.responseType : defaults.responseType,
         dataPath: safeString(value?.dataPath, defaults.dataPath),
         dataKind: value?.dataKind === 'nav' ? 'nav' : defaults.dataKind,
         requestMode: value?.requestMode === 'batch' ? 'batch' : defaults.requestMode,
-        fields: normalizeLiveApiFields(value?.fields, defaults.fields)
+        fields: normalizeLiveApiFields(value?.fields, categoryFieldDefaults)
     };
 }
 
@@ -338,19 +496,27 @@ function makeLiveApiProfileId() {
 function createDefaultLiveApiProfiles() {
     return [
         createLiveApiProfile('fundvaluationlast_default', { ...FUND_VALUATION_LAST_SETTINGS, category: 'live', enabled: true }),
+        createLiveApiProfile('fundgz_default', { ...DEFAULT_LIVE_API_SETTINGS, category: 'live', enabled: true }),
         createLiveApiProfile('sina_default', SINA_LIVE_API_SETTINGS),
-        createLiveApiProfile('fundgz_default', { ...DEFAULT_LIVE_API_SETTINGS, category: 'live', enabled: false }),
+        createLiveApiProfile('fundvaluationlast_single_default', { ...FUND_VALUATION_LAST_SINGLE_SETTINGS, category: 'live', enabled: false }),
         createLiveApiProfile('wealthagent_local', { ...WEALTHAGENT_LIVE_API_SETTINGS, category: 'live', enabled: false }),
-        createLiveApiProfile('eastmoney_history_default', EASTMONEY_HISTORY_API_SETTINGS)
+        createLiveApiProfile('eastmoney_history_default', EASTMONEY_HISTORY_API_SETTINGS),
+        createLiveApiProfile('fund_holdings_default', FUND_HOLDINGS_API_SETTINGS),
+        createLiveApiProfile('market_index_default', MARKET_INDEX_API_SETTINGS),
+        createLiveApiProfile('market_index_tencent_default', MARKET_INDEX_TENCENT_API_SETTINGS),
+        createLiveApiProfile('market_index_sina_default', MARKET_INDEX_SINA_API_SETTINGS),
+        createLiveApiProfile('market_index_yahoo_default', MARKET_INDEX_YAHOO_API_SETTINGS),
+        createLiveApiProfile('market_breadth_default', MARKET_BREADTH_API_SETTINGS),
+        createLiveApiProfile('holiday_calendar_default', HOLIDAY_CALENDAR_API_SETTINGS)
     ];
 }
 
 function getApiProfileIdentity(profile) {
-    const category = profile?.category === 'history' ? 'history' : 'live';
+    const category = API_CATEGORIES.includes(profile?.category) ? profile.category : 'live';
     let template = safeString(profile?.urlTemplate, '').trim().toLowerCase();
     template = template.replace('fundcomapi.eastmoney.com', 'fundcomapi.tiantianfunds.com');
     template = template.replaceAll('{code}', '{codes}');
-    if (template.includes('/fundvaluationlast')) template = 'tiantian-fundvaluationlast';
+    if (template.includes('/fundvaluationlast')) template = `tiantian-fundvaluationlast-${safeString(profile?.source, '')}-${safeString(profile?.requestMode, '')}`;
     if (category === 'history' && template.includes('/pingzhongdata/')) template = 'eastmoney-pingzhongdata';
     if (template.includes('/fdfundservice.getestimatenetworthpic')) template = 'sina-estimate-networth';
     return `${category}|${template}`;
@@ -407,6 +573,11 @@ async function restoreLiveApiSettings() {
         }
     }
     liveApiProfiles = dedupeApiProfiles(liveApiProfiles);
+    const enabledLiveProfiles = liveApiProfiles.filter(profile => profile.category === 'live' && profile.enabled);
+    if (enabledLiveProfiles.length <= 1) {
+        const fundgzProfile = liveApiProfiles.find(profile => profile.id === 'fundgz_default' || profile.source === 'fundgz');
+        if (fundgzProfile) fundgzProfile.enabled = true;
+    }
     activeLiveApiProfileId = safeString(stored?.[CONFIG.LIVE_API_ACTIVE_PROFILE_STORAGE_KEY], '');
     if (!liveApiProfiles.some(profile => profile.id === activeLiveApiProfileId)) {
         const legacy = normalizeLiveApiSettings(stored?.[CONFIG.LIVE_API_SETTINGS_STORAGE_KEY]);
@@ -422,9 +593,14 @@ function getEnabledApiProfiles(category) {
     return liveApiProfiles.filter(profile => profile.category === category && profile.enabled !== false);
 }
 
-function buildHistoryApiUrl(code) {
-    const profile = getEnabledApiProfiles('history')[0] || EASTMONEY_HISTORY_API_SETTINGS;
-    return buildLiveApiUrl(code, profile);
+function getSystemApiSettings(category, fallback) {
+    return getEnabledApiProfiles(category)[0]
+        || liveApiProfiles.find(profile => profile.category === category)
+        || fallback;
+}
+
+function getEnabledApiProfileBySource(source, fallback = null) {
+    return liveApiProfiles.find(profile => profile.source === source && profile.enabled !== false) || fallback;
 }
 
 async function fetchPrioritizedHistoryText(code) {
@@ -475,17 +651,23 @@ async function persistLiveApiProfiles() {
 function buildLiveApiUrl(code, settings = liveApiSettings) {
     return settings.urlTemplate
         .replaceAll('{code}', encodeURIComponent(code))
-        .replaceAll('{timestamp}', String(Date.now()));
+        .replaceAll('{codes}', encodeURIComponent(code))
+        .replaceAll('{timestamp}', String(Date.now()))
+        .replaceAll('{random}', String(Math.random()));
 }
 
 function buildLiveApiBatchUrl(codes, settings = liveApiSettings) {
     const serializedCodes = encodeURIComponent(codes.join(','));
     if (settings.urlTemplate.includes('{codes}')) {
-        return settings.urlTemplate.replaceAll('{codes}', serializedCodes).replaceAll('{timestamp}', String(Date.now()));
+        return settings.urlTemplate
+            .replaceAll('{codes}', serializedCodes)
+            .replaceAll('{timestamp}', String(Date.now()))
+            .replaceAll('{random}', String(Math.random()));
     }
     return settings.urlTemplate
         .replaceAll('{code}', serializedCodes)
-        .replaceAll('{timestamp}', String(Date.now()));
+        .replaceAll('{timestamp}', String(Date.now()))
+        .replaceAll('{random}', String(Math.random()));
 }
 
 function getValueByPath(value, path) {
@@ -517,6 +699,85 @@ function parseJsonApiPayload(raw, responseType) {
         if (jsonpMatch) return JSON.parse(jsonpMatch[1]);
         throw new Error('响应不是 JSON 或 JSONP');
     }
+}
+
+function parseEastmoneyF10HoldingsPayload(raw) {
+    const contentMatch = safeString(raw, '').match(/content\s*:\s*("(?:\\.|[^"\\])*")\s*,\s*arryear/);
+    if (!contentMatch) return [];
+    let html = '';
+    try {
+        html = JSON.parse(contentMatch[1]);
+    } catch (_) {
+        html = contentMatch[1].slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    }
+    if (!html || typeof DOMParser === 'undefined') return [];
+
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const firstTable = doc.querySelector('table.tzxq tbody');
+    if (!firstTable) return [];
+
+    return Array.from(firstTable.querySelectorAll('tr')).map(row => {
+        const cells = Array.from(row.querySelectorAll('td'));
+        const quoteHref = cells[1]?.querySelector('a')?.getAttribute('href') || '';
+        const quoteMatch = quoteHref.match(/unify\/r\/(\d+)\.([0-9A-Za-z]+)/);
+        const market = quoteMatch?.[1] || '';
+        const stockCode = safeString(cells[1]?.textContent, '').trim();
+        return {
+            GPDM: stockCode,
+            GPJC: safeString(cells[2]?.textContent, '').trim(),
+            JZBL: safeString(cells.find(cell => cell.textContent.includes('%'))?.textContent, '').replace('%', '').trim(),
+            TEXCH: market === '1' ? '1' : market === '0' ? '2' : '',
+            NEWTEXCH: market === '116' ? '116' : ''
+        };
+    }).filter(stock => stock.GPDM && stock.GPJC);
+}
+
+function readHoldingsFromPayload(payload, settings) {
+    const records = getValueByPath(payload, settings.dataPath || 'Datas.fundStocks');
+    return Array.isArray(records) ? records : [];
+}
+
+function getHoldingsApiErrorMessage(payload, fallback = '接口未返回重仓股票') {
+    const message = safeString(payload?.ErrMsg || payload?.ErrorMessage || payload?.Message, fallback);
+    const code = payload?.ErrCode ?? payload?.ErrorCode;
+    return code === undefined || code === null ? message : `${message}（ErrCode: ${code}）`;
+}
+
+async function fetchConfiguredHoldingsRecords(code, settings = FUND_HOLDINGS_API_SETTINGS) {
+    const candidates = [buildLiveApiUrl(code, settings)];
+    if (settings.secondaryUrlTemplate) {
+        candidates.push(settings.secondaryUrlTemplate
+            .replaceAll('{code}', encodeURIComponent(code))
+            .replaceAll('{timestamp}', String(Date.now()))
+            .replaceAll('{random}', String(Math.random())));
+    }
+
+    let lastError = null;
+    for (let index = 0; index < candidates.length; index++) {
+        const url = candidates[index];
+        try {
+            const text = await fetchConfiguredSystemApiText(url, 15000);
+            if (url.includes('fundf10.eastmoney.com')) {
+                const records = parseEastmoneyF10HoldingsPayload(text);
+                if (records.length > 0) return records;
+                throw new Error('F10 备用接口未返回持仓表格');
+            }
+
+            const payload = parseJsonApiPayload(text, settings.responseType);
+            const records = readHoldingsFromPayload(payload, settings);
+            if (records.length > 0) return records;
+            throw new Error(getHoldingsApiErrorMessage(payload));
+        } catch (error) {
+            lastError = error;
+            const isLastCandidate = index === candidates.length - 1;
+            if (isLastCandidate) {
+                console.warn('[holdings-api] 数据源请求失败:', error.message);
+            } else {
+                console.debug('[holdings-api] 数据源请求失败，尝试备用源:', error.message);
+            }
+        }
+    }
+    throw lastError || new Error('没有可用的前十重仓股票数据源');
 }
 
 function parseEastmoneyJsPayload(raw) {
@@ -643,6 +904,7 @@ async function fetchGenericSingleLiveInfo(codes, settings) {
 
 async function fetchLiveInfoByProfile(codes, profile, baseByCode) {
     if (profile.source === 'fundvaluationlast') return fetchFundValuationLastBatchLiveInfo(codes, profile);
+    if (profile.source === 'fundvaluationlast_single') return fetchFundValuationLastSingleLiveInfo(codes, profile);
     if (profile.source === 'wealthagent') return fetchWealthAgentBatchLiveInfo(codes, profile);
     if (profile.source === 'sina') {
         const seed = codes.map(code => ({
@@ -696,12 +958,19 @@ function updateLiveApiSettingsButton() {
     if (!elements.apiSettingsBtn) return;
     const liveCount = getEnabledApiProfiles('live').length;
     const historyCount = getEnabledApiProfiles('history').length;
-    elements.apiSettingsBtn.title = `数据源管理：实时 ${liveCount}，历史 ${historyCount}`;
+    const systemCount = ['holdings', 'index', 'breadth', 'calendar'].filter(category => getEnabledApiProfiles(category).length > 0).length;
+    elements.apiSettingsBtn.title = `数据源管理：实时 ${liveCount}，历史 ${historyCount}，功能 ${systemCount}`;
     elements.apiSettingsBtn.setAttribute('aria-label', elements.apiSettingsBtn.title);
 }
 
 function getOptionalOriginPattern(urlTemplate) {
-    const probe = urlTemplate.replaceAll('{code}', '000001').replaceAll('{timestamp}', '0');
+    const probe = urlTemplate
+        .replaceAll('{code}', '000001')
+        .replaceAll('{codes}', '000001')
+        .replaceAll('{secids}', '1.000001')
+        .replaceAll('{year}', String(new Date().getFullYear()))
+        .replaceAll('{timestamp}', '0')
+        .replaceAll('{random}', '0.1');
     const url = new URL(probe);
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error('仅支持 HTTP 或 HTTPS 接口');
     return `${url.origin}/*`;
@@ -713,31 +982,164 @@ async function requestLiveApiPermission(urlTemplate) {
     return chrome.permissions.request({ origins: [origin] });
 }
 
+function getApiFieldLayout(category) {
+    return API_FIELD_LAYOUTS[category] || API_FIELD_LAYOUTS.live;
+}
+
+function readApiFields(getValue, category) {
+    return Object.fromEntries(getApiFieldLayout(category).map(([fieldId, key]) => [
+        key,
+        safeString(getValue(fieldId), '')
+    ]));
+}
+
+function applyApiFieldsToForm(getField, category, fields) {
+    const layout = getApiFieldLayout(category);
+    const byFieldId = new Map(layout.map(entry => [entry[0], entry]));
+    ['fieldCode', 'fieldName', 'fieldPrevPrice', 'fieldPrice', 'fieldRate', 'fieldDate', 'fieldTime'].forEach(fieldId => {
+        const input = getField(fieldId);
+        const group = input?.closest('.form-group');
+        const entry = byFieldId.get(fieldId);
+        if (!input || !group) return;
+        group.style.display = entry ? '' : 'none';
+        if (!entry) return;
+        input.value = safeString(fields?.[entry[1]], '');
+        const label = group.querySelector('label');
+        if (label) label.textContent = entry[2];
+    });
+}
+
 function liveApiSettingsFromForm(getField) {
     const source = getField('source').value;
+    const category = getField('category')?.value || 'live';
     return normalizeLiveApiSettings({
         source,
-        category: getField('category')?.value || 'live',
+        category,
         enabled: (getField('enabled')?.value || 'true') === 'true',
         name: getField('name').value,
         urlTemplate: getField('urlTemplate').value,
+        secondaryUrlTemplate: getField('secondaryUrlTemplate')?.value || '',
+        secondaryDataPath: getField('secondaryDataPath')?.value || '',
         responseType: getField('responseType').value,
         dataPath: getField('dataPath').value,
         dataKind: getField('dataKind').value,
         requestMode: getField('requestMode').value,
-        fields: {
-            code: getField('fieldCode').value,
-            name: getField('fieldName').value,
-            prevPrice: getField('fieldPrevPrice').value,
-            price: getField('fieldPrice').value,
-            rate: getField('fieldRate').value,
-            date: getField('fieldDate').value,
-            time: getField('fieldTime').value
-        }
+        fields: readApiFields(fieldId => getField(fieldId)?.value, category)
     });
 }
 
 async function testLiveApiSettings(settings, code) {
+    if (['holdings', 'index', 'breadth', 'calendar'].includes(settings.category)) {
+        let url = settings.urlTemplate
+            .replaceAll('{code}', encodeURIComponent(code.split(',')[0].trim() || '000001'))
+            .replaceAll('{secids}', '1.000001,0.399001')
+            .replaceAll('{timestamp}', String(Date.now()))
+            .replaceAll('{random}', String(Math.random()));
+
+        if (settings.category === 'calendar') {
+            const year = new Date().getFullYear();
+            const calendarUrl = settings.urlTemplate
+                .replaceAll('{year}', String(year))
+                .replaceAll('{timestamp}', String(Date.now()))
+                .replaceAll('{random}', String(Math.random()));
+            const text = await fetchConfiguredLiveApiText(calendarUrl, 10000);
+            const payload = JSON.parse(text);
+            const days = safeArray(payload?.days);
+            if (days.length === 0) throw new Error('日历接口未返回有效节假日数据');
+            const offCount = days.filter(day => day?.isOffDay).length;
+            return { systemSummary: `${year} 年节假日 ${days.length} 条：休市 ${offCount} 天，调休上班 ${days.length - offCount} 天` };
+        }
+
+        if (settings.category === 'holdings') {
+            const data = await fetchConfiguredHoldingsRecords(code.split(',')[0].trim() || '000001', settings);
+            const stocks = data.slice(0, 10).map(stock =>
+                `${safeString(getValueByPath(stock, settings.fields.stockName), getValueByPath(stock, settings.fields.stockCode) || '未知')} ${safeString(getValueByPath(stock, settings.fields.holdingPercent), '--')}%`
+            );
+            return { systemSummary: `重仓股票 ${stocks.length} 只：${stocks.join('、')}` };
+        }
+
+        if (settings.category === 'index') {
+            if (settings.source === 'market_index_tencent' || settings.responseType === 'tencent_index') {
+                const testUrl = settings.urlTemplate
+                    .replaceAll('{codes}', 'usIXIC')
+                    .replaceAll('{code}', 'usIXIC')
+                    .replaceAll('{timestamp}', String(Date.now()))
+                    .replaceAll('{random}', String(Math.random()));
+                const text = await fetchConfiguredLiveApiText(testUrl, 10000);
+                const match = text.match(/="(.+)"/);
+                const parts = match?.[1]?.split('~') || [];
+                if (parts.length <= 32) throw new Error('腾讯指数接口未返回有效内容');
+                return { systemSummary: `纳斯达克 ${parts[3] || '--'}（${parts[32] || '--'}%）` };
+            }
+
+            if (settings.source === 'market_index_sina' || settings.responseType === 'sina_index') {
+                const testUrl = settings.urlTemplate
+                    .replaceAll('{codes}', 'int_nasdaq')
+                    .replaceAll('{code}', 'int_nasdaq')
+                    .replaceAll('{timestamp}', String(Date.now()))
+                    .replaceAll('{random}', String(Math.random()));
+                const text = typeof proxyFetchSina === 'function'
+                    ? await proxyFetchSina(testUrl)
+                    : await fetchConfiguredLiveApiText(testUrl, 10000);
+                const parts = safeString(text, '').split(',');
+                if (parts.length < 4) throw new Error('新浪指数接口未返回有效内容');
+                return { systemSummary: `纳斯达克 ${parts[1] || '--'}（${parts[3] || '--'}%）` };
+            }
+
+            if (settings.source === 'market_index_yahoo' || settings.responseType === 'yahoo_index') {
+                const testUrl = settings.urlTemplate
+                    .replaceAll('{code}', '%5EGSPC')
+                    .replaceAll('{codes}', '%5EGSPC')
+                    .replaceAll('{timestamp}', String(Date.now()))
+                    .replaceAll('{random}', String(Math.random()));
+                const text = await fetchConfiguredLiveApiText(testUrl, 10000);
+                const meta = JSON.parse(text)?.chart?.result?.[0]?.meta;
+                if (!meta || !(meta.regularMarketPrice > 0)) throw new Error('Yahoo 指数接口未返回有效内容');
+                const prevClose = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
+                const rate = prevClose > 0 ? ((meta.regularMarketPrice - prevClose) / prevClose * 100) : 0;
+                return { systemSummary: `标普500 ${Number(meta.regularMarketPrice).toFixed(2)}（${rate.toFixed(2)}%）` };
+            }
+
+            const text = await fetchConfiguredLiveApiText(url, 10000);
+            const payload = parseJsonApiPayload(text, settings.responseType);
+            const data = getValueByPath(payload, settings.dataPath);
+            if (!Array.isArray(data) || data.length === 0) {
+                const apiMessage = safeString(payload?.ErrMsg || payload?.ErrorMessage || payload?.Message, '接口未返回列表');
+                throw new Error(`${apiMessage}（ErrCode: ${payload?.ErrCode ?? payload?.ErrorCode ?? '--'}）`);
+            }
+
+            const indices = data.map(item => {
+                const price = Number(getValueByPath(item, settings.fields.price));
+                const rate = Number(getValueByPath(item, settings.fields.changeRate));
+                return `${safeString(getValueByPath(item, settings.fields.indexName), getValueByPath(item, settings.fields.indexCode) || '指数')} ${price > 0 ? (price / 100).toFixed(2) : '--'}（${Number.isFinite(rate) ? (rate / 100).toFixed(2) : '--'}%）`;
+            });
+            return { systemSummary: indices.join('；') };
+        }
+
+        if (settings.category === 'breadth') {
+            const text = await fetchConfiguredLiveApiText(url, 10000);
+            const payload = parseJsonApiPayload(text, settings.responseType);
+            const data = getValueByPath(payload, settings.dataPath);
+            if (!Array.isArray(data) || data.length === 0) {
+                const apiMessage = safeString(payload?.ErrMsg || payload?.ErrorMessage || payload?.Message, '接口未返回列表');
+                throw new Error(`${apiMessage}（ErrCode: ${payload?.ErrCode ?? payload?.ErrorCode ?? '--'}）`);
+            }
+            const up = data.reduce((sum, item) => sum + (Number(getValueByPath(item, settings.fields.upCount)) || 0), 0);
+            const down = data.reduce((sum, item) => sum + (Number(getValueByPath(item, settings.fields.downCount)) || 0), 0);
+            if (!settings.secondaryUrlTemplate) throw new Error('未配置涨跌停辅助 URL');
+            const secondaryText = await fetchConfiguredLiveApiText(settings.secondaryUrlTemplate
+                .replaceAll('{timestamp}', String(Date.now()))
+                .replaceAll('{random}', String(Math.random())), 10000);
+            const secondary = parseJsonApiPayload(secondaryText, settings.responseType);
+            const limitRecords = getValueByPath(secondary, settings.secondaryDataPath);
+            if (!Array.isArray(limitRecords)) throw new Error('涨跌停接口未返回有效内容');
+            const limitUp = Number(getValueByPath(limitRecords.find(item => Number(getValueByPath(item, settings.fields.limitType)) === 4), settings.fields.limitCount)) || 0;
+            const limitDown = Number(getValueByPath(limitRecords.find(item => Number(getValueByPath(item, settings.fields.limitType)) === 8), settings.fields.limitCount)) || 0;
+            // f106（平盘）为全市场值，两 board 记录回显同一数字，取首行避免翻倍
+            const flat = data.length ? (Number(getValueByPath(data[0], settings.fields.flatCount)) || 0) : 0;
+            return { systemSummary: `上涨 ${up} 家，下跌 ${down} 家，涨停 ${limitUp} 家，跌停 ${limitDown} 家，平盘 ${flat} 家` };
+        }
+    }
     const hasPlaceholder = settings.requestMode === 'batch'
         ? settings.urlTemplate.includes('{codes}') || settings.urlTemplate.includes('{code}')
         : settings.urlTemplate.includes('{code}');
@@ -748,8 +1150,22 @@ async function testLiveApiSettings(settings, code) {
         if (!live) throw new Error('新浪未返回当日估值');
         return { name: live.name, dwjz: live.prevPrice, gsz: live.price, gszzl: live.rate, jzrq: live.prevPriceDate, gztime: live.priceTime, dataKind: 'estimate' };
     }
-    if (settings.requestMode === 'batch' && settings.source === 'fundvaluationlast') {
+    if (settings.source === 'fundvaluationlast') {
         const [result] = await fetchFundValuationLastBatchLiveInfo(code.split(',').map(item => item.trim()).filter(Boolean), settings);
+        const live = result?.live;
+        if (!live || (!live.price && !live.prevPrice)) throw new Error('未解析到有效净值字段');
+        return {
+            name: live.name,
+            dwjz: live.prevPrice,
+            gsz: live.price,
+            gszzl: live.rate,
+            jzrq: live.prevPriceDate,
+            gztime: live.priceTime,
+            dataKind: 'estimate'
+        };
+    }
+    if (settings.source === 'fundvaluationlast_single') {
+        const [result] = await fetchFundValuationLastSingleLiveInfo(code.split(',').map(item => item.trim()).filter(Boolean), settings);
         const live = result?.live;
         if (!live || (!live.price && !live.prevPrice)) throw new Error('未解析到有效净值字段');
         return {
@@ -783,129 +1199,21 @@ async function testLiveApiSettings(settings, code) {
     return result;
 }
 
-async function openLiveApiSettings() {
-    const current = normalizeLiveApiSettings(liveApiSettings);
-    let getFormField = null;
-    const result = await showFormModal({
-        title: '接口适配器',
-        subTitle: `当前使用：${current.name}`,
-        actionText: '保存并刷新',
-        layout: 'double',
-        fields: [
-            { id: 'source', label: '配置类型', type: 'select', value: current.source, options: [{ value: 'fundgz', label: '天天基金（内置）' }, { value: 'wealthagent', label: 'WealthAgent（本机）' }, { value: 'custom', label: '自定义适配器' }] },
-            { id: 'name', label: '接口名称', value: current.name },
-            { id: 'urlTemplate', label: 'URL 模板', value: current.urlTemplate },
-            { id: 'responseType', label: '响应类型', type: 'select', value: current.responseType, options: [{ value: 'auto', label: '自动识别' }, { value: 'json', label: 'JSON' }, { value: 'jsonp', label: 'JSONP' }, { value: 'eastmoney_js', label: '东财净值 JS' }] },
-            { id: 'dataKind', type: 'hidden', value: current.category === 'history' ? 'nav' : 'estimate' },
-            { id: 'dataPath', label: '数据路径', value: current.dataPath, placeholder: '例如 data.result；根对象留空' },
-            { id: 'fieldName', label: '名称字段路径', value: current.fields.name },
-            { id: 'fieldPrevPrice', label: '上期净值字段路径', value: current.fields.prevPrice },
-            { id: 'fieldPrice', label: '当前估值字段路径', value: current.fields.price },
-            { id: 'fieldRate', label: '涨跌率字段路径', value: current.fields.rate },
-            { id: 'fieldDate', label: '净值日期字段路径', value: current.fields.date },
-            { id: 'fieldTime', label: '估值时间字段路径', value: current.fields.time },
-            { id: 'testCode', label: '测试基金代码', value: '000001' }
-        ],
-        onRender: ({ root, getField }) => {
-            getFormField = getField;
-            const source = getField('source');
-            const responseType = getField('responseType');
-            const configurableIds = ['name', 'urlTemplate', 'responseType', 'dataKind', 'dataPath', 'fieldName', 'fieldPrevPrice', 'fieldPrice', 'fieldRate', 'fieldDate', 'fieldTime', 'testCode'];
-            const mappingIds = ['dataKind', 'dataPath', 'fieldName', 'fieldPrevPrice', 'fieldPrice', 'fieldRate', 'fieldDate', 'fieldTime'];
-            const sync = () => {
-                const custom = source.value === 'custom';
-                const wealthAgent = source.value === 'wealthagent';
-                if (wealthAgent) {
-                    const preset = WEALTHAGENT_LIVE_API_SETTINGS;
-                    getField('name').value = preset.name;
-                    getField('urlTemplate').value = preset.urlTemplate;
-                    getField('responseType').value = preset.responseType;
-                    getField('dataKind').value = preset.dataKind;
-                    getField('dataPath').value = preset.dataPath;
-                    getField('fieldName').value = preset.fields.name;
-                    getField('fieldPrevPrice').value = preset.fields.prevPrice;
-                    getField('fieldPrice').value = preset.fields.price;
-                    getField('fieldRate').value = preset.fields.rate;
-                    getField('fieldDate').value = preset.fields.date;
-                    getField('fieldTime').value = preset.fields.time;
-                }
-                configurableIds.forEach(id => { getField(id).disabled = !custom; });
-                const preset = responseType.value === 'eastmoney_js';
-                if (preset) getField('dataKind').value = 'nav';
-                mappingIds.forEach(id => { getField(id).disabled = !custom || preset; });
-            };
-            source.addEventListener('change', sync);
-            responseType.addEventListener('change', sync);
-
-            const testRow = document.createElement('div');
-            testRow.style.cssText = 'grid-column:1/-1;display:flex;align-items:center;gap:10px;min-height:34px;';
-            const testButton = document.createElement('button');
-            testButton.type = 'button';
-            testButton.className = 'modal-btn modal-btn-cancel';
-            testButton.textContent = '测试解析';
-            const testStatus = document.createElement('span');
-            testStatus.style.cssText = 'font-size:12px;color:#adc8e9;overflow-wrap:anywhere;';
-            testButton.onclick = async () => {
-                testButton.disabled = true;
-                testStatus.textContent = '正在请求...';
-                try {
-                    const parsed = await testLiveApiSettings(liveApiSettingsFromForm(getField), safeString(getField('testCode').value, '000001'));
-                    const kindLabel = parsed.dataKind === 'nav' ? '已公布净值' : '盘中实时估值';
-                    testStatus.textContent = `成功（${kindLabel}）：${parsed.name || '未命名'}，净值 ${parsed.gsz ?? parsed.dwjz}，涨跌 ${parsed.gszzl ?? '--'}，日期 ${parsed.gztime || parsed.jzrq || '--'}`;
-                } catch (error) {
-                    testStatus.textContent = `失败：${error.message}`;
-                } finally {
-                    testButton.disabled = false;
-                }
-            };
-            testRow.append(testButton, testStatus);
-            root.querySelector('.form-modal').appendChild(testRow);
-            sync();
-        }
-    });
-    if (!result) return;
-
-    const next = liveApiSettingsFromForm(getFormField);
-    if (!next.urlTemplate.includes('{code}')) {
-        showToast('URL 模板必须包含 {code}', 'error');
-        return;
-    }
-    try {
-        if (!await requestLiveApiPermission(next.urlTemplate)) {
-            showToast('未授予该接口的访问权限', 'error');
-            return;
-        }
-    } catch (error) {
-        showToast(`接口地址无效：${error.message}`, 'error');
-        return;
-    }
-    liveApiSettings = next;
-    await storageHelper.set(CONFIG.LIVE_API_SETTINGS_STORAGE_KEY, next);
-    updateLiveApiSettingsButton();
-    showToast(`接口已切换为：${next.name}`, 'success');
-    triggerUnifiedRefresh('api-settings');
-}
-
 function liveApiSettingsFromValues(values) {
+    const category = values.category || 'live';
     return normalizeLiveApiSettings({
         source: values.source,
         category: values.category,
         enabled: values.enabled === true || values.enabled === 'true',
         name: values.name,
         urlTemplate: values.urlTemplate,
+        secondaryUrlTemplate: values.secondaryUrlTemplate,
+        secondaryDataPath: values.secondaryDataPath,
         responseType: values.responseType,
         dataPath: values.dataPath,
         dataKind: values.dataKind,
         requestMode: values.requestMode,
-        fields: {
-            code: values.fieldCode,
-            name: values.fieldName,
-            prevPrice: values.fieldPrevPrice,
-            price: values.fieldPrice,
-            rate: values.fieldRate,
-            date: values.fieldDate,
-            time: values.fieldTime
-        }
+        fields: readApiFields(fieldId => values[fieldId], category)
     });
 }
 
@@ -923,12 +1231,14 @@ async function openLiveApiSettings() {
         fields: [
             { id: 'profileId', label: '已保存接口', type: 'select', value: current.id, options: profiles.map(profile => ({ value: profile.id, label: profile.name })) },
             { id: 'source', type: 'hidden', value: current.source },
-            { id: 'category', label: '接口分类', type: 'select', value: current.category, options: [{ value: 'live', label: '实时估值' }, { value: 'history', label: '历史净值' }] },
+            { id: 'category', label: '接口分类', type: 'select', value: current.category, options: [{ value: 'live', label: '实时估值' }, { value: 'history', label: '历史净值' }, { value: 'holdings', label: '前十重仓股票' }, { value: 'index', label: '市场指数' }, { value: 'breadth', label: '市场涨跌' }, { value: 'calendar', label: '节假日历' }] },
             { id: 'enabled', label: '启用状态', type: 'select', value: String(current.enabled !== false), options: [{ value: 'true', label: '已启用' }, { value: 'false', label: '已停用' }] },
-            { id: 'requestMode', label: '请求策略', type: 'select', value: ['wealthagent', 'fundvaluationlast'].includes(current.source) ? 'batch' : 'single', options: [{ value: 'single', label: '逐个请求' }, { value: 'batch', label: '批量请求' }] },
+            { id: 'requestMode', label: '请求策略', type: 'select', value: current.requestMode, options: [{ value: 'single', label: '逐个请求' }, { value: 'batch', label: '批量请求' }] },
             { id: 'name', label: '接口名称', value: current.name, required: true },
             { id: 'urlTemplate', label: 'URL 模板', value: current.urlTemplate, required: true },
-            { id: 'responseType', label: '响应类型', type: 'select', value: current.responseType, options: [{ value: 'auto', label: '自动识别' }, { value: 'json', label: 'JSON' }, { value: 'jsonp', label: 'JSONP' }, { value: 'eastmoney_js', label: '东财净值 JS' }] },
+            { id: 'secondaryUrlTemplate', label: '辅助 URL（市场涨跌停）', value: current.secondaryUrlTemplate || '' },
+            { id: 'secondaryDataPath', label: '辅助数据路径（涨跌停列表）', value: current.secondaryDataPath || '' },
+            { id: 'responseType', label: '响应类型', type: 'select', value: current.responseType, options: [{ value: 'auto', label: '自动识别' }, { value: 'json', label: 'JSON' }, { value: 'jsonp', label: 'JSONP' }, { value: 'eastmoney_js', label: '东财净值 JS' }, { value: 'tencent_index', label: '腾讯指数文本' }, { value: 'sina_index', label: '新浪指数文本' }, { value: 'yahoo_index', label: 'Yahoo 指数 JSON' }] },
             { id: 'dataKind', label: '数据语义', type: 'select', value: current.dataKind, options: [{ value: 'estimate', label: '盘中实时估值' }, { value: 'nav', label: '已公布净值' }] },
             { id: 'dataPath', label: '数据路径', value: current.dataPath, placeholder: '例如 data.result；根对象留空' },
             { id: 'fieldCode', label: '基金代码字段路径', value: current.fields.code },
@@ -938,7 +1248,7 @@ async function openLiveApiSettings() {
             { id: 'fieldRate', label: '涨跌率字段路径', value: current.fields.rate },
             { id: 'fieldDate', label: '净值日期字段路径', value: current.fields.date },
             { id: 'fieldTime', label: '估值时间字段路径', value: current.fields.time },
-            { id: 'testCode', label: '测试基金代码', value: '000001' }
+            { id: 'testCode', label: '测试基金代码（仅基金接口）', value: '000001' }
         ],
         onRender: ({ root, getField }) => {
             getFieldRef = getField;
@@ -953,27 +1263,23 @@ async function openLiveApiSettings() {
                 getField('requestMode').value = value.requestMode;
                 getField('name').value = value.name;
                 getField('urlTemplate').value = value.urlTemplate;
+                getField('secondaryUrlTemplate').value = value.secondaryUrlTemplate || '';
+                getField('secondaryDataPath').value = value.secondaryDataPath || '';
                 getField('responseType').value = value.responseType;
                 getField('dataKind').value = value.dataKind;
                 getField('dataPath').value = value.dataPath;
-                getField('fieldCode').value = value.fields.code;
-                getField('fieldName').value = value.fields.name;
-                getField('fieldPrevPrice').value = value.fields.prevPrice;
-                getField('fieldPrice').value = value.fields.price;
-                getField('fieldRate').value = value.fields.rate;
-                getField('fieldDate').value = value.fields.date;
-                getField('fieldTime').value = value.fields.time;
+                applyApiFieldsToForm(getField, value.category, value.fields);
             };
             const rememberCurrent = () => {
                 const index = profiles.findIndex(profile => profile.id === selectedId);
                 if (index >= 0) profiles[index] = { id: selectedId, ...liveApiSettingsFromForm(getField) };
             };
             const renderOptions = () => {
-                const categoryIndexes = { live: 0, history: 0 };
+                const categoryIndexes = { live: 0, history: 0, holdings: 0, index: 0, breadth: 0 };
                 profileSelect.replaceChildren(...profiles.map(profile => {
                     const option = document.createElement('option');
                     option.value = profile.id;
-                    const category = profile.category === 'history' ? '历史' : '实时';
+                    const category = API_CATEGORY_LABELS[profile.category] || '实时';
                     categoryIndexes[profile.category] = (categoryIndexes[profile.category] || 0) + 1;
                     option.textContent = `${category} ${categoryIndexes[profile.category]} · ${profile.enabled === false ? '停用' : '启用'} · ${profile.name}`;
                     return option;
@@ -982,8 +1288,18 @@ async function openLiveApiSettings() {
             };
             const sync = () => {
                 const eastmoneyJs = responseType.value === 'eastmoney_js';
+                const category = getField('category').value;
+                const operational = ['holdings', 'index', 'breadth', 'calendar'].includes(category);
+                const secondaryGroup = getField('secondaryUrlTemplate').closest('.form-group');
+                const secondaryLabel = secondaryGroup?.querySelector('label');
+                const secondaryDataGroup = getField('secondaryDataPath').closest('.form-group');
                 getField('dataKind').value = getField('category').value === 'history' ? 'nav' : 'estimate';
                 mappingIds.forEach(id => { getField(id).disabled = eastmoneyJs; });
+                getField('dataKind').closest('.form-group').style.display = operational ? 'none' : '';
+                if (secondaryGroup) secondaryGroup.style.display = ['holdings', 'breadth'].includes(category) ? '' : 'none';
+                if (secondaryLabel) secondaryLabel.textContent = category === 'holdings' ? '备用 URL（F10 持仓）' : '辅助 URL（市场涨跌停）';
+                if (secondaryDataGroup) secondaryDataGroup.style.display = category === 'breadth' ? '' : 'none';
+                getField('testCode').disabled = !['live', 'history', 'holdings'].includes(category);
             };
             profileSelect.addEventListener('change', () => {
                 rememberCurrent();
@@ -992,7 +1308,14 @@ async function openLiveApiSettings() {
                 sync();
             });
             getField('requestMode').addEventListener('change', sync);
-            getField('category').addEventListener('change', sync);
+            getField('category').addEventListener('change', () => {
+                const category = getField('category').value;
+                const defaults = category === 'holdings' ? HOLDINGS_API_FIELD_DEFAULTS
+                    : category === 'index' ? INDEX_API_FIELD_DEFAULTS
+                        : category === 'breadth' ? BREADTH_API_FIELD_DEFAULTS : LIVE_API_FIELD_DEFAULTS;
+                applyApiFieldsToForm(getField, category, defaults);
+                sync();
+            });
             responseType.addEventListener('change', sync);
 
             const toolsRow = document.createElement('div');
@@ -1059,8 +1382,12 @@ async function openLiveApiSettings() {
                 testStatus.textContent = '正在请求...';
                 try {
                     const parsed = await testLiveApiSettings(liveApiSettingsFromForm(getField), safeString(getField('testCode').value, '000001'));
-                    const kind = parsed.dataKind === 'nav' ? '已公布净值' : '盘中实时估值';
-                    testStatus.textContent = `成功（${kind}）：${parsed.name || '未命名'}，净值 ${parsed.gsz ?? parsed.dwjz}，涨跌 ${parsed.gszzl ?? '--'}`;
+                    if (parsed.systemSummary) {
+                        testStatus.textContent = `成功：${parsed.systemSummary}`;
+                    } else {
+                        const kind = parsed.dataKind === 'nav' ? '已公布净值' : '盘中实时估值';
+                        testStatus.textContent = `成功（${kind}）：${parsed.name || '未命名'}，净值 ${parsed.gsz ?? parsed.dwjz}，涨跌 ${parsed.gszzl ?? '--'}`;
+                    }
                 } catch (error) {
                     testStatus.textContent = `失败：${error.message}`;
                 } finally {
@@ -1077,12 +1404,18 @@ async function openLiveApiSettings() {
     if (!result) return;
 
     const next = liveApiSettingsFromValues(result);
-    const validPlaceholder = next.requestMode === 'batch'
+    const requiresCodePlaceholder = ['live', 'history', 'holdings'].includes(next.category);
+    const validPlaceholder = !requiresCodePlaceholder || (next.requestMode === 'batch'
         ? next.urlTemplate.includes('{codes}') || next.urlTemplate.includes('{code}')
-        : next.urlTemplate.includes('{code}');
+        : next.urlTemplate.includes('{code}'));
     if (!validPlaceholder) { showToast(`URL 模板必须包含 ${next.requestMode === 'batch' ? '{codes}' : '{code}'}`, 'error'); return; }
     try {
         if (!await requestLiveApiPermission(next.urlTemplate)) { showToast('未授予该接口的访问权限', 'error'); return; }
+        if (['holdings', 'breadth'].includes(next.category) && next.secondaryUrlTemplate
+            && !await requestLiveApiPermission(next.secondaryUrlTemplate)) {
+            showToast('未授予辅助接口访问权限', 'error');
+            return;
+        }
     } catch (error) {
         showToast(`接口地址无效：${error.message}`, 'error');
         return;
@@ -1091,7 +1424,14 @@ async function openLiveApiSettings() {
     profiles[selectedIndex] = { id: selectedId, ...next };
     liveApiProfiles = profiles;
     activeLiveApiProfileId = selectedId;
-    liveApiSettings = { ...(profiles.find(profile => profile.category === 'live' && profile.enabled) || next) };
+    // 只从启用中的实时源取配置；全部停用时不能回退到刚编辑的（可能已停用）配置，
+    // 否则系统会静默使用用户明确停用的数据源
+    const firstEnabledLive = profiles.find(profile => profile.category === 'live' && profile.enabled);
+    if (firstEnabledLive) {
+        liveApiSettings = { ...firstEnabledLive };
+    } else {
+        showToast('注意：实时估值数据源已全部停用，实时估值将不可用', 'warning');
+    }
     await persistLiveApiProfiles();
     updateLiveApiSettingsButton();
     showToast('数据源配置已保存', 'success');

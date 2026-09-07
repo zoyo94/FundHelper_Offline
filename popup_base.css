@@ -253,50 +253,6 @@ body>* {
     transition: background 0.2s, opacity 0.2s;
 }
 
-.refresh-interval-select {
-    position: relative;
-    z-index: 1;
-    width: 18px;
-    min-width: 18px;
-    height: 26px;
-    padding: 0;
-    border: none;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 700;
-    color: transparent;
-    background: transparent;
-    box-shadow: none;
-    appearance: none;
-    -webkit-appearance: none;
-    outline: none;
-    cursor: pointer;
-    transition: opacity 0.2s;
-    text-indent: -999px;
-    background-image: linear-gradient(45deg, transparent 50%, #7fb7ff 50%), linear-gradient(135deg, #7fb7ff 50%, transparent 50%);
-    background-position: calc(50% - 3px) calc(50% - 1px), calc(50% + 2px) calc(50% - 1px);
-    background-size: 5px 5px, 5px 5px;
-    background-repeat: no-repeat;
-}
-
-.refresh-interval-select:hover {
-    opacity: 0.85;
-}
-
-.refresh-interval-select:focus {
-    box-shadow: none;
-}
-
-.refresh-interval-select option {
-    color: #c8d8f0;
-    font-size: 12px;
-    text-indent: 0;
-}
-
-.refresh-interval-select:disabled {
-    opacity: 0.65;
-    cursor: not-allowed;
-}
 
 body.is-fullscreen .refresh-control {
     min-width: 80px;
@@ -395,12 +351,7 @@ body.is-fullscreen #refreshBtn {
     z-index: 1;
 }
 
-.refresh-control .refresh-interval-select {
-    padding-left: 0;
-}
-
-.refresh-control.is-disabled #refreshBtn,
-.refresh-control.is-disabled .refresh-interval-select {
+.refresh-control.is-disabled #refreshBtn {
     cursor: wait;
 }
 
@@ -408,9 +359,6 @@ body.is-fullscreen #refreshBtn {
     color: #e9f4ff;
 }
 
-.refresh-control.is-refreshing .refresh-interval-select {
-    opacity: 0.88;
-}
 
 @keyframes pulseGlow {
 
@@ -734,23 +682,6 @@ body.is-fullscreen #refreshBtn {
     padding: 0;
 }
 
-.index-settings-row:hover {
-    background: rgba(26, 58, 92, 0.52);
-}
-
-.index-settings-row input[type=checkbox] {
-    accent-color: #1890ff;
-    width: 14px;
-    height: 14px;
-    cursor: pointer;
-}
-
-.index-settings-code {
-    margin-left: auto;
-    font-size: 11px;
-    color: #7f9ab9;
-    font-variant-numeric: tabular-nums;
-}
 
 @keyframes spin {
     from {
@@ -779,7 +710,6 @@ body.is-fullscreen #fullscreenBtn {
     background: rgba(120, 183, 255, 0.4);
 }
 
-.refresh-control:has(#refreshBtn.spinning) .refresh-interval-select,
 .refresh-control:has(#refreshBtn.spinning) #refreshBtn {
     color: #8ec5ff;
 }
@@ -794,7 +724,6 @@ body.is-fullscreen #fullscreenBtn {
         background: rgba(120, 183, 255, 0.4);
     }
 
-    .refresh-control.is-refreshing .refresh-interval-select,
     .refresh-control.is-refreshing #refreshBtn {
         color: #8ec5ff;
     }
@@ -852,7 +781,7 @@ button:active {
 .summary-bar {
     padding: 12px 14px 8px;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     align-items: stretch;
     gap: 8px;
     font-size: 11px;
@@ -1168,10 +1097,6 @@ button:active {
     padding-right: 32px;
 }
 
-.header-ticker-wrap .market-ticker-copy.is-animating {
-    animation: ticker-scroll 30s linear infinite;
-}
-
 .header-ticker-wrap .market-ticker-item {
     font-size: 11px;
     gap: 8px;
@@ -1206,16 +1131,6 @@ button:active {
     opacity: 0.7;
     font-size: 10px;
     margin-left: 2px;
-}
-
-@keyframes ticker-scroll {
-    from {
-        transform: translateX(0);
-    }
-
-    to {
-        transform: translateX(-50%);
-    }
 }
 
 .filter-bar label,
@@ -1267,6 +1182,10 @@ button:active {
 .filter-breadth-item.is-down .filter-breadth-value,
 .filter-breadth-item.is-limit-down .filter-breadth-value {
     color: #26b47a;
+}
+
+.filter-breadth-item.is-flat .filter-breadth-value {
+    color: #9aa7b8;
 }
 
 .filter-action-btn {
@@ -1781,14 +1700,6 @@ button:active {
     background: #69b1ff;
 }
 
-
-.profit-calendar-empty {
-    padding: 24px 10px;
-    text-align: center;
-    color: #6f8fb3;
-    font-size: 12px;
-}
-
 .profit-calendar-month-summary {
     display: flex;
     align-items: center;
@@ -2040,6 +1951,31 @@ button:active {
     flex: initial;
 }
 
+/* 小屏（≤640px，含默认弹窗 580px）：筛选分组行太挤会溢出换行，
+   改为搜索框弹性伸缩、广度块可收缩，保证单行整齐不溢出。 */
+@media (max-width: 640px) {
+    .filter-left {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .filter-search {
+        flex: 1 1 140px;
+        min-width: 0;
+        width: auto;
+        max-width: 280px;
+    }
+
+    .filter-search input {
+        width: 100%;
+    }
+
+    .filter-breadth {
+        flex: 0 1 auto;
+        min-width: 0;
+    }
+}
+
 @media (max-width: 520px) {
     .profit-calendar-toolbar {
         flex-direction: column;
@@ -2081,16 +2017,33 @@ button:active {
 @media (max-width: 420px) {
     .filter-bar {
         gap: 8px;
+        row-gap: 8px;
         padding-left: 12px;
         padding-right: 12px;
     }
 
     .filter-left {
+        flex: 1 1 100%;
+        flex-wrap: wrap;
         gap: 7px;
     }
 
+    .filter-search {
+        flex: 1 1 100%;
+        max-width: none;
+    }
+
+    .filter-breadth {
+        order: 2;
+        flex: 1 1 auto;
+        margin: 0;
+        justify-content: flex-start;
+    }
+
     .filter-action-btn {
-        padding: 6px 10px;
+        order: 3;
+        flex: 0 0 auto;
+        padding: 0;
     }
 
     .profit-calendar-meta-item,

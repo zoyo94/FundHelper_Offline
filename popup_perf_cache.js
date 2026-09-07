@@ -162,7 +162,8 @@ function sanitizeMarketBreadthData(data = {}) {
         limitUp: nonNegativeFloat(data.limitUp),
         up: nonNegativeFloat(data.up),
         down: nonNegativeFloat(data.down),
-        limitDown: nonNegativeFloat(data.limitDown)
+        limitDown: nonNegativeFloat(data.limitDown),
+        flat: nonNegativeFloat(data.flat)
     };
 
     return normalized;

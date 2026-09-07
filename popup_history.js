@@ -449,7 +449,7 @@ async function syncFundHistory(code, force = false) {
             if (!syncedFlags[code]) {
                 forceSync = true;
             } else {
-                const existingData = await HistoryDB.getRange(code, '2000-01-01', getToday());
+                const existingData = await HistoryDB.getRange(code, '', getToday());
                 if (existingData.length < 10) {
                     forceSync = true;
                 } else {
@@ -474,7 +474,8 @@ async function syncFundHistory(code, force = false) {
             return;
         }
 
-        const startStr = (latest && !forceSync) ? latest.date : '2000-01-01';
+        // 全量历史取自详情页趋势数据（成立日→今天），不施加起始日期下界限制
+        const startStr = '';
         const data = await fetchFundNetValues(code, startStr, today, 200, { preferFullHistory: true });
 
         if (Array.isArray(data) && data.length > 0) {

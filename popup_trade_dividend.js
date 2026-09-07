@@ -284,15 +284,6 @@ function extractDividendEventsFromHistoryRecords(records = [], addedDate = '') {
     return deduped;
 }
 
-async function backfillHistoricalDividendOrdersFromHistoryDB(funds, todayStr, tradeOrdersMap = new Map()) {
-    const results = await Promise.all(
-        Object.entries(funds || {}).map(([code, item]) =>
-            backfillHistoricalDividendOrdersForFund(code, item, todayStr, tradeOrdersMap.get(code) || [])
-        )
-    );
-    return results.some(Boolean);
-}
-
 async function backfillHistoricalDividendOrdersForFund(code, item, todayStr = getToday(), existingOrders = []) {
     if (!code || !item || !item.addedDate) return false;
 
@@ -347,36 +338,3 @@ async function backfillHistoricalDividendOrdersForFund(code, item, todayStr = ge
     return changed;
 }
 
-async function debugFundDividendBackfillFromHistoryDB(code, addedDate = '') {
-    const normalizedCode = safeString(code, '');
-    const normalizedAddedDate = normalizePerfDate(addedDate || '');
-    if (!normalizedCode || !normalizedAddedDate) {
-        return {
-            code: normalizedCode,
-            addedDate: normalizedAddedDate,
-            historyCount: 0,
-            dividendHistoryCount: 0,
-            dividendEvents: [],
-            orders: []
-        };
-    }
-
-    const historyRecords = await HistoryDB.getRange(normalizedCode, normalizedAddedDate, getToday()).catch(() => []);
-    const dividendRecords = safeArray(historyRecords, []).filter(record => safeString(record?.dividend, '').includes('分红'));
-    const dividendEvents = extractDividendEventsFromHistoryRecords(historyRecords, normalizedAddedDate);
-    const orders = await HistoryDB.getOrders(normalizedCode).catch(() => []);
-
-    return {
-        code: normalizedCode,
-        addedDate: normalizedAddedDate,
-        historyCount: safeArray(historyRecords, []).length,
-        dividendHistoryCount: dividendRecords.length,
-        dividendRecords: dividendRecords.map(record => ({
-            date: record.date,
-            price: record.price,
-            dividend: record.dividend || ''
-        })),
-        dividendEvents,
-        orders: normalizeTradeRecordList(orders, { source: 'order' }).filter(order => isDividendType(order.type))
-    };
-}

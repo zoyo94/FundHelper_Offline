@@ -121,6 +121,7 @@ function normalizeFundPerfDailyCache(rawCache = {}) {
         if (!asOfDate) return;
         normalized[code] = {
             asOfDate,
+            source: entry.source === 'official' ? 'official' : 'history',
             w1: normalizePerfRateValue(entry.w1),
             m1: normalizePerfRateValue(entry.m1),
             m3: normalizePerfRateValue(entry.m3),
@@ -158,6 +159,7 @@ async function persistFundPerfDailyCache() {
 function createEmptyFundPerfDailyEntry(asOfDate) {
     return {
         asOfDate,
+        source: 'history',
         w1: null,
         m1: null,
         m3: null,
@@ -221,14 +223,55 @@ function calcRateFromNavData(navData, startDate) {
     if (normalized.length < 2) return null;
 
     const startIndex = normalized.findIndex(d => d.date >= startDate);
-    if (startIndex < 0) return null;
-    const baseIndex = normalized[startIndex].date === startDate ? startIndex : Math.max(0, startIndex - 1);
+    if (startIndex < 0 && normalized[normalized.length - 1].date < startDate) return null;
+    // 平台口径：目标日有净值就用目标日，否则取目标日之前最近一个交易日。
+    const baseIndex = startIndex < 0
+        ? normalized.length - 1
+        : (normalized[startIndex].date === startDate ? startIndex : Math.max(0, startIndex - 1));
     const first = normalized[baseIndex];
     const last = normalized[normalized.length - 1];
-    const firstValue = first.acPrice > 0 ? first.acPrice : first.price;
-    const lastValue = last.acPrice > 0 ? last.acPrice : last.price;
-    if (!(firstValue > 0) || !(lastValue > 0)) return null;
-    return round2((lastValue - firstValue) / firstValue * 100);
+    if (!(first.price > 0) || !(last.price > 0)) return null;
+    return round2((last.price - first.price) / first.price * 100);
+}
+
+function shiftFundPerfDate(date, { days = 0, months = 0, years = 0 } = {}) {
+    const shifted = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    if (days) shifted.setDate(shifted.getDate() - days);
+    if (months || years) {
+        const originalDay = shifted.getDate();
+        shifted.setDate(1);
+        shifted.setFullYear(shifted.getFullYear() - years);
+        shifted.setMonth(shifted.getMonth() - months);
+        const lastDay = new Date(shifted.getFullYear(), shifted.getMonth() + 1, 0).getDate();
+        shifted.setDate(Math.min(originalDay, lastDay));
+    }
+    return formatDate(shifted);
+}
+
+function buildFundTotalReturnSeries(navData) {
+    const sorted = navData
+        .filter(item => item?.date && parseFloat(item?.price) > 0)
+        .sort((a, b) => a.date.localeCompare(b.date));
+    if (sorted.length === 0) return [];
+
+    const series = [{ date: sorted[0].date, price: 1 }];
+    for (let i = 1; i < sorted.length; i++) {
+        const previousPrice = parseFloat(sorted[i - 1].price);
+        const currentPrice = parseFloat(sorted[i].price);
+        let factor = currentPrice / previousPrice;
+        const eventRate = Number.parseFloat(sorted[i].dailyRate ?? sorted[i].rate);
+
+        // 分红、拆分和份额折算日不能直接比较单位净值，改用接口给出的复权日收益。
+        if (sorted[i].dividend && Number.isFinite(eventRate)) {
+            factor = 1 + eventRate / 100;
+        }
+        if (!(factor > 0) || !Number.isFinite(factor)) continue;
+        series.push({
+            date: sorted[i].date,
+            price: series[series.length - 1].price * factor
+        });
+    }
+    return series;
 }
 
 function calcRateFromFirstNav(navData) {
@@ -239,22 +282,20 @@ function calcRateFromFirstNav(navData) {
     if (normalized.length < 2) return null;
     const first = normalized[0];
     const last = normalized[normalized.length - 1];
-    const firstValue = first.acPrice > 0 ? first.acPrice : first.price;
-    const lastValue = last.acPrice > 0 ? last.acPrice : last.price;
-    if (!(firstValue > 0) || !(lastValue > 0)) return null;
-    return round2((lastValue - firstValue) / firstValue * 100);
+    if (!(first.price > 0) || !(last.price > 0)) return null;
+    return round2((last.price - first.price) / first.price * 100);
 }
 
 async function fetchFundPerfData(code) {
     try {
+        const officialReturns = typeof fetchFundPeriodReturns === 'function'
+            ? await fetchFundPeriodReturns(code)
+            : null;
+        if (officialReturns) return officialReturns;
+
         const today = getToday();
-        const todayDate = parseYmdDate(today);
-        if (!todayDate) return null;
 
-        const getStart = (days) => formatDate(new Date(todayDate.getTime() - days * CONSTANTS.DAY_MS));
-        const lyStart = '2000-01-01';
-
-        let navData = await HistoryDB.getRange(code, lyStart, today);
+        let navData = await HistoryDB.getRange(code, '', today);
 
         const syncedFlags = await storageHelper.get('fullHistorySyncedFlags', {});
         const needsFullSync = !syncedFlags[code] || !Array.isArray(navData) || navData.length < 2;
@@ -272,24 +313,23 @@ async function fetchFundPerfData(code) {
             return null;
         }
 
-        const normalizedNavData = navData
-            .map(item => ({
-                date: item?.date,
-                price: parseFloat(item?.acPrice || item?.price)
-            }))
-            .filter(item => typeof item.date === 'string' && item.date && Number.isFinite(item.price) && item.price > 0)
-            .sort((a, b) => a.date.localeCompare(b.date));
+        const normalizedNavData = buildFundTotalReturnSeries(navData);
 
         if (normalizedNavData.length < 2) {
             return null;
         }
 
+        // 区间终点以最新已确认净值日为准，不以本机今天为准（周末、节假日和 QDII 会滞后）。
+        const latestDate = parseYmdDate(normalizedNavData[normalizedNavData.length - 1].date);
+        if (!latestDate) return null;
+
         return {
-            w1: calcRateFromNavData(normalizedNavData, getStart(7)),
-            m1: calcRateFromNavData(normalizedNavData, getStart(30)),
-            m3: calcRateFromNavData(normalizedNavData, getStart(90)),
-            m6: calcRateFromNavData(normalizedNavData, getStart(180)),
-            y1: calcRateFromNavData(normalizedNavData, getStart(365)),
+            source: 'history',
+            w1: calcRateFromNavData(normalizedNavData, shiftFundPerfDate(latestDate, { days: 7 })),
+            m1: calcRateFromNavData(normalizedNavData, shiftFundPerfDate(latestDate, { months: 1 })),
+            m3: calcRateFromNavData(normalizedNavData, shiftFundPerfDate(latestDate, { months: 3 })),
+            m6: calcRateFromNavData(normalizedNavData, shiftFundPerfDate(latestDate, { months: 6 })),
+            y1: calcRateFromNavData(normalizedNavData, shiftFundPerfDate(latestDate, { years: 1 })),
             ly: calcRateFromFirstNav(normalizedNavData),
         };
     } catch (e) {
@@ -322,46 +362,59 @@ async function fetchAllFundPerfData(fundsOverride = null) {
 
         const syncedFlags = await storageHelper.get('fullHistorySyncedFlags', {});
 
+        // 第一遍：同步填充缓存命中项并立即渲染，收集需要刷新的 code
+        const needFetch = [];
         for (const code of codes) {
             fundPerfCache[code] = buildFundPerfDisplayData(code, funds[code] || null, ordersOf(code));
 
             const cached = fundPerfDailyCacheByCode[code];
-            if (cached?.asOfDate === today && syncedFlags[code] && PERF_FIELDS.every(field => field === 'holdDays' || cached[field] !== null && cached[field] !== undefined)) {
-                const tr = document.querySelector(`#fundTableBody tr[data-code="${code}"]`);
-                if (tr) renderFundPerfCells(tr, code);
-                continue;
-            }
-
-            const fetchedPerf = await fetchFundPerfData(code);
-            if (fetchedPerf) {
-                fundPerfDailyCacheByCode[code] = {
-                    asOfDate: today,
-                    ...fetchedPerf
-                };
-                fundPerfCache[code] = buildFundPerfDisplayData(code, funds[code] || null, ordersOf(code));
-                cacheChanged = true;
-
+            const cacheIsComplete = cached?.source === 'official'
+                || (syncedFlags[code] && PERF_FIELDS.every(field => field === 'holdDays' || cached?.[field] !== null && cached?.[field] !== undefined));
+            if (cached?.asOfDate === today && cacheIsComplete) {
                 const tr = document.querySelector(`#fundTableBody tr[data-code="${code}"]`);
                 if (tr) renderFundPerfCells(tr, code);
             } else {
-                const fallbackEntry = cached
-                    ? {
-                        asOfDate: today,
-                        w1: normalizePerfRateValue(cached.w1),
-                        m1: normalizePerfRateValue(cached.m1),
-                        m3: normalizePerfRateValue(cached.m3),
-                        m6: normalizePerfRateValue(cached.m6),
-                        y1: normalizePerfRateValue(cached.y1),
-                        ly: normalizePerfRateValue(cached.ly)
-                    }
-                    : createEmptyFundPerfDailyEntry(today);
+                needFetch.push(code);
+            }
+        }
 
-                fundPerfDailyCacheByCode[code] = fallbackEntry;
+        // 第二遍：分批并发拉取（每批 5 个并发，批间 300ms 限流，避免被接口限流）
+        // 原 for...of + sleep(500) 串行：N 个基金 = N×500ms 阻塞；
+        // 改分批后：20 个基金 ≈ 4 批 × ~500ms ≈ 2-3s，且批内并发请求。
+        const PERF_BATCH_SIZE = 5;
+        for (let i = 0; i < needFetch.length; i += PERF_BATCH_SIZE) {
+            const batch = needFetch.slice(i, i + PERF_BATCH_SIZE);
+            await Promise.all(batch.map(async (code) => {
+                const fetchedPerf = await fetchFundPerfData(code);
+                if (fetchedPerf) {
+                    fundPerfDailyCacheByCode[code] = {
+                        asOfDate: today,
+                        ...fetchedPerf
+                    };
+                } else {
+                    const cached = fundPerfDailyCacheByCode[code];
+                    const fallbackEntry = cached
+                        ? {
+                            asOfDate: today,
+                            source: cached.source === 'official' ? 'official' : 'history',
+                            w1: normalizePerfRateValue(cached.w1),
+                            m1: normalizePerfRateValue(cached.m1),
+                            m3: normalizePerfRateValue(cached.m3),
+                            m6: normalizePerfRateValue(cached.m6),
+                            y1: normalizePerfRateValue(cached.y1),
+                            ly: normalizePerfRateValue(cached.ly)
+                        }
+                        : createEmptyFundPerfDailyEntry(today);
+                    fundPerfDailyCacheByCode[code] = fallbackEntry;
+                }
                 fundPerfCache[code] = buildFundPerfDisplayData(code, funds[code] || null, ordersOf(code));
                 cacheChanged = true;
+                const tr = document.querySelector(`#fundTableBody tr[data-code="${code}"]`);
+                if (tr) renderFundPerfCells(tr, code);
+            }));
+            if (i + PERF_BATCH_SIZE < needFetch.length) {
+                await new Promise(r => setTimeout(r, 300));
             }
-
-            await new Promise(r => setTimeout(r, 500));
         }
 
         if (cacheChanged) {

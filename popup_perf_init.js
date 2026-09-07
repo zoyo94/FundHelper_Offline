@@ -18,7 +18,6 @@ async function initializePopup() {
         refreshBtn: document.getElementById('refreshBtn'),
         refreshBtnText: document.getElementById('refreshBtnText'),
         refreshBtnIcon: document.getElementById('refreshBtnIcon'),
-        refreshIntervalSelect: document.getElementById('refreshIntervalSelect'),
         marketTicker: document.getElementById('marketTicker'),
         marketTickerTrack: document.getElementById('marketTickerTrack'),
         indexSettingsBtn: document.getElementById('indexSettingsBtn'),
@@ -32,6 +31,7 @@ async function initializePopup() {
         totalTodayProfit: document.getElementById('totalTodayProfit'),
         totalTotalProfit: document.getElementById('totalTotalProfit'),
         totalYesterdayProfit: document.getElementById('totalYesterdayProfit'),
+        totalPositionProfit: document.getElementById('totalPositionProfit'),
         exportBtn: document.getElementById('exportBtn'),
         importBtn: document.getElementById('importBtn'),
         importFile: document.getElementById('importFile'),
@@ -176,6 +176,7 @@ function renderFilterBreadth(data = marketBreadthData) {
     elements.filterBreadth.innerHTML = `
         <span class="filter-breadth-item is-limit-up" title="涨停"><span class="filter-breadth-label">涨停</span><span class="filter-breadth-value">${data.limitUp}</span></span>
         <span class="filter-breadth-item is-up" title="上涨"><span class="filter-breadth-label">涨</span><span class="filter-breadth-value">${data.up}</span></span>
+        <span class="filter-breadth-item is-flat" title="平盘"><span class="filter-breadth-label">平</span><span class="filter-breadth-value">${data.flat ?? 0}</span></span>
         <span class="filter-breadth-item is-down" title="下跌"><span class="filter-breadth-label">跌</span><span class="filter-breadth-value">${data.down}</span></span>
         <span class="filter-breadth-item is-limit-down" title="跌停"><span class="filter-breadth-label">跌停</span><span class="filter-breadth-value">${data.limitDown}</span></span>
     `;
@@ -470,15 +471,6 @@ async function toggleManualPause() {
     }
 
     updateRefreshButtonState();
-}
-
-async function handleRefreshIntervalChange() {
-    if (!elements.refreshIntervalSelect) return;
-
-    const changed = await setAutoRefreshInterval(elements.refreshIntervalSelect.value);
-    if (!changed) {
-        syncRefreshIntervalSelect();
-    }
 }
 
 function ensureRefreshCountdownTimer() {

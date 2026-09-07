@@ -260,6 +260,35 @@ async function adjustPosition(code, type) {
         cancelableUntilDate = getTradeCancelableUntilDate(now, useAfterCutoff);
 
         const maxShares = fundItem.shares || 0;
+        // 输入校验（HTML 的 min/max 属性不阻止提交，必须在入库前拦截）：
+        // 加仓/分红金额必须大于 0；减仓份额必须在 (0, 当前持有] 区间内
+        if (isAdd) {
+            const buyAmount = parseFloat(result.amount);
+            if (!Number.isFinite(buyAmount) || buyAmount <= 0) {
+                await showAlert('请输入有效的买入金额（大于 0）');
+                return;
+            }
+            result.amount = round2(buyAmount);
+        } else if (isDividend) {
+            const divAmount = parseFloat(result.dividendAmount);
+            if (!Number.isFinite(divAmount) || divAmount <= 0) {
+                await showAlert('请输入有效的分红金额（大于 0）');
+                return;
+            }
+            result.dividendAmount = round2(divAmount);
+        } else {
+            const sellShares = parseFloat(result.shares);
+            if (!Number.isFinite(sellShares) || sellShares <= 0) {
+                await showAlert('请输入有效的卖出份额（大于 0）');
+                return;
+            }
+            if (sellShares > maxShares + 0.0001) {
+                await showAlert(`卖出份额不能超过当前持有份额（最多 ${roundShares(maxShares).toFixed(2)} 份）`);
+                return;
+            }
+            result.shares = roundShares(Math.min(sellShares, maxShares));
+        }
+
         const isClear = !isAdd && !isDividend && result.shares && Math.abs(parseFloat(result.shares) - maxShares) < 0.0001;
 
         await HistoryDB.addOrder({
@@ -272,7 +301,19 @@ async function adjustPosition(code, type) {
             effectiveDate: effectiveDate,
             targetDate: result.confirmDate,
             cancelableUntilDate,
-            amount: result.amount || result.dividendAmount || 0,
+            // 减仓单按当前净值补记估算金额，保证订单流水金额字段完整
+            amount: result.amount || result.dividendAmount
+                || (!isAdd && !isDividend ? round2((parseFloat(result.shares) || 0) * (live?.prevPrice || live?.price || 0)) : 0),
+            // 手动分红单必须显式写 dividendAmount/dividendDate/perShare：
+            // normalizeTradeRecord 不从 amount 推导 dividendAmount，
+            // 缺了会在确认时静默丢分红（holdProfit/positionCost 都按 0 处理）
+            ...(isDividend ? {
+                dividendAmount: round2(parseFloat(result.dividendAmount) || 0),
+                dividendDate: todayStr,
+                perShare: (fundItem.shares || 0) > 0
+                    ? round6((parseFloat(result.dividendAmount) || 0) / fundItem.shares)
+                    : 0
+            } : {}),
             shares: roundShares(result.shares || 0),
             feeRate: result.feeRate || 0,
             status: 'pending',
@@ -803,5 +844,12 @@ async function openFundEditor(existingCode = null) {
     showToast(`✅ [${code}] 资产保存成功！当前持仓：${result.amount}元 / ${result.shares}份`, 'success');
     elements.statusText.innerText = '准备就绪';
     loadData();
+
+    // 新基金当天立即强制补齐历史净值，避免要等次日首次刷新才有走势图/收益率
+    if (!existingCode) {
+        syncFundHistory(code, true).catch(err => {
+            console.warn(`[HistorySync] 新基金 ${code} 历史补齐失败:`, err);
+        });
+    }
 }
 

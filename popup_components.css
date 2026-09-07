@@ -1,7 +1,7 @@
 /* ===== 表格容器 ===== */
 .table-container {
     flex: 1;
-    overflow-y: auto;
+    overflow: auto;
     margin: 0 14px 12px;
     background: linear-gradient(180deg, rgba(10, 22, 38, 0.92), rgba(8, 18, 32, 0.96));
     padding: 0 0 78px;
@@ -15,6 +15,7 @@
 /* 滚动条美化 */
 .table-container::-webkit-scrollbar {
     width: 5px;
+    height: 5px;
 }
 
 .table-container::-webkit-scrollbar-track {
@@ -27,9 +28,24 @@
 }
 
 table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: auto;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+    /* 不设 width 和 min-width：表格宽度 = 可见 <col> 宽度之和，
+       容器窄则溢出滚动，列宽绝不被缩放 */
+}
+
+th, td {
+    padding: 5px 4px;
+    text-align: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    font-size: 12px;
+    line-height: 1.38;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    /* 建立独立层叠上下文，确保 sticky 列的 z-index 可靠生效 */
+    position: relative;
 }
 
 th {
@@ -43,18 +59,24 @@ th {
     text-transform: uppercase;
     letter-spacing: 0.14em;
     border-bottom: 1px solid rgba(123, 164, 208, 0.14);
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-top: 6px;
+    padding-bottom: 6px;
     box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.02);
 }
 
-th,
+/* 普通数据单元格：保持默认层级 */
 td {
-    padding: 10px 8px;
-    text-align: left;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    font-size: 12px;
-    line-height: 1.38;
+    z-index: 1;
+}
+
+/* 冻结列表头：顶+左双重 sticky，层级最高，防止上下滚动时被数据列覆盖 */
+th[data-col="index"],
+th[data-col="code"],
+th[data-col="name"],
+th[data-col="amount"],
+th[data-col="shares"],
+th[data-col="nav"] {
+    z-index: 20;
 }
 
 th[data-col="amount"],
@@ -69,6 +91,7 @@ th[data-col="ly"],
 th[data-col="yesterdayProfit"],
 th[data-col="todayProfit"],
 th[data-col="holdProfit"],
+th[data-col="positionProfit"],
 td[data-col="amount"],
 td[data-col="shares"],
 td[data-col="holdDays"],
@@ -80,20 +103,117 @@ td[data-col="y1"],
 td[data-col="ly"],
 td[data-col="yesterdayProfit"],
 td[data-col="todayProfit"],
-td[data-col="holdProfit"] {
-    text-align: right;
+td[data-col="holdProfit"],
+td[data-col="positionProfit"] {
     font-variant-numeric: tabular-nums;
 }
 
-th[data-col="nav"],
+/* 名称列左对齐 */
+th[data-col="name"],
+td[data-col="name"] {
+    text-align: left;
+}
+
+/* ===== Excel 式冻结列 + 水平滚动 ===== */
+/* 冻结前 6 列：序号/代码/名称/持仓/份额/净值，从第 7 列开始可左右滚动 */
+/*
+  z-index 层级（从低到高）：
+    普通 td  = 1   （最底层）
+    冻结 td  = 2   （横向滚动时盖住普通 td）
+    普通 th  = 10  （纵向滚动时盖住所有 td）
+    冻结 th  = 20  （左上角交叉区，永远最上层）
+*/
+
+/* 冻结 td 统一 z-index（高于普通 td，低于普通 th） */
+td[data-col="index"],
+td[data-col="code"],
+td[data-col="name"],
+td[data-col="amount"],
+td[data-col="shares"],
 td[data-col="nav"] {
-    text-align: center;
-    font-variant-numeric: tabular-nums;
+    z-index: 2;
+}
+
+/* 序号 */
+td[data-col="index"],
+th[data-col="index"] {
+    position: sticky;
+    left: 0;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+}
+/* 代码 */
+td[data-col="code"],
+th[data-col="code"] {
+    position: sticky;
+    left: 38px;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+}
+/* 名称 */
+td[data-col="name"],
+th[data-col="name"] {
+    position: sticky;
+    left: 112px;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+}
+/* 持仓 */
+td[data-col="amount"],
+th[data-col="amount"] {
+    position: sticky;
+    left: 222px;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+}
+/* 份额 */
+td[data-col="shares"],
+th[data-col="shares"] {
+    position: sticky;
+    left: 308px;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+}
+/* 净值（116px，双排 grid 内容） */
+td[data-col="nav"],
+th[data-col="nav"] {
+    position: sticky;
+    left: 388px;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    overflow: visible;
+    white-space: normal;
+    line-height: 1.2;
+}
+
+/* 冻结列背景：遮住滚动过来的内容 */
+th[data-col="index"],
+th[data-col="code"],
+th[data-col="name"],
+th[data-col="amount"],
+th[data-col="shares"],
+th[data-col="nav"] {
+    background: rgba(14, 29, 48, 0.97);
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.02);
+}
+td[data-col="index"],
+td[data-col="code"],
+td[data-col="name"],
+td[data-col="amount"],
+td[data-col="shares"] {
+    background: rgba(10, 22, 38, 0.95);
+    /* 冻结列背景：仅在最后一个冻结列（净值）右侧显示阴影作为边界 */
+}
+
+/* 净值列右侧加阴影：明确冻结区与非冻结区的分隔 */
+td[data-col="nav"] {
+    background: rgba(10, 22, 38, 0.95);
+    box-shadow: 3px 0 10px rgba(0, 0, 0, 0.45);
 }
 
 td[data-col="amount"] .cell-with-icon,
 td[data-col="shares"] .cell-with-icon {
-    justify-content: flex-end;
+    justify-content: center;
 }
 
 tbody tr {
@@ -144,6 +264,38 @@ tbody tr:hover {
     color: #e5efff;
     font-weight: 600;
 }
+
+/* ===== 净值列双排布局与收益单元格辅助 class ===== */
+/* 由 popup_perf_render.js 的 _renderNavCell / _renderProfitCell 等使用，替代原内联 style */
+.nav-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    text-align: center;
+}
+.nav-value { font-weight: 500; }
+.nav-live-value { font-weight: 500; color: #ffc069; }
+.nav-date { font-size: 9px; color: #8c8c8c; }
+.nav-date-stale { color: #fa8c16; }
+.nav-rate { font-size: 10px; font-weight: bold; }
+.nav-empty { color: #8c8c8c; }
+.profit-rate-sub { font-size: 10px; opacity: 0.7; line-height: 1; }
+.settle-date { font-size: 9px; line-height: 1; margin-top: 1px; color: #fa8c16; }
+.warn-icon { color: #fa8c16; font-size: 11px; cursor: default; margin-top: 1px; }
+.penetration-badge {
+    font-size: 9px;
+    color: #13c2c2;
+    background: rgba(19, 194, 194, 0.12);
+    padding: 1px 4px;
+    border-radius: 3px;
+    display: inline-block;
+    margin-left: 4px;
+    border: 1px solid rgba(19, 194, 194, 0.35);
+    font-weight: 600;
+    vertical-align: middle;
+    line-height: 1.2;
+}
+.summary-extra { font-size: 10px; opacity: 0.7; margin-left: 3px; }
 
 .dividend-badge {
     font-size: 10px;
@@ -592,8 +744,11 @@ tbody tr.pinned-row:not(:has(+ tr.pinned-row)):not(:last-child) {
 }
 
 /* ===== 响应式：小窗口 ===== */
+/* 小屏下 fullscreenOnly 列隐藏：与 .col-user-hidden 保持一致，用 visibility 隐藏而非 display:none，
+   避免 table-layout:fixed + sticky 表格下 display:none 触发的列错位故障。列宽归零由 JS 的
+   setColumnVisibilityClass 对对应 <col> 设置 width:0 完成。 */
 body:not(.is-fullscreen) .col-hide {
-    display: none;
+    visibility: hidden;
 }
 
 body:not(.is-fullscreen) .summary-bar {
@@ -660,13 +815,8 @@ body:not(.is-fullscreen) #columnConfigBtn {
 
 body:not(.is-fullscreen) th,
 body:not(.is-fullscreen) td {
-    padding: 8px 5px;
+    padding: 5px 3px;
     font-size: 11px;
-}
-
-body:not(.is-fullscreen) .adjust-btn {
-    padding: 2px 5px;
-    font-size: 12px;
 }
 
 body:not(.is-fullscreen) #status {
@@ -762,24 +912,6 @@ body.is-fullscreen table {
 #modalOverlay[data-mode="form"] .form-header-sub {
     white-space: pre-line;
     line-height: 1.45;
-}
-
-/* 表单里的"全部"按钮 */
-.all-btn {
-    background: rgba(19, 39, 66, 0.88);
-    border: 1px solid rgba(103, 146, 194, 0.24);
-    color: #8aacce;
-    border-radius: 10px;
-    padding: 6px 12px;
-    font-size: 12px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all 0.15s;
-}
-
-.all-btn:hover {
-    background: rgba(36, 70, 108, 0.86);
-    color: #c8d8f0;
 }
 
 /* 下单时间切换器 */

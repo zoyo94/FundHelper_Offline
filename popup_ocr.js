@@ -9,7 +9,6 @@ let _tesseractLoadPromise = null;
 
 function _loadTesseractScripts() {
     if (_tesseractLoadPromise) return _tesseractLoadPromise;
-    if (typeof __TesseractDispatch !== 'undefined') return Promise.resolve();
 
     const scripts = [
         'tesseract-core.wasm.js',
@@ -18,6 +17,8 @@ function _loadTesseractScripts() {
     ];
     _tesseractLoadPromise = (async () => {
         for (const src of scripts) {
+            const existing = document.querySelector(`script[src="${src}"]`);
+            if (existing) existing.remove(); // 先移除旧标签，确保重新初始化干净
             await new Promise((resolve, reject) => {
                 const el = document.createElement('script');
                 el.src = src;
@@ -532,7 +533,27 @@ function openOCRBatchAdd() {
         _batchFillDate = '';
         _batchFillFee = '';
         _batchFillMode = 'cash';
+        terminateOCRWorker();
     };
+
+    // 关闭弹窗时释放 OCR 引擎占用的 WASM 内存；下次打开会按需重新初始化语言模型
+    function terminateOCRWorker() {
+        try {
+            if (window._tWorker) {
+                if (typeof __TesseractDispatch === 'function') {
+                    __TesseractDispatch(
+                        { workerId: 'main_thread', jobId: 'job_ocr_terminate', action: 'terminate', payload: {} },
+                        () => {}
+                    );
+                }
+            }
+        } catch (e) {
+            console.warn('[ocr] 释放 OCR 引擎失败（可忽略）:', e);
+        } finally {
+            window._tWorker = null;
+            _tesseractLoadPromise = null; // 下次打开重新注入脚本并初始化
+        }
+    }
 
     overlay.onclick = (e) => {
         if (e.target === overlay) closeOCRModal();

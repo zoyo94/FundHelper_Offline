@@ -5,6 +5,7 @@
 .vscode/
 .idea/
 .workbuddy/
+.claude/
 
 # User exports / sample data
 trade_orders_*.csv

@@ -1,14 +1,45 @@
 // background.js - Service Worker (MV3)
 // 代理请求：解决 popup 直接请求被目标站点拦截/中断的问题
 
+const FUND_F10_REFERER_RULE_ID = 33010;
+
+function ensureFundF10RefererRule() {
+    if (!chrome.declarativeNetRequest?.updateDynamicRules) return;
+    chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: [FUND_F10_REFERER_RULE_ID],
+        addRules: [{
+            id: FUND_F10_REFERER_RULE_ID,
+            priority: 1,
+            action: {
+                type: 'modifyHeaders',
+                requestHeaders: [{
+                    header: 'Referer',
+                    operation: 'set',
+                    value: 'http://fundf10.eastmoney.com/ccmx_000001.html'
+                }]
+            },
+            condition: {
+                urlFilter: '||fundf10.eastmoney.com/FundArchivesDatas.aspx',
+                resourceTypes: ['xmlhttprequest']
+            }
+        }]
+    }, () => {
+        if (chrome.runtime.lastError) {
+            console.warn('[background] F10 Referer 规则注册失败:', chrome.runtime.lastError.message);
+        }
+    });
+}
+
+ensureFundF10RefererRule();
+chrome.runtime.onInstalled?.addListener(ensureFundF10RefererRule);
+chrome.runtime.onStartup?.addListener(ensureFundF10RefererRule);
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'FETCH_SINA') {
         fetch(message.url, {
-            headers: {
-                // 模拟普通浏览器请求头，防止被新浪反爬拒绝
-                'Referer': 'https://finance.sina.com.cn',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
-            }
+            referrer: 'https://finance.sina.com.cn/',
+            referrerPolicy: 'unsafe-url',
+            headers: { 'Accept': '*/*' }
         })
             .then(res => res.text())
             .then(text => sendResponse({ success: true, data: text }))
@@ -23,8 +54,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message.type === 'FETCH_JSON') {
         const url = message.url;
-        const headers = message.headers && typeof message.headers === 'object' ? message.headers : {};
-        fetch(url, { headers })
+        const incomingHeaders = message.headers && typeof message.headers === 'object' ? message.headers : {};
+        // Chrome 扩展 service worker 的 fetch 会剥离 Referer / User-Agent 等禁止头，
+        // 必须改用 fetch 规范的 referrer 选项传递来源，否则东财等接口会因缺少来源而软失败（Datas=null）。
+        const referrer = incomingHeaders.Referer || incomingHeaders.referer || 'https://fund.eastmoney.com/';
+        const headers = { ...incomingHeaders };
+        delete headers.Referer;
+        delete headers.referer;
+        delete headers['User-Agent'];
+        delete headers['user-agent'];
+        fetch(url, { headers, referrer, referrerPolicy: 'unsafe-url' })
             .then(async res => {
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status}`);
@@ -42,14 +81,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'FETCH_TEXT') {
         const url = message.url;
         const defaultHeaders = {
-            'Referer': 'https://fund.eastmoney.com/',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'Accept': 'application/json, text/plain, */*'
         };
-        const headers = message.headers && typeof message.headers === 'object'
-            ? { ...defaultHeaders, ...message.headers }
-            : defaultHeaders;
+        const incomingHeaders = message.headers && typeof message.headers === 'object' ? message.headers : {};
+        const referrer = incomingHeaders.Referer || incomingHeaders.referer || 'https://fund.eastmoney.com/';
+        const headers = { ...defaultHeaders, ...incomingHeaders };
+        delete headers.Referer;
+        delete headers.referer;
+        delete headers['User-Agent'];
+        delete headers['user-agent'];
 
-        fetch(url, { headers })
+        fetch(url, { headers, referrer, referrerPolicy: 'unsafe-url' })
             .then(async res => {
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status}`);

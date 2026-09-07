@@ -161,7 +161,6 @@ function resizeFundDetailCharts() {
     const intradayState = fundDetailChartRenderState.intraday;
     if (detailCanvas && intradayState) {
         drawChart(
-            intradayState.code,
             intradayState.currentPrice,
             intradayState.basePrice,
             intradayState.points
@@ -270,7 +269,7 @@ function createFundDetailStaleGuard(code, sessionId = currentFundDetailSessionId
     return () => !isCurrentFundDetail(code, sessionId);
 }
 
-function drawChart(code, currentPrice, basePrice, chartPoints) {
+function drawChart(currentPrice, basePrice, chartPoints) {
     const canvas = document.getElementById('detailChart');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -580,15 +579,29 @@ function drawPerfChartWithComparison(canvas, chartData, comparisonData = null) {
     const ch = height - pad.top - pad.bottom;
 
     const { prices, dates, isUp, acPrices, dailyRates } = chartData;
-    const baseP = prices[0];
-    const baseAC = acPrices ? (acPrices.find(v => v > 0) || null) : null;
-    let fundReturns = prices.map((p, i) => {
-        const ac = acPrices ? acPrices[i] : null;
-        if (baseAC && ac != null && ac > 0) {
-            return (ac - baseAC) / baseAC * 100;
+
+    // 构建一条统一的收益基线：优先用累计净值（acPrice，含分红再投），
+    // 缺失处用相邻单位净值比例桥接，避免个别点落回 price 基座造成跳变/尖刺。
+    const hasAc = Array.isArray(acPrices) && acPrices.some(v => v !== null && v > 0);
+    const normalizedPrices = [];
+    if (hasAc) {
+        for (let i = 0; i < prices.length; i++) {
+            const ac = acPrices[i];
+            if (ac != null && ac > 0) {
+                normalizedPrices.push(ac);
+            } else if (i === 0) {
+                normalizedPrices.push(prices[i]);
+            } else {
+                const prevAc = normalizedPrices[i - 1];
+                const prevP = prices[i - 1];
+                normalizedPrices.push(prevP > 0 ? prevAc * (prices[i] / prevP) : prevAc);
+            }
         }
-        return (p - baseP) / baseP * 100;
-    });
+    } else {
+        normalizedPrices.push(...prices);
+    }
+    const baseValue = normalizedPrices[0];
+    let fundReturns = normalizedPrices.map(p => baseValue > 0 ? (p - baseValue) / baseValue * 100 : 0);
 
     let similarReturns = null;
     let benchmarkReturns = null;

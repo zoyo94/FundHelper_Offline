@@ -180,17 +180,20 @@ async function _applySettlementLoop(funds, priceUpdates, todayStr) {
             prevTradingDayPrice,
             prevTradingDayDate,
             acNetValue: acNetValue,
-            prevAcNetValue: item.savedAcNetValue
+            prevAcNetValue: item.savedAcNetValue,
+            dividendPerShare
         });
 
         // 现金分红场景：昨日收益展示需要包含当日分红补偿，避免分红日出现误负值。
-        // 分红入账由交易确认流程处理，将通过 getDisplayedYesterdayProfitValue 动态附加补偿，这里不再重复修改基础昨日收益。
+        // 分红入账由交易确认流程处理，将通过 computeDisplayedYesterdayProfit 动态附加补偿，这里不再重复修改基础昨日收益。
 
         // ── 红利再投：增加份额 ────────────────────────────────────────────────
         if (hasDividend && dividendMode === 'reinvest' && price > 0) {
             const newShares = roundShares(totalDividend / price);
             shares = roundShares(shares + newShares);
             funds[code].shares = shares;
+            // 红利再投视为追加投入，持仓成本相应增加
+            funds[code].positionCost = round2((funds[code].positionCost || 0) + totalDividend);
             const pendingReinvestOrder = getPendingAdjustments(item, code).find(order => {
                 if (order.type !== 'dividend_reinvest' || order.reinvestApplied) return false;
                 if (prevPriceDate && order.dividendDate && order.dividendDate !== prevPriceDate) return false;
@@ -305,9 +308,11 @@ async function manualSettlement() {
         if (settlement) settlements.push(settlement);
     }
 
-    const dominantMarketPrevPriceDate = getDominantMarketPrevPriceDate(fetchedData);
     const updatedCount = await _applySettlementLoop(funds, settlements, todayStr);
-    const { history: nextDailyProfitHistory } = recordDailyProfitHistory(dailyProfitHistory, funds, settlements, dominantMarketPrevPriceDate);
+    const { history: recordedHistory } = recordDailyProfitHistory(dailyProfitHistory, funds, settlements);
+    // 手动结算后也跑一次历史回溯，把已检测到的分红（含未到账的自动分红单）写进收益日历的 dividendsByCode，
+    // 否则手动结算路径只写收益、不写分红，日历里看不到分红标记。
+    const { history: nextDailyProfitHistory } = await backfillMissingDailyProfitHistory(recordedHistory, funds);
 
     await saveSettlementState(funds, todayStr, blockedDate === todayStr ? todayStr : null, nextDailyProfitHistory);
     showToast(`✅ 结算完成！已更新 ${updatedCount} 条`, 'success');
@@ -368,9 +373,8 @@ async function autoSettlement(funds, settlements, todayStr, backupSnapshot) {
     elements.statusText.innerText = '正在自动结算...';
 
     await backupFundsData(backupSnapshot);
-    const dominantMarketPrevPriceDate = getDominantMarketPrevPriceDate(settlements.map(settlement => ({ live: settlement })));
     const updatedCount = await _applySettlementLoop(funds, settlements, todayStr);
-    const { history: nextDailyProfitHistory } = recordDailyProfitHistory(backupSnapshot?.dailyProfitHistory, funds, settlements, dominantMarketPrevPriceDate);
+    const { history: nextDailyProfitHistory } = recordDailyProfitHistory(backupSnapshot?.dailyProfitHistory, funds, settlements);
     await saveSettlementState(funds, todayStr, null, nextDailyProfitHistory);
 
     if (updatedCount === 0) {

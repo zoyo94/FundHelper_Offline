@@ -291,9 +291,20 @@ async function exportFundsData() {
 
 async function exportBackupFundsData() {
     const { backupFunds } = await storageHelper.getAll(['backupFunds']);
-    if (!hasTodayBackup(backupFunds)) {
-        showToast('今天还没有可导出的备份数据！', 'warning');
+    // 只要存在备份就允许导出：备份在"当天首次结算前"生成，非结算日（周末/节假日/
+    // 已结算过的日子）不会产生今日备份，但最近一次结算前的快照同样有追溯价值；
+    // 文件名与元数据均带 backupDate，导出历史日期的备份完全可自解释
+    const hasAnyBackup = !!backupFunds?.myFunds && Object.keys(backupFunds.myFunds).length > 0;
+    if (!hasAnyBackup) {
+        showToast('还没有任何备份数据（备份会在每天首次结算前自动生成）', 'warning');
         return;
+    }
+    if (!hasTodayBackup(backupFunds)) {
+        const ok = await showConfirm(
+            `今天还没有结算过，当前备份是【${backupFunds.backupDate || '未知日期'}】结算前的快照。\n仍要导出这份备份吗？`,
+            '导出备份数据'
+        );
+        if (!ok) return;
     }
 
     const exportData = buildFundsExportData({
@@ -311,10 +322,10 @@ async function exportBackupFundsData() {
     const backupDateTag = (backupFunds.backupDate || getToday()).replace(/-/g, '');
     const fileName = `基金备份数据_${backupDateTag}_${formatDateTimeForFile()}.json`;
     downloadJsonFile(exportData, fileName);
-    showToast(`✅ 备份数据导出成功！文件名: ${fileName}`, 'success');
+    showToast(`✅ 备份数据导出成功（备份日期: ${backupFunds.backupDate || '未知'}）`, 'success');
 }
 
-function migrateFund(fund, code = '') {
+function migrateFund(fund) {
     const migratedFund = {
         ...fund,
         amount: parseFloat(fund.amount) || 0,
@@ -354,7 +365,7 @@ function importFundsData(event) {
             }
 
             const ok = await showConfirm(
-                `确认导入【${importData.exportTime || '未知时间'}】的基金数据？\n注意：当前数据将被覆盖！`,
+                `确认导入【${importData.exportTime || '未知时间'}】的基金数据？\n\n注意：\n• 当前持仓与订单记录将被覆盖\n• 结算状态与通知记录将被重置`,
                 '导入确认',
                 true
             );
@@ -362,7 +373,7 @@ function importFundsData(event) {
 
             const migratedFunds = {};
             for (const [code, fund] of Object.entries(importData.myFunds)) {
-                migratedFunds[code] = migrateFund(fund, code);
+                migratedFunds[code] = migrateFund(fund);
             }
 
             const dataToSave = { myFunds: migratedFunds };
@@ -377,6 +388,9 @@ function importFundsData(event) {
             notificationCenter.updateBadge();
 
             if (Array.isArray(importData.tradeHistoryDB) || Object.values(importData.myFunds || {}).some(fund => Array.isArray(fund?.pendingAdjustments))) {
+                // 先快照现有订单库：清库后若恢复失败（配额满/IndexedDB 被禁用）可回滚，
+                // 避免"清空成功 + 写入失败"导致订单全丢却提示导入成功
+                const existingExport = await HistoryDB.getAllExportData().catch(() => null);
                 try {
                     await HistoryDB.clearUserDataOnly();
                     const nextOrders = Array.isArray(importData.tradeHistoryDB)
@@ -389,7 +403,16 @@ function importFundsData(event) {
                         await HistoryDB.replaceStateRecords(importData.fundDailyStateDB);
                     }
                 } catch (dbErr) {
-                    console.error('[Import] 恢复 HistoryDB 失败:', dbErr);
+                    console.error('[Import] 恢复 HistoryDB 失败，尝试回滚:', dbErr);
+                    if (existingExport) {
+                        await HistoryDB.replaceOrders(existingExport.orders || []).catch(() => {});
+                        if (Array.isArray(existingExport.states)) {
+                            await HistoryDB.replaceStateRecords(existingExport.states).catch(() => {});
+                        }
+                    }
+                    await showAlert(`订单库恢复失败：${dbErr.message}\n\n导入已中止，现有数据未被修改（订单库已尝试回滚）。`);
+                    fileInput.value = '';
+                    return;
                 }
             }
 

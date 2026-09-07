@@ -8,9 +8,7 @@
  */
 function _makeExtraSpan(text) {
     const span = document.createElement('span');
-    span.style.fontSize = '10px';
-    span.style.opacity = '0.7';
-    span.style.marginLeft = '3px';
+    span.className = 'summary-extra';
     span.textContent = text;
     return span;
 }
@@ -40,252 +38,330 @@ function _renderAmountWithExtra(el, amount, extraText) {
     el.replaceChildren(main, _makeExtraSpan(extraText));
 }
 
-function renderTable() {
-    let displayData = allFundsData.filter(item =>
-        groupFilterController.matches(item) && fundSearchController.matches(item)
-    );
-    displayData.sort((a, b) => {
-        // 置顶基金优先排在最前面
-        const aPinned = pinnedFunds.has(a.code) ? 1 : 0;
-        const bPinned = pinnedFunds.has(b.code) ? 1 : 0;
-        if (aPinned !== bPinned) return bPinned - aPinned;
-        const valA = a[sortField] ?? 0;
-        const valB = b[sortField] ?? 0;
-        return (valA - valB) * sortDirection;
-    });
-    document.querySelectorAll('.sortable').forEach(th => {
-        // 用 data-label 保存原始文字，避免 textContent 替换破坏子元素
-        if (!th.dataset.label) th.dataset.label = th.textContent.trim();
-        const arrow = th.dataset.sort === sortField ? (sortDirection === 1 ? ' ↑' : ' ↓') : '';
-        th.textContent = th.dataset.label + arrow;
-    });
-    // 计算统计数据
-    const { sumAmount, sumYesterdayProfit, sumTodayProfit, sumHoldProfit } = displayData.reduce(
-        (acc, item) => ({
-            sumAmount: acc.sumAmount + (item.amount || 0),
-            sumYesterdayProfit: acc.sumYesterdayProfit + (item.yesterdayProfit || 0),
-            sumTodayProfit: acc.sumTodayProfit + (item.todayProfit || 0),
-            sumHoldProfit: acc.sumHoldProfit + (item.holdProfit || 0)
-        }),
-        { sumAmount: 0, sumYesterdayProfit: 0, sumTodayProfit: 0, sumHoldProfit: 0 }
-    );
+/**
+ * 渲染收益单元格：金额在上，百分比在下（上下排列节省列宽）
+ * 不修改 td 自身 display，避免破坏表格列布局；用内部 div 堆叠
+ * @param {HTMLTableCellElement} td - 目标 <td>
+ * @param {string} profitText - 金额文本
+ * @param {string} rateText - 百分比文本（可选）
+ */
+function _renderProfitCell(td, profitText, rateText = '') {
+    td.textContent = '';
+    const amountDiv = document.createElement('div');
+    amountDiv.textContent = profitText;
+    td.appendChild(amountDiv);
+    if (rateText) {
+        const rateDiv = document.createElement('div');
+        rateDiv.className = 'profit-rate-sub';
+        rateDiv.textContent = rateText;
+        td.appendChild(rateDiv);
+    }
+}
 
-    const todayStr = getToday(); // 提到循环外，避免每次渲染行重复调用
-    const fragment = document.createDocumentFragment();
-    displayData.forEach((item, index) => {
-        const todayProfitText = item.todayProfit === null
-            ? '—'
-            : formatProfit(item.todayProfit) + ' ';
-        const tr = document.createElement('tr');
-        tr.dataset.code = item.code;
-        // 置顶行加特殊 class 用于样式高亮
-        if (pinnedFunds.has(item.code)) {
-            tr.classList.add('pinned-row');
+// ==================== 单元格渲染子函数 ====================
+// 每个 cell 一个函数，renderTable 主流程只负责拼装；样式由 CSS class 控制（见 popup_components.css）
+
+function _renderNameCell(tr, item) {
+    const td = document.createElement('td');
+    td.dataset.col = 'name';
+    setColumnVisibilityClass(td, 'name');
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'fund-name';
+    nameSpan.title = item.name;
+    nameSpan.textContent = item.name;
+    td.appendChild(nameSpan);
+
+    if (item.hasPendingDividendForDisplay === true) {
+        const badge = document.createElement('span');
+        badge.className = 'dividend-badge';
+        badge.textContent = '分红';
+        badge.title = '该基金有待确认的分红，数据可能不准确';
+        td.appendChild(badge);
+    }
+    if (item.hasPendingBuy) {
+        const badge = document.createElement('span');
+        badge.className = 'buy-badge';
+        badge.textContent = '加仓中';
+        badge.title = '该基金有待确认的加仓交易';
+        td.appendChild(badge);
+    }
+    if (item.hasPendingSell) {
+        const badge = document.createElement('span');
+        badge.className = 'sell-badge';
+        badge.textContent = '减仓中';
+        badge.title = '该基金有待确认的减仓交易';
+        td.appendChild(badge);
+    }
+
+    const groupSpan = document.createElement('span');
+    groupSpan.className = 'group-tag';
+    groupSpan.dataset.code = item.code;
+    groupSpan.textContent = item.group;
+    td.appendChild(groupSpan);
+
+    const pinBtn = document.createElement('span');
+    pinBtn.className = `pin-btn${pinnedFunds.has(item.code) ? ' is-pinned' : ''}`;
+    pinBtn.title = pinnedFunds.has(item.code) ? '取消置顶' : '置顶';
+    pinBtn.textContent = '📌';
+    pinBtn.dataset.code = item.code;
+    pinBtn.onclick = (e) => { e.stopPropagation(); togglePinFund(item.code); };
+    td.appendChild(pinBtn);
+
+    tr.appendChild(td);
+}
+
+function _renderAmountCell(tr, item) {
+    const td = document.createElement('td');
+    td.dataset.col = 'amount';
+    setColumnVisibilityClass(td, 'amount');
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'cell-with-icon';
+    const text = document.createElement('span');
+    text.textContent = item.amount.toFixed(2);
+    const gear = document.createElement('span');
+    gear.className = 'settings-icon';
+    gear.textContent = '⚙️';
+    gear.dataset.code = item.code;
+    gear.onclick = (e) => { e.stopPropagation(); showCenterMenu(item.code); };
+    wrapper.appendChild(text);
+    wrapper.appendChild(gear);
+    td.appendChild(wrapper);
+    tr.appendChild(td);
+}
+
+function _renderSharesCell(tr, item) {
+    const td = document.createElement('td');
+    td.className = 'col-hide';
+    td.dataset.col = 'shares';
+    setColumnVisibilityClass(td, 'shares');
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'cell-with-icon';
+    const text = document.createElement('span');
+    text.textContent = item.shares ? roundShares(item.shares).toFixed(2) : '—';
+    wrapper.appendChild(text);
+    td.appendChild(wrapper);
+    tr.appendChild(td);
+}
+
+function _renderNavCell(tr, item, todayStr) {
+    const td = document.createElement('td');
+    td.className = 'col-hide';
+    td.dataset.col = 'nav';
+    setColumnVisibilityClass(td, 'nav');
+
+    const grid = document.createElement('div');
+    grid.className = 'nav-grid';
+    const prevCol = document.createElement('div');
+    const liveCol = document.createElement('div');
+
+    // 左列：昨收
+    const navVal = document.createElement('div');
+    navVal.className = 'nav-value';
+    navVal.textContent = item.prevPrice > 0 ? item.prevPrice.toFixed(4) : '—';
+    prevCol.appendChild(navVal);
+    if (item.prevPriceDate) {
+        const dateSpan = document.createElement('div');
+        // 今天=灰色(nav-date 默认)，非今天=橙色警示(nav-date-stale)
+        dateSpan.className = 'nav-date' + (item.prevPriceDate === todayStr ? '' : ' nav-date-stale');
+        dateSpan.textContent = item.prevPriceDate.slice(5);
+        prevCol.appendChild(dateSpan);
+    }
+    if (item.prevPrice > 0 && item.prevTradingDayPrice > 0) {
+        const prevDayRate = typeof item.yesterdayNavRate === 'number'
+            ? item.yesterdayNavRate
+            : (item.prevPrice - item.prevTradingDayPrice) / item.prevTradingDayPrice * 100;
+        const rateSpan = document.createElement('div');
+        rateSpan.className = `nav-rate ${prevDayRate >= 0 ? 'up' : 'down'}`;
+        rateSpan.title = '昨日较前一交易日净值涨幅';
+        rateSpan.textContent = formatProfit(prevDayRate, '%');
+        prevCol.appendChild(rateSpan);
+    }
+
+    // 右列：今估
+    if (item.price > 0) {
+        const priceSpan = document.createElement('div');
+        priceSpan.className = 'nav-live-value';
+        priceSpan.textContent = item.price.toFixed(4);
+        liveCol.appendChild(priceSpan);
+        const liveDateSpan = document.createElement('div');
+        liveDateSpan.className = 'nav-date';
+        liveDateSpan.textContent = item.isPenetration ? '穿透预估' : (item.priceTime || todayStr).slice(5, 10);
+        if (item.isPenetration) {
+            liveDateSpan.style.color = '#13c2c2';
+            liveDateSpan.title = '基于最新披露前十大重仓盘中实时行情加权穿透计算';
         }
-        _td(tr, String(index + 1), 'index');
-        // -- 代码 --
-        _td(tr, item.code, 'code');
-        // -- 名称/分组 --
-        const tdName = document.createElement('td');
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'fund-name';
-        nameSpan.title = item.name;
-        nameSpan.textContent = item.name;
-        // 检查是否有待确认的分红
-        const hasPendingDividend = item.hasPendingDividendForDisplay === true;
-        if (hasPendingDividend) {
-            const dividendBadge = document.createElement('span');
-            dividendBadge.className = 'dividend-badge';
-            dividendBadge.textContent = '分红';
-            dividendBadge.title = '该基金有待确认的分红，数据可能不准确';
-            tdName.appendChild(dividendBadge);
-        }
-        if (item.hasPendingBuy) {
-            const buyBadge = document.createElement('span');
-            buyBadge.className = 'buy-badge';
-            buyBadge.textContent = '加仓中';
-            buyBadge.title = '该基金有待确认的加仓交易';
-            tdName.appendChild(buyBadge);
-        }
-        if (item.hasPendingSell) {
-            const sellBadge = document.createElement('span');
-            sellBadge.className = 'sell-badge';
-            sellBadge.textContent = '减仓中';
-            sellBadge.title = '该基金有待确认的减仓交易';
-            tdName.appendChild(sellBadge);
-        }
-        const groupSpan = document.createElement('span');
-        groupSpan.className = 'group-tag';
-        groupSpan.dataset.code = item.code;
-        groupSpan.textContent = item.group;
-        // 图钉按钮
-        const pinBtn = document.createElement('span');
-        pinBtn.className = `pin-btn${pinnedFunds.has(item.code) ? ' is-pinned' : ''}`;
-        pinBtn.title = pinnedFunds.has(item.code) ? '取消置顶' : '置顶';
-        pinBtn.textContent = '📌';
-        pinBtn.dataset.code = item.code;
-        pinBtn.onclick = (e) => {
-            e.stopPropagation();
-            togglePinFund(item.code);
-        };
-        tdName.appendChild(nameSpan);
-        tdName.appendChild(groupSpan);
-        tdName.appendChild(pinBtn);
-        tdName.dataset.col = 'name';
-        setColumnVisibilityClass(tdName, 'name');
-        tr.appendChild(tdName);
-        // -- 持仓金额 (全屏和小屏都显示) --
-        const tdAmount = document.createElement('td');
-        tdAmount.dataset.col = 'amount';
-        setColumnVisibilityClass(tdAmount, 'amount');
-        // 【修改】在金额后也添加设置图标 (解决小窗口看不到份额列的问题)
-        const amountWrapper = document.createElement('div');
-        amountWrapper.className = 'cell-with-icon';
-        const amountText = document.createElement('span');
-        amountText.textContent = item.amount.toFixed(2);
-        const gearIcon1 = document.createElement('span');
-        gearIcon1.className = 'settings-icon';
-        gearIcon1.textContent = '⚙️';
-        gearIcon1.dataset.code = item.code;
-        // 绑定点击事件
-        gearIcon1.onclick = (e) => {
-            e.stopPropagation();
-            showCenterMenu(item.code);
-        };
-        amountWrapper.appendChild(amountText);
-        amountWrapper.appendChild(gearIcon1);
-        tdAmount.appendChild(amountWrapper);
-        tr.appendChild(tdAmount);
-        // -- 份额 (全屏显示) --
-        const tdShares = document.createElement('td');
-        tdShares.className = 'col-hide'; // 小屏隐藏
-        tdShares.dataset.col = 'shares';
-        setColumnVisibilityClass(tdShares, 'shares');
-        const sharesWrapper = document.createElement('div');
-        sharesWrapper.className = 'cell-with-icon';
-        const sharesText = document.createElement('span');
-        sharesText.textContent = item.shares ? roundShares(item.shares).toFixed(2) : '—';
-        sharesWrapper.appendChild(sharesText);
-        tdShares.appendChild(sharesWrapper);
-        tr.appendChild(tdShares);
-        // ... [净值列、昨日收益列、估值收益列代码保持不变] ...
-        const tdNav = document.createElement('td');
-        tdNav.className = 'col-hide';
-        tdNav.dataset.col = 'nav';
-        setColumnVisibilityClass(tdNav, 'nav');
-        const prevNavLine = document.createElement('div');
-        prevNavLine.style.cssText = 'display:flex; align-items:baseline; justify-content:center; gap:4px;';
-        const navVal = document.createElement('span');
-        navVal.textContent = item.prevPrice > 0 ? item.prevPrice.toFixed(4) : '—';
-        navVal.style.fontWeight = '500';
-        prevNavLine.appendChild(navVal);
-        if (item.prevPriceDate) {
-            const prevDateSpan = document.createElement('span');
-            prevDateSpan.style.cssText = `font-size:10px; color:${item.prevPriceDate === todayStr ? '#8c8c8c' : '#fa8c16'};`;
-            prevDateSpan.textContent = item.prevPriceDate.slice(5);
-            prevNavLine.appendChild(prevDateSpan);
-        }
-        if (item.prevPrice > 0 && item.prevTradingDayPrice > 0) {
-            const prevDayRate = typeof item.yesterdayRate === 'number'
-                ? item.yesterdayRate
-                : (item.prevPrice - item.prevTradingDayPrice) / item.prevTradingDayPrice * 100;
-            const prevRateSpan = document.createElement('span');
-            prevRateSpan.style.cssText = `font-size:10px; font-weight:bold; color:${prevDayRate >= 0 ? '#f5222d' : '#389e0d'};`;
-            prevRateSpan.textContent = formatProfit(prevDayRate, '%');
-            prevNavLine.appendChild(prevRateSpan);
-        }
-        tdNav.appendChild(prevNavLine);
-        const liveNavLine = document.createElement('div');
-        liveNavLine.style.cssText = 'display:flex; align-items:baseline; justify-content:center; gap:4px; margin-top:2px; flex-wrap:wrap;';
-        const priceSpan = document.createElement('span');
-        if (item.price > 0) {
-            priceSpan.textContent = item.price.toFixed(4);
-            priceSpan.style.cssText = 'font-weight:500; color:#ffc069;';
-            const liveDateSpan = document.createElement('span');
-            liveDateSpan.style.cssText = 'font-size:10px; color:#8c8c8c;';
-            liveDateSpan.textContent = (item.priceTime || todayStr).slice(5);
-            liveNavLine.appendChild(priceSpan);
-            liveNavLine.appendChild(liveDateSpan);
-        } else {
-            priceSpan.textContent = '—';
-            priceSpan.style.color = '#8c8c8c';
-            liveNavLine.appendChild(priceSpan);
-        }
+        liveCol.appendChild(liveDateSpan);
         if (item.rate !== null && item.rate !== undefined) {
-            const rateSpan = document.createElement('span');
-            rateSpan.style.cssText = `font-size:11px; font-weight:bold; color:${item.rate >= 0 ? '#f5222d' : '#389e0d'};`;
-            rateSpan.textContent = formatProfit(item.rate, '%') + ' ';
-            liveNavLine.appendChild(rateSpan);
+            const rateSpan = document.createElement('div');
+            rateSpan.className = `nav-rate ${item.rate >= 0 ? 'up' : 'down'}`;
+            rateSpan.textContent = formatProfit(item.rate, '%');
+            liveCol.appendChild(rateSpan);
         }
-        tdNav.appendChild(liveNavLine);
-        tr.appendChild(tdNav);
-        // -- 持有天数/区间涨跌幅 (全屏显示) --
-        PERF_FIELDS.forEach(field => {
-            const tdPerf = document.createElement('td');
-            tdPerf.className = 'col-hide perf-cell';
-            tdPerf.dataset.col = field;
-            tdPerf.dataset.perf = field;
-            setColumnVisibilityClass(tdPerf, field);
-            tdPerf.textContent = '—';
-            tr.appendChild(tdPerf);
-        });
-        renderFundPerfCells(tr, item.code);
-        // -- 昨日收益 --
-        const tdYesterday = document.createElement('td');
-        tdYesterday.dataset.col = 'yesterdayProfit';
-        tdYesterday.className = item.yesterdayProfit >= 0 ? 'up' : 'down';
-        setColumnVisibilityClass(tdYesterday, 'yesterdayProfit');
-        tdYesterday.textContent = formatProfit(item.yesterdayProfit);
-        if (hasPendingDividend) {
-            const warnYesterday = document.createElement('span');
-            warnYesterday.textContent = ' ⚠';
-            warnYesterday.title = '该基金有待确认的分红，昨日收益可能不准确';
-            warnYesterday.style.cssText = 'color:#fa8c16;font-size:11px;cursor:default;';
-            tdYesterday.appendChild(warnYesterday);
-        }
-        tr.appendChild(tdYesterday);
-        const tdToday = document.createElement('td');
-        tdToday.dataset.col = 'todayProfit';
-        if (item.todayProfit !== null) {
-            tdToday.className = item.todayProfit >= 0 ? 'up' : 'down';
-        }
-        setColumnVisibilityClass(tdToday, 'todayProfit');
-        tdToday.textContent = todayProfitText;
-        tr.appendChild(tdToday);
-        // 累计收益
-        const tdHoldProfit = document.createElement('td');
-        tdHoldProfit.className = `editable-cell ${item.holdProfit >= 0 ? 'up' : 'down'}`;
-        tdHoldProfit.dataset.col = 'holdProfit';
-        setColumnVisibilityClass(tdHoldProfit, 'holdProfit');
-        tdHoldProfit.contentEditable = 'true';
-        tdHoldProfit.dataset.field = 'holdProfit';
-        tdHoldProfit.dataset.code = item.code;
-        tdHoldProfit.textContent = formatProfit(item.holdProfit) + ' ';
-        if (hasPendingDividend) {
-            const warnHold = document.createElement('span');
-            warnHold.textContent = '⚠';
-            warnHold.title = '该基金有待确认的分红，累计收益可能不准确';
-            warnHold.style.cssText = 'color:#fa8c16;font-size:11px;cursor:default;';
-            tdHoldProfit.appendChild(warnHold);
-        }
-        tr.appendChild(tdHoldProfit);
-        // -- 操作列 (只保留删除) --
-        const tdOp = document.createElement('td');
-        tdOp.className = 'col-hide';
-        tdOp.dataset.col = 'actions';
-        setColumnVisibilityClass(tdOp, 'actions');
-        const btnDel = document.createElement('button');
-        btnDel.className = 'del-btn';
-        btnDel.dataset.code = item.code;
-        btnDel.title = '删除';
-        btnDel.textContent = '✕';
-        tdOp.appendChild(btnDel);
-        tr.appendChild(tdOp);
-        fragment.appendChild(tr);
-    });
-    elements.tableBody.replaceChildren(fragment);
-    // ... [汇总统计代码保持不变] ...
+    } else {
+        const priceSpan = document.createElement('div');
+        priceSpan.className = 'nav-empty';
+        priceSpan.textContent = '—';
+        liveCol.appendChild(priceSpan);
+    }
 
+    grid.appendChild(prevCol);
+    grid.appendChild(liveCol);
+    td.appendChild(grid);
+    tr.appendChild(td);
+}
+
+function _renderYesterdayCell(tr, item, yesterdayStr) {
+    const td = document.createElement('td');
+    td.dataset.col = 'yesterdayProfit';
+    setColumnVisibilityClass(td, 'yesterdayProfit');
+
+    const yestRateVal = typeof item.yesterdayNavRate === 'number'
+        ? item.yesterdayNavRate
+        : (item.prevPrice > 0 && item.prevTradingDayPrice > 0 ? (item.prevPrice - item.prevTradingDayPrice) / item.prevTradingDayPrice * 100 : null);
+    const yestRateText = (yestRateVal !== null && !isNaN(yestRateVal)) ? `(${formatProfit(yestRateVal, '%')})` : '';
+    const yestDateStr = item.prevPriceDate ? item.prevPriceDate.slice(5) : '';
+    const isRealYesterday = item.prevPriceDate === yesterdayStr;
+
+    if (isRealYesterday) {
+        td.className = item.yesterdayProfit >= 0 ? 'up' : 'down';
+        td.title = `昨日收益：${formatProfit(item.yesterdayProfit)} ${yestRateText}`.trim();
+        _renderProfitCell(td, formatProfit(item.yesterdayProfit), yestRateText);
+    } else {
+        td.className = '';
+        td.title = `昨日无净值更新，最近结算于 ${yestDateStr || '—'}：${formatProfit(item.yesterdayProfit)} ${yestRateText}`.trim();
+        _renderProfitCell(td, '—', '');
+        if (yestDateStr) {
+            const dateDiv = document.createElement('div');
+            dateDiv.className = 'settle-date';
+            dateDiv.textContent = `结算 ${yestDateStr}`;
+            td.appendChild(dateDiv);
+        }
+    }
+
+    if (item.hasPendingDividendForDisplay === true) {
+        const warn = document.createElement('span');
+        warn.className = 'warn-icon';
+        warn.textContent = ' ⚠';
+        warn.title = '该基金有待确认的分红，昨日收益可能不准确';
+        td.appendChild(warn);
+    }
+    tr.appendChild(td);
+}
+
+function _renderTodayCell(tr, item, todayStr) {
+    const td = document.createElement('td');
+    td.dataset.col = 'todayProfit';
+
+    const hasEstimate = (item.rate !== null && item.rate !== undefined) || item.isPenetration;
+
+    if (item.todayProfit !== null && hasEstimate) {
+        td.className = item.todayProfit >= 0 ? 'up' : 'down';
+    }
+    setColumnVisibilityClass(td, 'todayProfit');
+
+    let profitText, rateText;
+    if (item.todayProfit === null || !hasEstimate) {
+        profitText = '—';
+        rateText = '';
+        td.title = `暂无盘中估值（纯债/定开/FOF等通常无实时估值，最新净值 ${item.prevPriceDate || '—'}：${(item.prevPrice || 0).toFixed(4)}，待公布净值）`;
+    } else {
+        profitText = formatProfit(item.todayProfit);
+        rateText = (item.rate !== null && item.rate !== undefined) ? `(${formatProfit(item.rate, '%')})` : '';
+        if (item.isPenetration) {
+            const penTypeLabel = item.penetrationType === 'fof' ? '重仓基金' : '重仓股票';
+            const weightText = item.penetrationWeight > 0 ? ` (前十大${penTypeLabel}占比 ${item.penetrationWeight}%)` : '';
+            td.title = `持仓穿透估值${weightText}：盘中实时撮合计算，预估涨跌 ${formatProfit(item.rate, '%')}`;
+        }
+    }
+    _renderProfitCell(td, profitText, rateText);
+
+    if (item.isPenetration) {
+        const badge = document.createElement('span');
+        badge.className = 'penetration-badge';
+        badge.textContent = '穿透';
+        badge.title = '持仓穿透估值（基于最新披露前十大重仓盘中实时行情计算）';
+        td.appendChild(badge);
+    }
+
+    tr.appendChild(td);
+}
+
+function _renderPositionProfitCell(tr, item) {
+    const td = document.createElement('td');
+    td.dataset.col = 'positionProfit';
+    setColumnVisibilityClass(td, 'positionProfit');
+
+    // 无订单反推依据（旧迁移/手动建仓，成本按金额兜底）或无持仓时显示占位，
+    // 避免误导性的 "+0.00" 带涨跌色
+    if (item.positionCostReliable !== true || (item.shares || 0) <= 0) {
+        _renderProfitCell(td, '—', '');
+        tr.appendChild(td);
+        return;
+    }
+
+    td.className = (item.positionProfit || 0) >= 0 ? 'up' : 'down';
+    // 成本为 0（现金分红已回本）时不展示百分比，仅展示金额（此时金额即全部利润）
+    const posRateText = (item.positionCost > 0)
+        ? `(${formatProfit(round2(((item.positionProfit || 0) / item.positionCost) * 100), '%')})`
+        : '';
+    _renderProfitCell(td, formatProfit(item.positionProfit || 0), posRateText);
+    tr.appendChild(td);
+}
+
+function _renderHoldProfitCell(tr, item) {
+    const td = document.createElement('td');
+    td.className = `editable-cell ${item.holdProfit >= 0 ? 'up' : 'down'}`;
+    td.dataset.col = 'holdProfit';
+    setColumnVisibilityClass(td, 'holdProfit');
+    td.contentEditable = 'true';
+    td.dataset.field = 'holdProfit';
+    td.dataset.code = item.code;
+    td.style.textAlign = '';
+
+    const amountDiv = document.createElement('div');
+    amountDiv.textContent = formatProfit(item.holdProfit);
+    td.appendChild(amountDiv);
+
+    // 累计收益率：优先用历史订单总买入成本，无订单数据则回退 amount - holdProfit
+    const investedCost = (item.totalInvestedCost > 0)
+        ? item.totalInvestedCost
+        : Math.max(0, (item.amount || 0) - (item.holdProfit || 0));
+    if (investedCost > 0) {
+        const holdProfitRate = ((item.holdProfit || 0) / investedCost) * 100;
+        const rateDiv = document.createElement('div');
+        rateDiv.className = 'profit-rate-sub';
+        rateDiv.textContent = `(${formatProfit(holdProfitRate, '%')})`;
+        td.appendChild(rateDiv);
+    }
+
+    if (item.hasPendingDividendForDisplay === true) {
+        const warn = document.createElement('span');
+        warn.className = 'warn-icon';
+        warn.textContent = ' ⚠';
+        warn.title = '该基金有待确认的分红，累计收益可能不准确';
+        td.appendChild(warn);
+    }
+    tr.appendChild(td);
+}
+
+function _renderActionsCell(tr, item) {
+    const td = document.createElement('td');
+    td.className = 'col-hide';
+    td.dataset.col = 'actions';
+    setColumnVisibilityClass(td, 'actions');
+    const btn = document.createElement('button');
+    btn.className = 'del-btn';
+    btn.dataset.code = item.code;
+    btn.title = '删除';
+    btn.textContent = '✕';
+    td.appendChild(btn);
+    tr.appendChild(td);
+}
+
+function _renderSummary({ sumAmount, sumYesterdayProfit, sumTodayProfit, sumHoldProfit, sumPositionProfit }) {
     // 共用基准值：本金 = 当前持仓总金额 - 累计收益
     const principal = round2(sumAmount - sumHoldProfit);
     const safeRate = (profit, base) => base > 0 ? (profit / base * 100) : 0;
@@ -298,6 +374,9 @@ function renderTable() {
 
     // 当日估值：金额 + 百分比（基准 = 持仓总金额）
     _renderProfitWithRate(elements.totalTodayProfit, sumTodayProfit, safeRate(sumTodayProfit, sumAmount));
+
+    // 持仓收益：金额 + 百分比（基准 = 持仓成本 = 总资产 - 持仓收益）
+    _renderProfitWithRate(elements.totalPositionProfit, sumPositionProfit, safeRate(sumPositionProfit, sumAmount - sumPositionProfit));
 
     // 总累计收益：小窗口显示金额+百分比，全屏展示含浮动的补充信息
     const sumTotalProfit = sumHoldProfit + sumTodayProfit;
@@ -312,28 +391,158 @@ function renderTable() {
     } else {
         _renderProfitWithRate(elements.totalTotalProfit, sumHoldProfit, holdRate);
     }
-    // 绑定删除按钮和分组标签事件
+}
+
+function renderTable() {
+    let displayData = allFundsData.filter(item =>
+        groupFilterController.matches(item) && fundSearchController.matches(item)
+    );
+    displayData.sort((a, b) => {
+        // 置顶基金优先排在最前面
+        const aPinned = pinnedFunds.has(a.code) ? 1 : 0;
+        const bPinned = pinnedFunds.has(b.code) ? 1 : 0;
+        if (aPinned !== bPinned) return bPinned - aPinned;
+        const valA = a[sortField] ?? 0;
+        const valB = b[sortField] ?? 0;
+        // 非数值字段（如期货代码 AU2512）直接相减得 NaN，排序会乱；退化为字典序
+        const numA = Number(valA);
+        const numB = Number(valB);
+        if (Number.isNaN(numA) || Number.isNaN(numB)) {
+            return String(valA).localeCompare(String(valB)) * sortDirection;
+        }
+        return (numA - numB) * sortDirection;
+    });
+    document.querySelectorAll('.sortable').forEach(th => {
+        // 用 data-label 保存原始文字，避免 textContent 替换破坏子元素
+        if (!th.dataset.label) th.dataset.label = th.textContent.trim();
+        const arrow = th.dataset.sort === sortField ? (sortDirection === 1 ? ' ↑' : ' ↓') : '';
+        th.textContent = th.dataset.label + arrow;
+    });
+    // 计算统计数据
+    // “昨日收益”严格限定为 prevPriceDate === 最新交易日（周二至周五为昨日自然日，周一/周末为上周五）的收益；
+    // 若昨天无净值更新（节假日/QDII/定开债滞后），该基金昨日收益计为 0，不虚增总额。
+    const todayStr = getToday();
+    const latestTradingDayStr = typeof getLatestTradingDay === 'function'
+        ? getLatestTradingDay()
+        : formatDate(new Date(Date.now() - CONSTANTS.DAY_MS));
+    const { sumAmount, sumYesterdayProfit, sumTodayProfit, sumHoldProfit, sumPositionProfit } = displayData.reduce(
+        (acc, item) => ({
+            sumAmount: acc.sumAmount + (item.amount || 0),
+            sumYesterdayProfit: acc.sumYesterdayProfit + (item.prevPriceDate === latestTradingDayStr ? (item.yesterdayProfit || 0) : 0),
+            sumTodayProfit: acc.sumTodayProfit + (item.todayProfit || 0),
+            sumHoldProfit: acc.sumHoldProfit + (item.holdProfit || 0),
+            sumPositionProfit: acc.sumPositionProfit + (item.positionProfit || 0)
+        }),
+        { sumAmount: 0, sumYesterdayProfit: 0, sumTodayProfit: 0, sumHoldProfit: 0, sumPositionProfit: 0 }
+    );
+
+    const fragment = document.createDocumentFragment();
+    displayData.forEach((item, index) => {
+        const tr = document.createElement('tr');
+        tr.dataset.code = item.code;
+        tr.dataset.idx = index;   // 供 tableBody 事件委托计算 Shift 范围选
+        if (pinnedFunds.has(item.code)) tr.classList.add('pinned-row');
+        _td(tr, String(index + 1), 'index');
+        _td(tr, item.code, 'code');
+        _renderNameCell(tr, item);
+        _renderAmountCell(tr, item);
+        _renderSharesCell(tr, item);
+        _renderNavCell(tr, item, todayStr);
+        // 持有天数/区间涨跌幅
+        PERF_FIELDS.forEach(field => {
+            const tdPerf = document.createElement('td');
+            tdPerf.className = 'col-hide perf-cell';
+            tdPerf.dataset.col = field;
+            tdPerf.dataset.perf = field;
+            setColumnVisibilityClass(tdPerf, field);
+            tdPerf.textContent = '—';
+            tr.appendChild(tdPerf);
+        });
+        renderFundPerfCells(tr, item.code);
+        _renderYesterdayCell(tr, item, latestTradingDayStr);
+        _renderTodayCell(tr, item, todayStr);
+        _renderPositionProfitCell(tr, item);
+        _renderHoldProfitCell(tr, item);
+        _renderActionsCell(tr, item);
+        fragment.appendChild(tr);
+    });
+    // 用户正在编辑可编辑单元格（如累计收益）时跳过 tbody 重建：
+    // 定时刷新若此时 replaceChildren 会把焦点和未保存输入冲掉；
+    // 汇总行照常更新，失焦保存后 debouncedSave 会再次触发 renderTable 完成重建
+    const activeEl = document.activeElement;
+    const isEditingCell = Boolean(
+        activeEl
+        && activeEl.classList
+        && activeEl.classList.contains('editable-cell')
+        && elements.tableBody.contains(activeEl)
+    );
+    if (!isEditingCell) {
+        elements.tableBody.replaceChildren(fragment);
+    }
+
+    _renderSummary({ sumAmount, sumYesterdayProfit, sumTodayProfit, sumHoldProfit, sumPositionProfit });
+    // 行交互统一委托到 tableBody（click + dblclick），避免每次 renderTable 逐行 addEventListener
     elements.tableBody.onclick = (e) => {
         const target = e.target;
-        const code = target.dataset.code;
-        if (target.classList.contains('del-btn')) {
-            removeFund(code);
-        } else if (target.classList.contains('group-tag')) {
-            openFundEditor(code);
+        // 1) 操作按钮优先处理
+        const delBtn = target.closest('.del-btn');
+        if (delBtn) { removeFund(delBtn.dataset.code); return; }
+        const groupTag = target.closest('.group-tag');
+        if (groupTag) { openFundEditor(groupTag.dataset.code); return; }
+        // 2) 排除齿轮/图钉等已有自身 onclick + stopPropagation 的元素
+        if (target.closest('.settings-icon, .pin-btn, button')) return;
+        // 3) 行选择（文件管理器风格：普通点击切换，Shift 范围选）
+        const tr = target.closest('tr');
+        if (!tr || !tr.dataset.code) return;
+        const code = tr.dataset.code;
+        const idx = parseInt(tr.dataset.idx, 10);
+        if (e.shiftKey && lastClickedIndex >= 0 && !Number.isNaN(idx)) {
+            e.preventDefault(); // 阻止 Shift 点击的默认文字选中
+            const rows = elements.tableBody.querySelectorAll('tr');
+            const start = Math.min(lastClickedIndex, idx);
+            const end = Math.max(lastClickedIndex, idx);
+            for (let i = start; i <= end; i++) {
+                const r = rows[i];
+                if (r && r.dataset.code) {
+                    selectedCodes.add(r.dataset.code);
+                    r.classList.add('selected-row');
+                }
+            }
+        } else {
+            if (selectedCodes.has(code)) {
+                selectedCodes.delete(code);
+                tr.classList.remove('selected-row');
+            } else {
+                selectedCodes.add(code);
+                tr.classList.add('selected-row');
+            }
+            if (!Number.isNaN(idx)) lastClickedIndex = idx;
         }
+        updateSelectionStatus();
+    };
+    elements.tableBody.ondblclick = (e) => {
+        if (e.target.closest('.settings-icon, .group-tag, .del-btn, .pin-btn, button')) return;
+        const tr = e.target.closest('tr');
+        if (tr && tr.dataset.code) openFundDetail(tr.dataset.code);
     };
     // 绑定可编辑单元格事件（使用防抖优化）
     const debouncedSave = debounce(async (code, field, val) => {
-        const { myFunds } = await storageHelper.getAll(['myFunds']);
-        const funds = myFunds || {};
-        if (funds[code]) {
-            if (funds[code][field] === val) return;
-            funds[code][field] = val;
-            const localItem = allFundsData.find(f => f.code === code);
-            if (localItem) localItem[field] = val;
-            await storageHelper.setAll({ myFunds: funds });
-            showToast('✅ 基金备注信息已保存', 'success', CONFIG.TOAST_SHORT);
-            renderTable();
+        try {
+            const { myFunds } = await storageHelper.getAll(['myFunds']);
+            const funds = myFunds || {};
+            if (funds[code]) {
+                if (funds[code][field] === val) return;
+                funds[code][field] = val;
+                const localItem = allFundsData.find(f => f.code === code);
+                if (localItem) localItem[field] = val;
+                await storageHelper.setAll({ myFunds: funds });
+                showToast('✅ 基金备注信息已保存', 'success', CONFIG.TOAST_SHORT);
+                renderTable();
+            }
+        } catch (err) {
+            console.error('[editable-cell] 保存失败:', err);
+            showToast('保存失败，请重试', 'error');
+            renderTable(); // 恢复显示为存储中的值，避免用户以为已保存
         }
     }, CONFIG.DEBOUNCE_DELAY);
 
@@ -352,60 +561,17 @@ function renderTable() {
         };
         cell.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); cell.blur(); } };
     });
-    // ---- 行点击选择（文件管理器风格）----
-    elements.tableBody.querySelectorAll('tr').forEach((tr, idx) => {
-        // 渲染时恢复选中高亮
+    // 渲染时恢复选中高亮（行点击/双击/Shift 范围选已委托到 tableBody.onclick / ondblclick）
+    elements.tableBody.querySelectorAll('tr').forEach((tr) => {
         if (tr.dataset.code && selectedCodes.has(tr.dataset.code)) {
             tr.classList.add('selected-row');
         }
-
-        // 双击打开详情
-        tr.addEventListener('dblclick', (e) => {
-            // 点击操作按钮/齿轮/group-tag/del-btn/pin-btn 时不触发
-            if (e.target.closest('.settings-icon, .group-tag, .del-btn, .pin-btn, button')) return;
-
-            const code = tr.dataset.code;
-            if (code) {
-                openFundDetail(code);
-            }
-        });
-
-        tr.addEventListener('click', (e) => {
-            // 点击操作按钮/齿轮/group-tag/del-btn/pin-btn 时不触发选择
-            if (e.target.closest('.settings-icon, .group-tag, .del-btn, .pin-btn, button')) return;
-
-            const code = tr.dataset.code;
-            if (!code) return;
-
-            if (e.shiftKey && lastClickedIndex >= 0) {
-                // 阻止 Shift 点击时浏览器默认的文字选中行为
-                e.preventDefault();
-                // Shift 点击：范围选（只加，不减）
-                const start = Math.min(lastClickedIndex, idx);
-                const end = Math.max(lastClickedIndex, idx);
-                elements.tableBody.querySelectorAll('tr').forEach((r, i) => {
-                    if (i >= start && i <= end && r.dataset.code) {
-                        selectedCodes.add(r.dataset.code);
-                        r.classList.add('selected-row');
-                    }
-                });
-            } else {
-                // 普通点击：切换选中状态
-                if (selectedCodes.has(code)) {
-                    selectedCodes.delete(code);
-                    tr.classList.remove('selected-row');
-                } else {
-                    selectedCodes.add(code);
-                    tr.classList.add('selected-row');
-                }
-                lastClickedIndex = idx;
-            }
-
-            updateSelectionStatus();
-        });
     });
 
     updateSelectionStatus();
+    // 渲染完成后同步表格总宽度 = 可见 <col> 宽度之和，确保 sticky 冻结列正确激活
+    updateTableWidth();
+    updateStickyLeft();
 }
 
 // ==================== 选中状态反馈 ====================
@@ -500,5 +666,6 @@ async function removeFund(code) {
     const ok = await showConfirm(`确定删除 ${code}？`, '删除确认', true);
     if (!ok) return;
     await deleteFunds([code]);
+    showToast(`🗑 已删除基金 ${code}`, 'success');
     loadData();
 }

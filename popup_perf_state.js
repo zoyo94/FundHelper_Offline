@@ -166,7 +166,7 @@ function getPerformanceRequestOptions(code, period) {
 }
 
 async function fetchAndCacheFullPerformanceHistory(code, endStr) {
-    const startStr = '2000-01-01';
+    const startStr = '';
     const fundData = await fetchFundNetValues(code, startStr, endStr, getPerformancePeriodPageSize('LY'), { preferFullHistory: true });
     cachePerformanceFundData(code, 'LY', startStr, endStr, fundData);
     return Array.isArray(fundData) ? fundData : null;

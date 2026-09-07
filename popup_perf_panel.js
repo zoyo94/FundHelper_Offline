@@ -238,7 +238,7 @@ function renderMyReturnContainer(container, code, isStale) {
     });
 }
 
-function renderMyReturnResult(code, filteredHistory, summary, listPreview, canvas, comparisonData, period) {
+function renderMyReturnResult(filteredHistory, summary, listPreview, canvas, period) {
     const totalProfit = filteredHistory.reduce((sum, item) => sum + item.profit, 0);
     const periodLabel = getMyReturnPeriodLabel(period);
 

@@ -134,7 +134,7 @@ async function fetchEastmoneyJson(url, timeout = CONFIG.MARKET_BREADTH_TIMEOUT) 
     );
     if (direct) return direct;
 
-    return proxyFetchJson(url, {
+    const proxied = await proxyFetchJson(url, {
         timeout,
         headers: {
             'Referer': 'https://quote.eastmoney.com/',
@@ -142,6 +142,10 @@ async function fetchEastmoneyJson(url, timeout = CONFIG.MARKET_BREADTH_TIMEOUT) 
             'Accept': 'application/json, text/plain, */*'
         }
     });
+    if (!proxied) {
+        console.warn('[eastmoney] 代理请求失败:', url.slice(0, 80));
+    }
+    return proxied;
 }
 
 async function fetchBatchLiveInfo(codes, timeout = CONFIG.API_TIMEOUT, fallback = null) {
@@ -168,19 +172,20 @@ async function fetchLiveInfo(code) {
  * 场外基金 / 场内基金：天天基金估值 + 东财历史净值，并发请求后合并
  */
 async function _fetchOutOfMarketFund(cleanCode) {
-    const url1 = buildLiveApiUrl(cleanCode);
-    const [t1, t2] = await Promise.all([
-        fetchConfiguredLiveApiText(url1).catch((error) => {
+    const [mainLive, t2] = await Promise.all([
+        fetchPrioritizedLiveInfo([cleanCode]).then(results => {
+            const live = results?.[0]?.live;
+            return hasUsableLiveEstimate(live) || Number(live?.prevPrice) > 0 ? live : null;
+        }).catch((error) => {
             console.warn('[live-api] 主估值接口请求失败:', cleanCode, error.message);
             return null;
         }),
         fetchPrioritizedHistoryText(cleanCode).catch(() => null)
     ]);
 
-    const r1 = t1 !== null ? { status: 'fulfilled', value: t1 } : { status: 'rejected', reason: new Error('请求估值接口失败') };
     const r2 = t2 !== null ? { status: 'fulfilled', value: t2 } : { status: 'rejected', reason: new Error('请求历史接口失败') };
 
-    const mainResult = _parseFundgzResponse(r1, cleanCode);
+    const mainResult = mainLive;
     const fallbackResult = await _parseEastmoneyResponse(r2, cleanCode, !!mainResult);
 
     if (mainResult && fallbackResult) {
@@ -226,44 +231,6 @@ async function _fetchOutOfMarketFund(cleanCode) {
     return { name: `[未知]${cleanCode}`, rate: 0, price: 0, prevPrice: 0 };
 }
 
-/**
- * 解析天天基金估值接口 (fundgz.1234567.com.cn)
- */
-function _parseFundgzResponse(settled, cleanCode) {
-    if (settled.status !== 'fulfilled') {
-        debugDividendTrace(cleanCode, 'fetch-main-error', { message: settled.reason?.message });
-        return null;
-    }
-    try {
-        const text = settled.value;
-        const d = parseConfiguredLiveApiResponse(text);
-        if (!d || (!d.gsz && !d.dwjz)) {
-            debugDividendTrace(cleanCode, 'fetch-main-invalid-data', {});
-            return null;
-        }
-
-        const dwjz = parseFloat(d.dwjz) || 0;
-        const gsz = parseFloat(d.gsz || d.dwjz) || 0;
-        const gszzl = d.dataKind === 'nav' ? null : (parseFloat(d.gszzl) || 0);
-
-        debugDividendTrace(cleanCode, 'fetch-main-success', {
-            prevPrice: dwjz, price: gsz,
-            prevPriceDate: d.jzrq || '', priceTime: d.gztime || ''
-        });
-
-        return {
-            name: d.name || `[未知]${cleanCode}`,
-            rate: gszzl,
-            price: gsz,
-            prevPrice: dwjz,
-            prevPriceDate: d.jzrq || '',
-            priceTime: d.gztime || ''
-        };
-    } catch (e) {
-        debugDividendTrace(cleanCode, 'fetch-main-error', { message: e.message });
-        return null;
-    }
-}
 
 function _buildEastmoneyHistoryItems(cleanCode, netWorthData, acMap = new Map()) {
     return safeArray(netWorthData, []).map(item => ({
@@ -274,6 +241,55 @@ function _buildEastmoneyHistoryItems(cleanCode, netWorthData, acMap = new Map())
         rate: typeof item.equityReturn !== 'undefined' ? parseFloat(item.equityReturn) : null,
         dividend: item.unitMoney || ''
     })).filter(item => item.date && item.price > 0);
+}
+
+/**
+ * 从东财 pingzhongdata 原始文本解析分红列表（unitMoney 字段含"分红"标注）。
+ * 供分红检测在「实时源 / HistoryDB 兜底都为空」时主动抓取使用，独立于缓存与升级时机。
+ * @returns {Array<{perShare:number,date:string,navPrice:number,desc:string}>}
+ */
+function extractDividendListFromEastmoneyText(extData) {
+    if (!extData || !extData.includes('fS_name')) return [];
+    const netWorthMatch = extData.match(/Data_netWorthTrend\s*=\s*(\[[\s\S]*?\])\s*;/);
+    if (!netWorthMatch) return [];
+    let netWorthData;
+    try { netWorthData = JSON.parse(netWorthMatch[1]); } catch (e) { return []; }
+    if (!Array.isArray(netWorthData) || netWorthData.length < 2) return [];
+    const list = [];
+    for (const item of netWorthData) {
+        if (item.unitMoney && item.unitMoney.includes('分红')) {
+            const match = item.unitMoney.match(/([0-9.]+)元/);
+            if (match) {
+                list.push({
+                    perShare: parseFloat(match[1]),
+                    date: item.x ? timestampToDate(item.x) : '',
+                    navPrice: parseFloat(item.y) || 0,
+                    desc: item.unitMoney
+                });
+            }
+        }
+    }
+    return list;
+}
+
+/**
+ * 从东财 pingzhongdata 原始文本构建完整历史净值条目（含 dividend 字段），
+ * 用于触发 _persistEastmoneyHistoryGap 的安全升级（不会覆盖已有 price / acPrice）。
+ */
+function buildEastmoneyHistoryItemsFromText(cleanCode, extData) {
+    if (!extData || !extData.includes('fS_name')) return [];
+    const netWorthMatch = extData.match(/Data_netWorthTrend\s*=\s*(\[[\s\S]*?\])\s*;/);
+    if (!netWorthMatch) return [];
+    let netWorthData;
+    try { netWorthData = JSON.parse(netWorthMatch[1]); } catch (e) { return []; }
+    const acMap = new Map();
+    const acMatch = extData.match(/Data_ACWorthTrend\s*=\s*(\[[\s\S]*?\]);/);
+    if (acMatch) {
+        try {
+            JSON.parse(acMatch[1]).forEach(item => acMap.set(item[0], parseFloat(item[1])));
+        } catch (e) { /* 忽略累计净值解析错误 */ }
+    }
+    return _buildEastmoneyHistoryItems(cleanCode, netWorthData, acMap);
 }
 
 async function _persistEastmoneyHistoryGap(cleanCode, dbItems, hasMainResult) {
@@ -300,12 +316,29 @@ async function _persistEastmoneyHistoryGap(cleanCode, dbItems, hasMainResult) {
     const checkStartDate = dbItems[0].date;
     const localRange = await HistoryDB.getRange(cleanCode, checkStartDate, latestRemoteDate).catch(() => []);
     const localDateSet = new Set(localRange.map(item => item.date));
+    const localByDate = new Map(localRange.map(item => [item.date, item]));
 
     // 筛选出本地没有的记录进行补全
     const missingItems = dbItems.filter(item => !localDateSet.has(item.date));
 
+    // 已有记录的字段升级：主要是 unitMoney（东财标注分红有滞后，可能本地写入时为空、后续 fetch 时补上）
+    // 仅当远端 dividend 非空且本地 dividend 为空时才更新，避免覆盖用户已编辑的字段
+    const upgradeItems = [];
+    for (const remoteItem of dbItems) {
+        const localItem = localByDate.get(remoteItem.date);
+        if (!localItem) continue;
+        const remoteDividend = safeString(remoteItem.dividend, '');
+        const localDividend = safeString(localItem.dividend, '');
+        if (remoteDividend && !localDividend) {
+            upgradeItems.push({ ...localItem, dividend: remoteDividend });
+        }
+    }
+
     if (missingItems.length > 0) {
         await HistoryDB.batchPut(missingItems).catch(() => {});
+    }
+    if (upgradeItems.length > 0) {
+        await HistoryDB.batchPut(upgradeItems).catch(() => {});
     }
 }
 
@@ -494,6 +527,309 @@ async function fetchStockPrices(codes) {
     }
 }
 
+// ==================== 持仓穿透估值引擎 (Holdings Penetration Engine) ====================
+
+const _fundHoldingsMemoryCache = new Map(); // code -> { timestamp, ttl, data }
+
+// 穿透引擎调试开关：默认关闭，保持 console 干净。
+// 需要排查穿透/持仓问题时，在 console 执行 `PEN_DEBUG = true` 再刷新一次即可看到全部诊断日志。
+var PEN_DEBUG = false;
+
+// 持仓缓存 TTL 分级：
+//   有持仓        12h  —— 季报披露周期，盘中不变
+//   确认无股票     6h  —— 债基/货基结论稳定，但留纠错窗口（换仓后能纠正）
+//   源不可用      10min —— 网络/限流失败，短 TTL 便于尽快恢复
+const HOLDINGS_TTL_HAS_DATA = 12 * 3600 * 1000;
+const HOLDINGS_TTL_EMPTY = 6 * 3600 * 1000;
+const HOLDINGS_TTL_FAILED = 10 * 60 * 1000;
+
+async function fetchFundHoldingsWithCache(cleanCode) {
+    const cached = _fundHoldingsMemoryCache.get(cleanCode);
+    const now = Date.now();
+    if (cached && (now - cached.timestamp < cached.ttl)) {
+        return cached.data;
+    }
+
+    try {
+        // 源1: fundmobapi（精确占比），但 Chrome 扩展环境可能因子域风控返回 Datas=null，仅作首选
+        const mobapi = await tryFetchFundMobapi(cleanCode);
+        const mobapiOk = mobapi && (mobapi.stocks.length > 0 || mobapi.fofs.length > 0);
+
+        // 源2: pingzhongdata（fund.eastmoney.com 子域，环境已验证可用，仅股票代码无占比 → 总仓位等权近似兜底）
+        const pgz = !mobapiOk ? await tryFetchPingzhongdata(cleanCode) : null;
+        const pgzOk = pgz && pgz.stocks.length > 0;
+
+        const result = mobapiOk ? mobapi : (pgzOk ? pgz : { stocks: [], fofs: [] });
+        const hasData = result.stocks.length > 0 || result.fofs.length > 0;
+        // 关键：空持仓（债基/货基）也必须进缓存——否则这些基金每轮刷新都会重跑
+        // 「mobapi 失败 + pingzhongdata」两次请求，与 push2 共享东财域名风控额度，
+        // 是 ERR_EMPTY_RESPONSE / 514 限流的持续来源（用户组合里 8 只债基 ≈ 16 请求/刷新）。
+        // pgz === null 表示连兜底源都没拿到有效响应（网络/限流/页面结构变化），
+        // 与"成功确认该基金无股票持仓"区分开，用更短 TTL 以便尽快重试。
+        const bothSourcesDown = !mobapi && !pgz;
+        const ttl = hasData
+            ? HOLDINGS_TTL_HAS_DATA
+            : (bothSourcesDown ? HOLDINGS_TTL_FAILED : HOLDINGS_TTL_EMPTY);
+        _fundHoldingsMemoryCache.set(cleanCode, { timestamp: now, ttl, data: result });
+        return result;
+    } catch (e) {
+        console.warn(`[holdings] 获取基金 ${cleanCode} 持仓失败:`, e.message);
+        // 异常同样进负缓存（短 TTL），避免异常路径每轮重试加剧限流
+        _fundHoldingsMemoryCache.set(cleanCode, {
+            timestamp: now,
+            ttl: HOLDINGS_TTL_FAILED,
+            data: { stocks: [], fofs: [] }
+        });
+        return { stocks: [], fofs: [] };
+    }
+}
+
+// 源1: 东财移动端持仓接口（基金重仓股 + 重仓基金，含精确占比）。
+// 该子域在部分 Chrome 扩展环境会被差异化软失败（Datas=null），故仅作首选，失败由 pingzhongdata 兜底。
+async function tryFetchFundMobapi(cleanCode) {
+    try {
+        const url = `https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition?FCODE=${cleanCode}&deviceid=Wap&plat=Wap&product=EFund&version=6.5.9`;
+        let res = await fetchEastmoneyJson(url, 6000);
+        if (PEN_DEBUG) console.log(`[holdings][mobapi] ${cleanCode}:`, res ? `Datas=${res.Datas ? 'has' : 'null'} fundStocksLen=${res?.Datas?.fundStocks?.length ?? 'undef'} fundfofsLen=${res?.Datas?.fundfofs?.length ?? 'undef'}` : 'NULL');
+        if (!res || !res.Datas) return null;
+
+        const fundStocks = safeArray(res.Datas.fundStocks, []);
+        const fundFofs = safeArray(res.Datas.fundfofs, []);
+        const stocks = fundStocks.map(s => ({
+            code: String(s.GPDM || '').trim(),
+            name: String(s.GPJC || '').trim(),
+            weight: parseFloat(s.JZBL) || 0,
+            market: String(s.TEXCH || '') === '1' ? 'sh' : 'sz'
+        })).filter(s => s.code && s.weight > 0);
+
+        const fofs = fundFofs.map(f => ({
+            code: String(f.TZJJDM || '').trim(),
+            name: String(f.TZJJMC || '').trim(),
+            weight: parseFloat(f.ZJZBL) || 0
+        })).filter(f => f.code && f.weight > 0);
+
+        return { stocks, fofs };
+    } catch (e) {
+        console.warn(`[holdings][mobapi] ${cleanCode} 异常:`, e.message);
+        return null;
+    }
+}
+
+// 源2: 东财基金详情页 pingzhongdata.js（fund.eastmoney.com 子域，环境已验证可用）。
+// 提取前十大重仓股代码（stockCodes）+ 股票总仓位（Data_fundSharesPositions 最新值），
+// 个股权重缺失时用「总仓位等权分摊到前十大」近似：方向正确、数值近似，优于空白。
+async function tryFetchPingzhongdata(cleanCode) {
+    try {
+        const text = await proxyFetchText(`https://fund.eastmoney.com/pingzhongdata/${cleanCode}.js`, {
+            timeout: 6000,
+            headers: { 'Referer': 'https://fund.eastmoney.com/' }
+        });
+        if (!text) {
+            console.warn(`[holdings][pingzhongdata] ${cleanCode}: 文本为空（抓取失败/被限流），持仓源不可用`);
+            return null;
+        }
+
+        const scMatch = text.match(/var stockCodes\s*=\s*(\[[^\]]*\])/);
+        if (!scMatch) {
+            console.warn(`[holdings][pingzhongdata] ${cleanCode}: 未找到 stockCodes 变量（页面结构变化？）`);
+            return null;
+        }
+        let codes;
+        try { codes = JSON.parse(scMatch[1]); } catch { return null; }
+        if (!Array.isArray(codes) || codes.length === 0) {
+            if (PEN_DEBUG) console.log(`[holdings][pingzhongdata] ${cleanCode}: stockCodes 为空 []（债基/货基/无股票持仓）—— 无需穿透`);
+            // 返回空持仓对象而非 null：表示"已成功确认该基金无股票持仓"，
+            // 与下方的"抓取失败/被限流返回 null"区分开，让调用方能采用不同的缓存 TTL。
+            return { stocks: [], fofs: [] };
+        }
+
+        // 股票总仓位（最新值，单位 %）
+        let totalPos = 0;
+        const posMatch = text.match(/var Data_fundSharesPositions\s*=\s*(\[[\s\S]*?\]);/);
+        if (posMatch) {
+            try {
+                const arr = JSON.parse(posMatch[1]);
+                if (Array.isArray(arr) && arr.length) {
+                    const last = arr[arr.length - 1];
+                    totalPos = parseFloat(Array.isArray(last) ? last[1] : last) || 0;
+                }
+            } catch {}
+        }
+
+        const stocks = codes.map(c => {
+            const raw = String(c).trim();
+            const code = raw.slice(0, 6);
+            const market = /^[69]/.test(code) || /^5/.test(code) ? 'sh' : 'sz';
+            return { code, name: '', market, weight: 0 };
+        }).filter(s => /^\d{6}$/.test(s.code));
+        if (stocks.length === 0) return { stocks: [], fofs: [] };
+
+        // 等权近似：总股票仓位平摊到前十大重仓股
+        const perWeight = totalPos > 0 ? round2(totalPos / stocks.length) : 0;
+        stocks.forEach(s => { s.weight = perWeight; });
+
+        if (PEN_DEBUG) console.log(`[holdings][pingzhongdata] ${cleanCode}: stockCodes=${stocks.length} totalPos=${totalPos}% perWeight=${perWeight}%`);
+        return { stocks, fofs: [] };
+    } catch (e) {
+        console.warn(`[holdings][pingzhongdata] ${cleanCode} 异常:`, e.message);
+        return null;
+    }
+}
+
+async function fetchStockQuotesBatch(stocks) {
+    if (!Array.isArray(stocks) || stocks.length === 0) return new Map();
+    // 东财 push2 secid 前缀：沪市(6/9/5 开头)=1，深市(0/3)=0，北交所(4/8)=0
+    // 用 ulist.np 批量接口 + fltt=2（真实小数）。字段用标准映射：
+    //   f12=代码(字符串)  f14=名称  f2=最新价  f3=涨跌幅%
+    // 同时兼容 f57/f58/f43/f170 老字段（部分数据中心字段含义不同），优先取 f12。
+    const secids = stocks.map(s => {
+        const c = s.code;
+        const prefix = /^[69]/.test(c) || /^5/.test(c) ? '1' : '0';
+        return `${prefix}.${c}`;
+    });
+    const url = `https://push2.eastmoney.com/api/qt/ulist.np/get?secids=${encodeURIComponent(secids.join(','))}&fields=f12,f14,f2,f3&fltt=2`;
+
+    // 主路径：走 background FETCH_TEXT 代理（与 pingzhongdata 同源，已验证可用）
+    let text = null;
+    try {
+        text = await proxyFetchText(url, {
+            timeout: 5000,
+            headers: { 'Referer': 'https://quote.eastmoney.com/', 'Accept': 'application/json, text/plain, */*' }
+        });
+    } catch (e) { text = null; }
+    // 兜底：popup 直连（扩展环境常因 CORS 失败，仅作最后尝试）
+    if (!text) {
+        try {
+            const r = await fetch(url, { headers: { 'Referer': 'https://quote.eastmoney.com/' } });
+            if (r.ok) text = await r.text();
+        } catch (e) { /* ignore */ }
+    }
+
+    if (PEN_DEBUG) console.log(`[stock-quotes] 请求 ${stocks.length} 只, secids示例=${secids.slice(0, 3).join(',')}..., text长度=${text ? text.length : 0}`);
+    const resultMap = new Map();
+    if (!text) {
+        console.warn('[stock-quotes] push2 返回空（代理与直连均失败）—— 检查 host_permissions 与网络');
+        return resultMap;
+    }
+    try {
+        const j = JSON.parse(text);
+        const diff = (j && j.data && j.data.diff) || [];
+        if (PEN_DEBUG) console.log(`[stock-quotes] diff 长度=${diff.length}`);
+        for (const d of diff) {
+            const code = String(d.f12 != null ? d.f12 : d.f57 || '').trim();
+            const price = parseFloat(d.f2 != null ? d.f2 : d.f43) || 0;
+            const rate = parseFloat(d.f3 != null ? d.f3 : d.f170) || 0;
+            const name = String(d.f14 != null ? d.f14 : d.f58 || '').trim();
+            if (code && price > 0) {
+                resultMap.set(code, { code, name, price, prevClose: 0, rate: round2(rate) });
+            }
+        }
+        if (PEN_DEBUG) console.log(`[stock-quotes] 成功映射 ${resultMap.size} 只行情, 样本keys=${[...resultMap.keys()].slice(0, 5).join(',')}`);
+    } catch (e) {
+        console.warn('[stock-quotes] push2 解析失败:', e.message, '原始前200:', text.slice(0, 200));
+    }
+    return resultMap;
+}
+
+async function fetchPenetrationValuation(code, prevPrice, sharedQuotes) {
+    const basePrevPrice = Number(prevPrice) || 0;
+    if (!(basePrevPrice > 0)) return null;
+
+    const holdings = await fetchFundHoldingsWithCache(code);
+    if (!holdings || (holdings.stocks.length === 0 && holdings.fofs.length === 0)) {
+        if (PEN_DEBUG) console.log(`[penetration][${code}] 无可用持仓数据（债基/货基无股票 或 持仓源暂不可用），跳过穿透`);
+        return null;
+    }
+
+    // 1. 股票穿透估值（二级债基、偏债混合、偏股基金）
+    if (holdings.stocks && holdings.stocks.length > 0) {
+        // 优先用调用方汇总后一次性拉取的共享行情（整次刷新只发 1 个 push2 请求，
+        // 避免 N 只基金各发一个并行请求把东财打爆触发 ERR_EMPTY_RESPONSE 限流）；
+        // 未传 sharedQuotes 时仍各自拉取（向后兼容）。
+        const stockQuotes = (sharedQuotes && typeof sharedQuotes.get === 'function')
+            ? sharedQuotes
+            : await fetchStockQuotesBatch(holdings.stocks);
+        let matched = 0;
+        for (const s of holdings.stocks) if (stockQuotes.has(s.code)) matched++;
+        if (PEN_DEBUG) console.log(`[penetration][${code}] 持仓股票=${holdings.stocks.length} 命中行情=${matched} quotesMapSize=${stockQuotes.size}`);
+        let totalWeight = 0;
+        let weightedSumRate = 0;
+        const details = [];
+
+        for (const s of holdings.stocks) {
+            const q = stockQuotes.get(s.code);
+            if (q && typeof q.rate === 'number') {
+                const contrib = round4((q.rate * s.weight) / 100);
+                weightedSumRate += contrib;
+                totalWeight += s.weight;
+                details.push({
+                    code: s.code,
+                    name: s.name,
+                    weight: s.weight,
+                    rate: q.rate,
+                    contrib
+                });
+            }
+        }
+
+        if (details.length > 0) {
+            const finalRate = round2(weightedSumRate);
+            const estPrice = round4(basePrevPrice * (1 + finalRate / 100));
+            return {
+                rate: finalRate,
+                price: estPrice,
+                isPenetration: true,
+                penetrationType: 'stocks',
+                totalWeight: round2(totalWeight),
+                details
+            };
+        }
+    }
+
+    // 2. FOF 重仓基金穿透估值
+    if (holdings.fofs && holdings.fofs.length > 0) {
+        const fofCodes = holdings.fofs.map(f => f.code);
+        const fofLives = await fetchPrioritizedLiveInfo(fofCodes).catch(() => []);
+        const fofLiveMap = new Map((fofLives || []).map(item => [item.code, item.live]));
+
+        let totalWeight = 0;
+        let weightedSumRate = 0;
+        const details = [];
+
+        for (const f of holdings.fofs) {
+            const live = fofLiveMap.get(f.code);
+            const rate = typeof live?.rate === 'number' ? live.rate : null;
+            if (rate !== null && !isNaN(rate)) {
+                const contrib = round4((rate * f.weight) / 100);
+                weightedSumRate += contrib;
+                totalWeight += f.weight;
+                details.push({
+                    code: f.code,
+                    name: f.name,
+                    weight: f.weight,
+                    rate,
+                    contrib
+                });
+            }
+        }
+
+        if (details.length > 0) {
+            const finalRate = round2(weightedSumRate);
+            const estPrice = round4(basePrevPrice * (1 + finalRate / 100));
+            return {
+                rate: finalRate,
+                price: estPrice,
+                isPenetration: true,
+                penetrationType: 'fof',
+                totalWeight: round2(totalWeight),
+                details
+            };
+        }
+    }
+
+    return null;
+}
+
 const SUPPORTED_INDICES = [
     { code: '000001', market: 1, name: '上证指数' },
     { code: '000016', market: 1, name: '上证50' },
@@ -512,6 +848,9 @@ const SUPPORTED_INDICES = [
     { code: '000903', market: 1, name: '中证A100' },
     { code: '000982', market: 1, name: '500等权' },
     { code: '399303', market: 0, name: '国证2000' },
+    { code: '000832', market: 1, name: '中证转债' },
+    { code: '000012', market: 1, name: '国债指数' },
+    { code: '000013', market: 1, name: '企债指数' },
     { code: 'IXIC', market: 100, name: '纳斯达克' },
     { code: 'NDX', market: 100, name: '纳指100' },
     { code: 'SPX', market: 100, name: '标普500' },
@@ -592,18 +931,24 @@ async function _fetchIndexQuotesImpl() {
         for (let i = 0; i < indices.length; i += chunkSize) {
             const chunk = indices.slice(i, i + chunkSize);
             const secids = chunk.map(idx => `${idx.market}.${idx.code}`).join(',');
-            const url = `https://push2.eastmoney.com/api/qt/ulist.np/get?secids=${secids}&ut=bd1d9ddb04089700cf9c27f6f7426281&invt=2&fields=f14,f12,f13,f2,f3,f4,f20`;
+            const settings = getSystemApiSettings('index', MARKET_INDEX_API_SETTINGS);
+            if (settings.enabled === false) return results;
+            const url = settings.urlTemplate
+                .replaceAll('{secids}', encodeURIComponent(secids))
+                .replaceAll('{timestamp}', String(Date.now()))
+                .replaceAll('{random}', String(Math.random()));
             try {
                 if (i > 0) await new Promise(r => setTimeout(r, 300));
                 const res = await fetchEastmoneyJson(url, CONFIG.MARKET_BREADTH_TIMEOUT);
-                if (res && res.rc === 0 && Array.isArray(res.data?.diff)) {
-                    results.push(...res.data.diff.map(item => ({
-                        code: String(item.f12),
-                        name: String(item.f14),
-                        price: (Number(item.f2) === -1 || Number(item.f2) <= 0) ? 0 : Number(item.f2) / 100,
-                        changeRate: Number(item.f3) === -1 ? 0 : Number(item.f3) / 100,
-                        changeAmount: Number(item.f4) === -1 ? 0 : Number(item.f4) / 100,
-                        marketValue: Number(item.f20) > 0 ? Number(item.f20) : undefined,
+                const records = getValueByPath(res, settings.dataPath);
+                if (res && res.rc === 0 && Array.isArray(records)) {
+                    results.push(...records.map(item => ({
+                        code: String(getValueByPath(item, settings.fields.indexCode)),
+                        name: String(getValueByPath(item, settings.fields.indexName)),
+                        price: (Number(getValueByPath(item, settings.fields.price)) <= 0) ? 0 : Number(getValueByPath(item, settings.fields.price)) / 100,
+                        changeRate: Number(getValueByPath(item, settings.fields.changeRate)) === -1 ? 0 : Number(getValueByPath(item, settings.fields.changeRate)) / 100,
+                        changeAmount: Number(getValueByPath(item, settings.fields.changeAmount)) === -1 ? 0 : Number(getValueByPath(item, settings.fields.changeAmount)) / 100,
+                        marketValue: Number(getValueByPath(item, settings.fields.marketValue)) > 0 ? Number(getValueByPath(item, settings.fields.marketValue)) : undefined,
                     })));
                 }
             } catch (e) {
@@ -614,11 +959,17 @@ async function _fetchIndexQuotesImpl() {
     };
 
     const fetchFromTencent = async (missingCodes) => {
+        const settings = getEnabledApiProfileBySource('market_index_tencent', MARKET_INDEX_TENCENT_API_SETTINGS);
+        if (!settings || settings.enabled === false) return [];
         const codes = missingCodes.filter(c => TENCENT_MAP[c]);
         if (codes.length === 0) return [];
         try {
             const query = codes.map(c => TENCENT_MAP[c]).join(',');
-            const resp = await fetch(`https://qt.gtimg.cn/q=${query}`);
+            const url = settings.urlTemplate
+                .replaceAll('{codes}', encodeURIComponent(query))
+                .replaceAll('{timestamp}', String(Date.now()))
+                .replaceAll('{random}', String(Math.random()));
+            const resp = await fetch(url);
             const text = await resp.text();
             const results = [];
             text.split(';').forEach(line => {
@@ -646,35 +997,48 @@ async function _fetchIndexQuotesImpl() {
     };
 
     const fetchFromSina = async (missingCodes) => {
+        const settings = getEnabledApiProfileBySource('market_index_sina', MARKET_INDEX_SINA_API_SETTINGS);
+        if (!settings || settings.enabled === false) return [];
         const codes = missingCodes.filter(c => SINA_MAP[c]);
         if (codes.length === 0) return [];
         try {
-            const query = codes.map(c => SINA_MAP[c]).join(',');
-            const resp = await fetch(`https://hq.sinajs.cn/list=${query}`, {
-                headers: { Referer: 'https://finance.sina.com.cn/' }
-            });
-            const text = await resp.text();
-            const results = [];
+            // 新浪 hq.sinajs.cn 支持 list=code1,code2 批量：一次代理请求拿回全部缺失指数，
+            // 避免东财主源故障时逐 code 串行往返（N 次代理延迟叠加，极易超时）
+            const sinaCodes = codes.map(c => SINA_MAP[c]);
+            const joined = sinaCodes.join(',');
+            const url = settings.urlTemplate
+                .replaceAll('{codes}', encodeURIComponent(joined))
+                .replaceAll('{code}', encodeURIComponent(joined))
+                .replaceAll('{timestamp}', String(Date.now()))
+                .replaceAll('{random}', String(Math.random()));
+            const text = await proxyFetchSina(url);
+            if (!text) return [];
+            // 批量响应按行返回：var hq_str_int_nasdaq="..."; 逐行提取载荷
+            const payloadBySinaCode = new Map();
             text.split('\n').forEach(line => {
-                const match = line.match(/hq_str_(\w+)="([^"]*)"/);
-                if (!match || !match[2]) return;
-                const parts = match[2].split(',');
-                if (parts.length < 4) return;
+                const match = line.match(/hq_str_([^=]+)="([^"]*)"/);
+                if (match) payloadBySinaCode.set(match[1].trim(), match[2]);
+            });
+            const results = [];
+            for (let i = 0; i < codes.length; i++) {
+                const code = codes[i];
+                const raw = payloadBySinaCode.get(sinaCodes[i]);
+                if (!raw) continue;
+                const parts = raw.split(',');
+                if (parts.length < 4) continue;
                 const price = parseFloat(parts[1]);
                 const changeAmount = parseFloat(parts[2]);
                 const changeRate = parseFloat(parts[3]);
-                if (!price || price <= 0) return;
-                const origCode = Object.keys(SINA_MAP).find(k => SINA_MAP[k] === match[1]);
-                if (!origCode) return;
-                const info = SUPPORTED_INDICES.find(s => s.code === origCode);
+                if (!price || price <= 0) continue;
+                const info = SUPPORTED_INDICES.find(s => s.code === code);
                 results.push({
-                    code: origCode,
-                    name: info?.name || origCode,
+                    code,
+                    name: info?.name || code,
                     price,
                     changeAmount: isNaN(changeAmount) ? 0 : changeAmount,
                     changeRate: isNaN(changeRate) ? 0 : changeRate,
                 });
-            });
+            }
             return results;
         } catch (e) {
             console.warn('[Sina] 备用接口失败:', e);
@@ -683,12 +1047,18 @@ async function _fetchIndexQuotesImpl() {
     };
 
     const fetchFromYahoo = async (missingCodes) => {
+        const settings = getEnabledApiProfileBySource('market_index_yahoo', MARKET_INDEX_YAHOO_API_SETTINGS);
+        if (!settings || settings.enabled === false) return [];
         const codes = missingCodes.filter(c => YAHOO_MAP[c]);
         if (codes.length === 0) return [];
         const results = [];
         for (const code of codes) {
             try {
-                const url = `https://query1.finance.yahoo.com/v8/finance/chart/${YAHOO_MAP[code]}?range=1d&interval=1d`;
+                const url = settings.urlTemplate
+                    .replaceAll('{code}', YAHOO_MAP[code])
+                    .replaceAll('{codes}', YAHOO_MAP[code])
+                    .replaceAll('{timestamp}', String(Date.now()))
+                    .replaceAll('{random}', String(Math.random()));
                 const resp = await fetch(url, { headers: { Accept: 'application/json' } });
                 const json = await resp.json();
                 const meta = json?.chart?.result?.[0]?.meta;
@@ -762,27 +1132,39 @@ async function _fetchIndexQuotesImpl() {
 }
 
 async function fetchMarketBreadth() {
-    const quoteUrl = 'https://push2.eastmoney.com/api/qt/ulist.np/get?secids=1.000001,0.399001&ut=bd1d9ddb04089700cf9c27f6f7426281&invt=2&fields=f14,f12,f13,f104,f105,f106';
-    const changesUrl = 'https://push2ex.eastmoney.com/getStockCountChanges?type=4,8&ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wzchanges';
+    const settings = getSystemApiSettings('breadth', MARKET_BREADTH_API_SETTINGS);
+    if (settings.enabled === false) throw new Error('市场涨跌接口已停用');
+    const quoteUrl = settings.urlTemplate
+        .replaceAll('{timestamp}', String(Date.now()))
+        .replaceAll('{random}', String(Math.random()));
+    const changesUrl = (settings.secondaryUrlTemplate || MARKET_BREADTH_API_SETTINGS.secondaryUrlTemplate)
+        .replaceAll('{timestamp}', String(Date.now()))
+        .replaceAll('{random}', String(Math.random()));
 
     const [quoteData, changesData] = await Promise.all([
         fetchEastmoneyJson(quoteUrl, CONFIG.MARKET_BREADTH_TIMEOUT),
         fetchEastmoneyJson(changesUrl, CONFIG.MARKET_BREADTH_TIMEOUT)
     ]);
 
-    if (!quoteData || quoteData.rc !== 0 || !Array.isArray(quoteData.data?.diff)) {
+    const quoteRecords = getValueByPath(quoteData, settings.dataPath);
+    const limitRecords = getValueByPath(changesData, settings.secondaryDataPath);
+    if (!quoteData || quoteData.rc !== 0 || !Array.isArray(quoteRecords)) {
         throw new Error('上涨下跌家数接口不可用');
     }
-    if (!changesData || changesData.rc !== 0 || !Array.isArray(changesData.data?.ydlist)) {
+    if (!changesData || changesData.rc !== 0 || !Array.isArray(limitRecords)) {
         throw new Error('涨跌停家数接口不可用');
     }
 
-    const up = quoteData.data.diff.reduce((sum, item) => sum + (Number(item.f104) || 0), 0);
-    const down = quoteData.data.diff.reduce((sum, item) => sum + (Number(item.f105) || 0), 0);
-    const limitUp = Number(changesData.data.ydlist.find(item => Number(item.t) === 4)?.ct) || 0;
-    const limitDown = Number(changesData.data.ydlist.find(item => Number(item.t) === 8)?.ct) || 0;
+    const up = quoteRecords.reduce((sum, item) => sum + (Number(getValueByPath(item, settings.fields.upCount)) || 0), 0);
+    const down = quoteRecords.reduce((sum, item) => sum + (Number(getValueByPath(item, settings.fields.downCount)) || 0), 0);
+    const limitUpItem = limitRecords.find(item => Number(getValueByPath(item, settings.fields.limitType)) === 4);
+    const limitDownItem = limitRecords.find(item => Number(getValueByPath(item, settings.fields.limitType)) === 8);
+    const limitUp = Number(getValueByPath(limitUpItem, settings.fields.limitCount)) || 0;
+    const limitDown = Number(getValueByPath(limitDownItem, settings.fields.limitCount)) || 0;
+    // f106（平盘）为全市场值，两 board 记录回显同一数字，取首行避免翻倍
+    const flat = quoteRecords.length ? (Number(getValueByPath(quoteRecords[0], settings.fields.flatCount)) || 0) : 0;
 
-    return { limitUp, up, down, limitDown };
+    return { limitUp, up, down, limitDown, flat };
 }
 
 async function refreshMarketBreadth(forceSkip = false) {
@@ -821,7 +1203,57 @@ async function refreshMarketBreadth(forceSkip = false) {
     return marketBreadthData;
 }
 
-async function fetchComparisonData(code, startDate, endDate) {
+function parseFundPeriodReturnResponse(payload) {
+    const periodMap = {
+        Z: 'w1',
+        Y: 'm1',
+        '3Y': 'm3',
+        '6Y': 'm6',
+        '1N': 'y1',
+        LN: 'ly'
+    };
+    const result = { w1: null, m1: null, m3: null, m6: null, y1: null, ly: null };
+    let recognizedCount = 0;
+
+    if (!Array.isArray(payload?.Datas)) return null;
+    payload.Datas.forEach(item => {
+        const field = periodMap[item?.title];
+        if (!field) return;
+        recognizedCount++;
+        const value = Number.parseFloat(item?.syl);
+        result[field] = Number.isFinite(value) ? round2(value) : null;
+    });
+
+    return recognizedCount > 0 ? { ...result, source: 'official' } : null;
+}
+
+async function fetchFundPeriodReturns(code) {
+    const cleanCode = String(code || '').trim();
+    if (!/^\d{6}$/.test(cleanCode)) return null;
+
+    try {
+        const params = new URLSearchParams({
+            FCODE: cleanCode,
+            deviceid: 'Wap',
+            plat: 'Wap',
+            product: 'EFund',
+            version: '2.0.0'
+        });
+        // 与 tryFetchFundMobapi 等同类接口保持一致：走 fetchEastmoneyJson（直连失败自动降级带 Referer 的代理），
+        // 裸 fetch 不带 Referer 会被东财风控软失败返回 Datas=null
+        const json = await fetchEastmoneyJson(
+            `https://fundmobapi.eastmoney.com/FundMNewApi/FundMNPeriodIncrease?${params}`,
+            CONFIG.API_TIMEOUT
+        );
+        if (!json) throw new Error('接口无响应');
+        return parseFundPeriodReturnResponse(json);
+    } catch (error) {
+        console.warn(`[fetchFundPeriodReturns] ${cleanCode} 官方区间收益获取失败:`, error.message);
+        return null;
+    }
+}
+
+async function fetchComparisonData(code) {
     try {
         const text = await fetchPrioritizedHistoryText(code);
 
@@ -906,8 +1338,9 @@ async function fetchFundNetValues(code, startDate, endDate, pageSize = 200, { pr
             if (Array.isArray(data?.Datas) && data.Datas.length > 0) {
                 const results = data.Datas.reverse().map((item, i, arr) => {
                     const price = parseFloat(item.DWJZ);
+                    // 接口日涨幅已处理分红和份额折算；缺失时才按单位净值补算。
                     let dailyRate = item.JZZZL ? parseFloat(item.JZZZL) : null;
-                    if (dailyRate === null && i > 0) {
+                    if (!Number.isFinite(dailyRate) && i > 0) {
                         const prevPrice = parseFloat(arr[i - 1].DWJZ);
                         if (prevPrice > 0) dailyRate = round2(((price - prevPrice) / prevPrice) * 100);
                     }
@@ -946,15 +1379,19 @@ async function fetchFundNetValues(code, startDate, endDate, pageSize = 200, { pr
             try {
                 const trendData = JSON.parse(match[1]);
                 if (Array.isArray(trendData) && trendData.length > 0) {
-                    const startTime = new Date(startDate).getTime();
                     const endTime = new Date(endDate).getTime();
 
+                    // 全量历史：趋势数据本身就是基金成立日→今天能提供的全部，
+                    // 不施加起始日期下界限制（避免裁掉早期历史），仅按今天截断上界
                     const filtered = trendData
-                        .filter(item => item.x >= startTime && item.x <= endTime)
+                        .filter(item => item.x <= endTime)
                         .map((item, i, arr) => {
                             const price = parseFloat(item.y);
-                            let dailyRate = typeof item.equityReturn !== 'undefined' ? parseFloat(item.equityReturn) : null;
-                            if (dailyRate === null && i > 0) {
+                            // equityReturn 已处理分红和份额折算；缺失时才按单位净值补算。
+                            let dailyRate = typeof item.equityReturn !== 'undefined'
+                                ? parseFloat(item.equityReturn)
+                                : null;
+                            if (!Number.isFinite(dailyRate) && i > 0) {
                                 const prevPrice = parseFloat(arr[i - 1].y);
                                 if (prevPrice > 0) dailyRate = round2(((price - prevPrice) / prevPrice) * 100);
                             }

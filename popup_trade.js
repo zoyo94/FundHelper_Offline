@@ -9,7 +9,7 @@ function buildConfirmedTransactionsState() {
     };
 }
 
-var runtimeTradeOrdersMap = new Map();
+let runtimeTradeOrdersMap = new Map();
 
 function normalizeTradeAction(rawType) {
     const type = safeString(rawType, '').toLowerCase();
@@ -258,6 +258,88 @@ function getTradeExecutionNav(record) {
     );
 }
 
+/**
+ * 根据历史交易订单计算累计买入总成本（含手续费）。
+ * 用于计算累计收益率时的分母，解决减仓后 amount-holdProfit 失真的问题。
+ * 只累加 initial / add / dividend_reinvest 类型的已确认订单金额。
+ * @param {Array} orders - 交易订单列表
+ * @returns {number} 历史总买入成本（元）
+ */
+function calculateTotalInvestedCostFromOrders(orders = []) {
+    const confirmedOrders = normalizeTradeRecordList(orders, { source: 'order' })
+        .filter(o => o.status === 'confirmed');
+    let totalCost = 0;
+    for (const order of confirmedOrders) {
+        const displayType = getTradeDisplayType(order);
+        if (displayType === 'initial' || displayType === 'add') {
+            // 取已确认的买入金额（含手续费），优先使用 amount
+            const amount = safeFloat(order.amount, 0);
+            if (amount > 0) totalCost += amount;
+        }
+        // dividend_reinvest 分红再投资：实际上是额外买入，也加入成本
+        if (displayType === 'dividend_reinvest') {
+            const amount = safeFloat(order.dividendAmount || order.amount, 0);
+            if (amount > 0) totalCost += amount;
+        }
+    }
+    return round2(totalCost);
+}
+
+/**
+ * 从已确认订单流水反推当前持仓的实占成本（建仓/加仓/红利再投累加，减仓按比例扣减）
+ */
+function calculatePositionCostFromOrders(orders = []) {
+    const confirmedOrders = normalizeTradeRecordList(orders, { source: 'order' })
+        .filter(order => order.status === 'confirmed')
+        .sort(compareTradeExecutionOrder);
+
+    let shares = 0;
+    let cost = 0;
+
+    confirmedOrders.forEach(order => {
+        const displayType = getTradeDisplayType(order);
+        const shareEffect = getTradeShareEffect(order);
+
+        if (displayType === 'initial') {
+            const amount = safeFloat(order.amount, 0);
+            shares = Math.max(0, roundShares(Math.abs(shareEffect)));
+            cost = round2(amount);
+            return;
+        }
+
+        if (displayType === 'add' || displayType === 'dividend_reinvest') {
+            const amount = safeFloat(displayType === 'dividend_reinvest'
+                ? (order.dividendAmount || order.amount)
+                : order.amount, 0);
+            shares = Math.max(0, roundShares(shares + shareEffect));
+            cost = round2(cost + amount);
+            return;
+        }
+
+        if (displayType === 'remove' || displayType === 'clear') {
+            const oldShares = shares;
+            shares = Math.max(0, roundShares(shares + shareEffect));
+            if (oldShares > 0.001 && cost > 0) {
+                const soldShares = Math.min(oldShares, Math.abs(shareEffect));
+                cost = round2(Math.max(0, cost - round2((soldShares / oldShares) * cost)));
+            }
+            if (displayType === 'clear' || shares <= 0.001) {
+                shares = 0;
+                cost = 0;
+            }
+            return;
+        }
+
+        if (displayType === 'dividend') {
+            // 现金分红：份额不变，持仓成本减少（相当于收回部分本金）
+            const amount = safeFloat(order.dividendAmount || order.amount, 0);
+            cost = round2(Math.max(0, cost - amount));
+        }
+    });
+
+    return round2(cost);
+}
+
 function getTradeShareEffect(record) {
     const normalized = normalizeTradeRecord(record);
     const displayType = getTradeDisplayType(normalized);
@@ -301,11 +383,6 @@ function getTradeShareEffect(record) {
 function isPositionBuildingTradeRecord(record) {
     const displayType = getTradeDisplayType(record);
     return displayType === 'initial' || displayType === 'add';
-}
-
-function hasPositionBuildOrder(orders = []) {
-    return normalizeTradeRecordList(orders, { source: 'order' })
-        .some(order => isPositionBuildingTradeRecord(order));
 }
 
 function compareTradeExecutionOrder(left, right) {

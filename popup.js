@@ -16,7 +16,7 @@ const CONFIG = {
     AUTO_REFRESH_PAUSE_MINUTE: 30,
     MARKET_BREADTH_TIMEOUT: 5000,  // 市场宽度请求超时（ms）
     COLUMN_VISIBILITY_STORAGE_KEY: 'columnVisibility',
-    PERF_DAILY_CACHE_STORAGE_KEY: 'fundPerfDailyCacheV2',
+    PERF_DAILY_CACHE_STORAGE_KEY: 'fundPerfDailyCacheV5',
     LIVE_API_REQUEST_DATE_STORAGE_KEY: 'liveApiRequestDate',
     LIVE_API_FINAL_REQUEST_DATE_STORAGE_KEY: 'liveApiFinalRequestDate',
     LIVE_SNAPSHOT_STORAGE_KEY: 'liveApiSnapshot',
@@ -131,7 +131,7 @@ let pinnedFunds = new Set();
 
 const TABLE_COLUMNS = [
     { id: 'index', label: '序号', defaultVisible: true, required: true },
-    { id: 'code', label: '代码', defaultVisible: true, required: true },
+    { id: 'code', label: '代码', defaultVisible: true, fullscreenOnly: true },
     { id: 'name', label: '名称/分组', defaultVisible: true, required: true },
     { id: 'amount', label: '持仓', defaultVisible: true, required: true },
     { id: 'shares', label: '份额', defaultVisible: true, fullscreenOnly: true },
@@ -145,6 +145,7 @@ const TABLE_COLUMNS = [
     { id: 'ly', label: '成立以来', defaultVisible: true, fullscreenOnly: true },
     { id: 'yesterdayProfit', label: '昨日收益', defaultVisible: true },
     { id: 'todayProfit', label: '估值收益', defaultVisible: true },
+    { id: 'positionProfit', label: '持仓累计收益', defaultVisible: true, fullscreenOnly: true },
     { id: 'holdProfit', label: '累计收益', defaultVisible: true },
     { id: 'actions', label: '操作', defaultVisible: true, fullscreenOnly: true }
 ];
@@ -185,6 +186,18 @@ function normalizeColumnVisibility(rawVisibility = {}) {
     return normalized;
 }
 
+// 保存 <col> 的初始宽度，用于列显示/隐藏时恢复
+const DEFAULT_COL_WIDTHS = {};
+
+function initColWidths() {
+    document.querySelectorAll('col[data-col]').forEach(col => {
+        const w = col.style.width || '';
+        if (w && w !== '0px' && !DEFAULT_COL_WIDTHS[col.dataset.col]) {
+            DEFAULT_COL_WIDTHS[col.dataset.col] = w;
+        }
+    });
+}
+
 function isColumnEffectivelyVisible(colId) {
     const col = TABLE_COLUMN_MAP[colId];
     if (!col) return true;
@@ -198,13 +211,66 @@ function isColumnEffectivelyVisible(colId) {
 
 function setColumnVisibilityClass(el, colId) {
     if (!el || !colId) return;
-    el.classList.toggle('col-user-hidden', !isColumnEffectivelyVisible(colId));
+    const visible = isColumnEffectivelyVisible(colId);
+    el.classList.toggle('col-user-hidden', !visible);
+    const col = document.querySelector(`col[data-col="${colId}"]`);
+    if (col) {
+        // 用 width:0 替代 visibility:collapse：
+        // Chrome 对 table-layout:fixed + sticky 列的 <col> visibility:collapse 支持不稳定，
+        // 容易连带折叠相邻列，导致“取消一个，两个一起消失”。
+        col.style.width = visible ? (DEFAULT_COL_WIDTHS[colId] || '') : '0px';
+    }
+}
+
+/**
+ * 动态计算并设置表格总宽度 = 所有可见 <col> 宽度之和。
+ * table-layout: fixed 下，如果不显式设置 width，表格会收缩到容器宽度，
+ * 导致列被等比缩放、sticky 不激活、left 值与实际列位置错位。
+ */
+function updateTableWidth() {
+    let totalWidth = 0;
+    document.querySelectorAll('col[data-col]').forEach(col => {
+        const w = parseInt(col.style.width, 10);
+        if (w !== 0) {
+            totalWidth += w || 0;
+        }
+    });
+    const table = document.querySelector('.table-container table');
+    if (table) {
+        table.style.width = totalWidth + 'px';
+    }
+}
+
+/**
+ * 动态计算所有冻结列的 left 偏移。
+ * 冻结列顺序固定为 index/code/name/amount/shares/nav，逐个累加"可见冻结列"的宽度得到每列 left。
+ * 这样无论隐藏/显示任意一个冻结列（如 shares、nav，或全屏切换导致 fullscreenOnly 列显隐），
+ * 其余冻结列都会自动前移对齐，不会出现错位或空白。
+ * 列宽以 <col> 的 style.width 为准（隐藏列被 setColumnVisibilityClass 置为 0px）。
+ */
+const FROZEN_COLUMNS = ['index', 'code', 'name', 'amount', 'shares', 'nav'];
+
+function updateStickyLeft() {
+    let acc = 0;
+    FROZEN_COLUMNS.forEach(colId => {
+        const col = document.querySelector(`col[data-col="${colId}"]`);
+        const w = col ? (parseInt(col.style.width, 10) || 0) : 0;
+        const left = acc;
+        document.querySelectorAll(`th[data-col="${colId}"], td[data-col="${colId}"]`).forEach(el => {
+            el.style.left = left + 'px';
+        });
+        acc += w;
+    });
 }
 
 function applyColumnVisibilityToHeader() {
     document.querySelectorAll('thead th[data-col]').forEach(th => {
         setColumnVisibilityClass(th, th.dataset.col);
     });
+    // 表头设置会改写 <col> 的 width，必须在此之后重新计算表格宽度，
+    // 否则已有 renderTable 内的 updateTableWidth 会基于旧 <col> 状态。
+    updateTableWidth();
+    updateStickyLeft();
 }
 
 function closeColumnConfigPanel() {
@@ -235,6 +301,28 @@ function renderColumnConfigPanel() {
     title.className = 'column-config-title';
     title.textContent = '列显示设置';
     panel.appendChild(title);
+
+    // 一键重置按钮：恢复所有列为默认显示状态
+    const resetRow = document.createElement('div');
+    resetRow.className = 'column-config-reset';
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'column-config-reset-btn';
+    resetBtn.textContent = '重置为默认显示';
+    resetBtn.onclick = async () => {
+        columnVisibility = normalizeColumnVisibility({});
+        try {
+            await storageHelper.set(CONFIG.COLUMN_VISIBILITY_STORAGE_KEY, columnVisibility);
+        } catch (err) {
+            console.error('保存列配置失败:', err);
+        }
+        renderTable();
+        applyColumnVisibilityToHeader();
+        renderColumnConfigPanel();
+        showToast('已恢复所有列为默认显示', 'success');
+    };
+    resetRow.appendChild(resetBtn);
+    panel.appendChild(resetRow);
 
     TABLE_COLUMNS.forEach(col => {
         const row = document.createElement('label');
@@ -292,6 +380,7 @@ async function initColumnVisibility() {
         columnVisibility = normalizeColumnVisibility({});
     }
 
+    initColWidths();
     renderColumnConfigPanel();
     applyColumnVisibilityToHeader();
 
