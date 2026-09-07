@@ -544,7 +544,11 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
 - 🧹 **收敛穿透链路的刷屏日志**：`[holdings][mobapi]`（`Datas=null` 是本环境常态，每只基金每次刷新都打）、`[stock-quotes]` 三条成功日志、`[penetration]*` 系列，统一由全局开关 `PEN_DEBUG` 控制（默认关闭，console 保持干净；排查时在 console 执行 `PEN_DEBUG = true` 即可恢复全部诊断输出）。失败与异常告警（`console.warn`）一律保留。
 - 🗑️ 移除已完成使命的 `[diag][item-build]` 调试探针。
 
-### v3.5.0 (2026-08-27) - 持仓穿透估值引擎：门控修复 + 双源兜底（修复「无估值」）
+### v3.5.0 (2026-08-15 ~ 2026-08-27) - 穿透估值引擎 + 收益日历重构 + 成本口径严格化
+
+> 本版迭代跨度较长，期间 manifest 版本号未随每轮迭代递增，故合并为一个版本条目、按迭代日期倒序分节。
+
+#### 08-27 · 持仓穿透估值引擎：门控修复 + 双源兜底（修复「无估值」）
 
 - 🐛 **穿透估值触发门控修复**：原 `popup_perf_data.js` 用 `hasUsableLiveEstimate(live)`（price>0 && rate≠null）判断是否「已有估值」而跳过穿透。但纯债/定开债/FOF 的 fundgz 返回 `gsz==dwjz`（price=昨收净值、rate=0 但非 null），被误判为有效估值，导致穿透引擎**从未触发**、这些基金在 15:00 前完全无盘中参考。
 - ✅ 新门控 `hasRealIntradayEstimate = hasUsableLiveEstimate && (|rate|>1e-4 || |price-prevPrice|>1e-4)`：仅当官方确实给出有意义的盘中涨跌时才跳过；`gsz==dwjz` 伪估值一律触发穿透。真有估值的基金（含真横盘）不受影响。
@@ -553,58 +557,33 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
 - ✅ 沙箱端到端实测（001258）：pingzhongdata 等权近似 **+0.33% / estPrice 1.5762**，与 fundmobapi 精确口径 **+0.30% / 1.5757** 仅差 0.03%，精度足够；新浪 `hq.sinajs.cn` 经 FETCH_TEXT 代理拉重仓股实时行情，加权算法正确。
 - 📌 行为：二级债基/偏债混合（有股票持仓）15:00 前显示穿透估值 + `[穿透]` 徽章；纯债/定开债（无股票持仓）穿透返回 null，如实显示 `—`（符合既定口径）；纯债 FOF 底层全为债/ETF，盘中加权≈0 时显示穿透 0%；股票代码（如 000070）fundmobapi 无持仓、pingzhongdata 无 stockCodes，如实显示 `—`。
 
-### v3.5.0 (2026-08-26) - 收益日历合计实时重算 + 去重声明
+#### 08-26 · 收益日历：合计实时重算 + 去重声明
 
-#### 日历合计与明细对账修复
+**日历合计与明细对账修复**
 - 🐛 **日历「合计」实时按 byCode 求和、永不读脏字段**：`dailyProfitHistory.byCode` 是「那一天的真实经济效果」（acPrice 模型下已含分红经济效应），日历顶层合计改为 `ΣbyCode` 实时重算，与明细行 profit 之和严格自洽，杜绝历史上 `entry.totalProfit` 与 `byCode` 失同步造成的"明细加总 ≠ 合计"。
 - 🐛 **detail row 删除「合计 = profit + dividend」列**：原 combined 列在 acPrice 模型下与 profit 重复计算（acPrice 已含分红经济效应，+ dividend 即双计）。删除后单只基金行只剩真实盈亏，分红金额仅以 chip 旁注（"当笔为该日现金流入"），不再混入数字求和。
 - 🐛 **`normalizeDailyProfitHistory` 收敛脏数据**：原本优先用 `entry.totalProfit/totalDividend` 覆盖重算的 Σ值，会把历史上的脏字段固化下来。现改为强制以 byCode 之和为准——所有写入路径（`recordDailyProfitHistory` / `backfillMissingDailyProfitHistory` / `mergeDailyProfitHistories`）的末步都经过这道收敛，保证下次任意结算/日历打开后总量与明细恒等。
 
-#### 代码复用 / UI 减少重复
+**代码复用 / UI 减少重复**
 - 🧹 新增共用 helper `sumEntryByCodeOnly(entry)` 与 `sumEntryCashDividends(entry)`，日历顶部「选中日合计」、月合计、年合计、历史合计、detail 颜色判断全部走同一套求和逻辑，删除 5 处重复手算（`Object.values(...).reduce(...)`），主页面"昨日收益列求和"沿用 `dailyProfitHistory.byCode` 同一份数据源，与日历完全一致。
 
-### v3.5.0 (2026-08-26) - 收益日历分红标注修复
+#### 08-26 · 收益日历：分红标注修复
 
-#### 收益日历分红落库修复
+**收益日历分红落库修复**
 - 🐛 **日历"分"标记与分红明细不再为空**：`backfillMissingDailyProfitHistory` 此前只统计 `status === 'confirmed'` 的分红订单，而自动检测到的分红在现金未到账前是 `pending` 单，导致已被检测出的分红（如 004433 / 021584）始终不出现在收益日历。现改为：只要交易流水里存在该自动分红单（无论到账与否），就在日历的 `dividendsByCode` 显式标注——除息日与每份金额均为已确定事实，不应因未到账而消失。仅「手动录入且仍 pending」的分红单不计入，避免误标。
 - 🐛 **手动「触发日结算」同样回填分红**：`manualSettlement` 原先只跑 `recordDailyProfitHistory`（只写收益、不写分红），现补跑一次历史回溯，使手动结算路径的日历也能显示分红。
 
-#### 僵尸参数清理
+**僵尸参数清理**
 - 🗑️ 移除 `reconcileDailyProfitHistory` 的 `dominantMarketPrevPriceDate` 僵尸门控（与 README 既定方向一致）：该参数非空才允许跑历史回溯，否则整体跳过，是上次 `dominantMarketPrevPriceDate` 清理遗漏的残留。移除后无论当日是否有主流市场净值日期，回溯都会执行，分红必落日历。
 - 🗑️ 删除已无调用方的 `getDominantMarketPrevPriceDate` 死函数及其在 `popup_perf_data.js` 的未使用局部变量。
 
-### v3.5.0 (2026-08-15) - 昨日收益严格化 + 区间涨幅官方接口 + 性能与 UI 修复
+#### 08-24 · 收益日历 UI 解耦 + 累计成本计算重构 + 表格动态冻结列
 
-#### 昨日收益口径严格化
-- 🐛 **昨日收益严格按自然日**：仅当 `prevPriceDate === 昨日` 才计入昨日收益，昨天无净值更新（节假日/QDII/定开债滞后）的基金显示为 —，并在下方橙色标注最近结算日期，不再用更早的结算收益冒充昨日
-- 🐛 **总额不再虚增**：`sumYesterdayProfit` 严格过滤，昨日无更新的基金不计入总额
-
-#### 区间涨跌幅对齐平台
-- ✨ **接入天天基金 FundMNPeriodIncrease 官方区间涨幅接口**（`fetchFundPeriodReturns`），与微众银行等平台数据源一致
-- 🐛 **走势图尖刺修复**：归一化序列优先用累计净值（acPrice），缺失处按相邻比例桥接，消除 acPrice/price 混用导致的尖刺
-- 🐛 **区间涨幅锚点修正**：目标日有净值用目标日，否则取前一交易日（平台口径）；缓存版本迭代 V2→V5
-
-#### 历史同步优化
-- ⚡ **每天仅首次刷新执行历史同步**：内存 + 存储双标记门控，避免每次刷新都重跑全量同步；新基金当天强制补齐
-- 🐛 **全量历史同步去除起始日期限制**：自动递归补齐，不再硬编码下界
-
-#### 性能与 UI
-- ⚡ **业绩刷新改分批并发**：`fetchAllFundPerfData` 由串行 `sleep(500)` 改为每批 5 个并发、批间 300ms 限流，20 基金从 ~10s 降至 ~2-3s
-- 🐛 **净值列内联 padding 修复**：删除 `tdNav.style.cssText` 内联 padding（曾覆盖 CSS 导致调 padding 无效），改由 CSS 统一控制
-- 🎨 **表格列宽收紧**：区间列 72→64，冻结列小幅收窄，`sticky left` 同步重算
-- 🎨 **列间距收紧**：`th,td` padding 全屏 `5px 4px` / 小窗 `5px 3px`，并修正小窗覆盖规则
-
-#### 代码清理
-- 🗑️ 删除过时诊断脚本 `diagnostic_161725.js`
-- 🐛 历史同步 `checkAndFillHistoryGaps` 改 `await` + try/catch，失败当天可重试
-
-### v3.5.0 (2026-08-24) - 收益日历 UI 解耦 + 累计成本计算重构 + 表格动态冻结列
-
-#### 架构与模块化
+**架构与模块化**
 - 📅 **收益日历 UI 独立模块化**：从 `popup_settlement_rollback.js` 拆分出纯展示层 `popup_profit_calendar_ui.js`（~586 行），使结算回滚算法（纯数据流与逆推推导）与日历弹窗/视图切换（DOM 渲染）完全解耦，大幅降低单文件体量与维护难度。
 - 📦 **依赖与引入规范**：在 `popup.html` 明确按层级组织脚本依赖，保持离线优先与轻量化原生加载。
 
-#### 金融收益与成本算法重构
+**金融收益与成本算法重构**
 - 💰 **解决累计收益率分母失真**：新增 `calculateTotalInvestedCostFromOrders()` 与 `calculatePositionCostFromOrders()`：
   - 精确累加 `initial`、`add`、`dividend_reinvest` 等已确认买入订单流水，作为累计收益率计算的真实投入本金分母，彻底解决多次减仓/清仓后使用 `amount - holdProfit` 导致分母接近 0 或失真的问题。
   - 支持无完整流水时的 `amount - holdProfit` 兜底平滑回退。
@@ -612,16 +591,41 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
   - 严格展示昨日（自然日）真实结算收益，非最新结算日收益标注具体结算日期；
   - 表格独立支持 `positionProfit`（持仓累计收益）列排序与汇总。
 
-#### 界面交互与布局优化
+**界面交互与布局优化**
 - 📐 **`<colgroup>` 显式定宽与 `updateStickyLeft` 动态冻结**：
   - 在 `popup.html` 中引入 `<colgroup>` 规范 18 列基准宽度，解决 `table-layout: fixed` 布局抖动；
   - `popup.js` 新增 `updateStickyLeft()`，动态累加所有可见冻结列宽度，无论列开关如何配置，冻结列均可平滑前移对齐，不再出现错位或空白。
 - ⚙️ **列配置面板增强**：支持 `positionProfit` 列独立显隐持久化与一键重置默认布局。
 
-#### 安全与网络底层升级
+**安全与网络底层升级**
 - 🔒 **全链路 XSS 防御**：对基金名称、重仓股票名/代码、估值时间、接口错误提示等全部统一加上 `escapeHtml()` 转义，阻断潜在 DOM 注入风险。
 - 🌐 **MV3 `declarativeNetRequest` 动态规则**：`background.js` 新增针对天天基金 F10（`FundArchivesDatas.aspx`）的 Referer 动态规则，稳定支持重仓股数据获取；重构 `popup_api_settings.js` 接口配置与点路径解析 (`getValueByPath`)。
 - 🛡️ **离线净值走势兜底**：`loadMyReturnPeriod` 增加 `HistoryDB` 本地日涨幅回退提取，确保未先查看业绩走势 tab 时收益分析依然完整可用。
+
+#### 08-15 · 昨日收益严格化 + 区间涨幅官方接口 + 性能与 UI 修复
+
+**昨日收益口径严格化**
+- 🐛 **昨日收益严格按自然日**：仅当 `prevPriceDate === 昨日` 才计入昨日收益，昨天无净值更新（节假日/QDII/定开债滞后）的基金显示为 —，并在下方橙色标注最近结算日期，不再用更早的结算收益冒充昨日
+- 🐛 **总额不再虚增**：`sumYesterdayProfit` 严格过滤，昨日无更新的基金不计入总额
+
+**区间涨跌幅对齐平台**
+- ✨ **接入天天基金 FundMNPeriodIncrease 官方区间涨幅接口**（`fetchFundPeriodReturns`），与微众银行等平台数据源一致
+- 🐛 **走势图尖刺修复**：归一化序列优先用累计净值（acPrice），缺失处按相邻比例桥接，消除 acPrice/price 混用导致的尖刺
+- 🐛 **区间涨幅锚点修正**：目标日有净值用目标日，否则取前一交易日（平台口径）；缓存版本迭代 V2→V5
+
+**历史同步优化**
+- ⚡ **每天仅首次刷新执行历史同步**：内存 + 存储双标记门控，避免每次刷新都重跑全量同步；新基金当天强制补齐
+- 🐛 **全量历史同步去除起始日期限制**：自动递归补齐，不再硬编码下界
+
+**性能与 UI**
+- ⚡ **业绩刷新改分批并发**：`fetchAllFundPerfData` 由串行 `sleep(500)` 改为每批 5 个并发、批间 300ms 限流，20 基金从 ~10s 降至 ~2-3s
+- 🐛 **净值列内联 padding 修复**：删除 `tdNav.style.cssText` 内联 padding（曾覆盖 CSS 导致调 padding 无效），改由 CSS 统一控制
+- 🎨 **表格列宽收紧**：区间列 72→64，冻结列小幅收窄，`sticky left` 同步重算
+- 🎨 **列间距收紧**：`th,td` padding 全屏 `5px 4px` / 小窗 `5px 3px`，并修正小窗覆盖规则
+
+**代码清理**
+- 🗑️ 删除过时诊断脚本 `diagnostic_161725.js`
+- 🐛 历史同步 `checkAndFillHistoryGaps` 改 `await` + try/catch，失败当天可重试
 
 ### v3.4.0 (2026-08-07) - 持仓累计收益 + 代码审查与统一
 
