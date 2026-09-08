@@ -339,12 +339,17 @@ async function fetchFundPerfData(code) {
 }
 
 let fundPerfRefreshPromise = null;
+let fundPerfRunVersion = 0;
 
 async function fetchAllFundPerfData(fundsOverride = null) {
     if (!document.body.classList.contains('is-fullscreen')) return;
-    if (fundPerfRefreshPromise) return fundPerfRefreshPromise;
+    // 版本号取代纯 promise 去重：每次调用发新版本，在途旧任务在批间检查点
+    // 提前终止（不再发后续网络批次、不写缓存），避免快速连续刷新时旧任务
+    // 带着过期的 funds 快照跑完全程并与新任务叠加请求。
+    const myVersion = ++fundPerfRunVersion;
+    const isStale = () => myVersion !== fundPerfRunVersion;
 
-    fundPerfRefreshPromise = (async () => {
+    const myPromise = (async () => {
         await ensureFundPerfDailyCacheLoaded();
         const funds = fundsOverride || (await storageHelper.getAll(['myFunds'])).myFunds || {};
         const codes = allFundsData.map(d => d.code);
@@ -361,6 +366,7 @@ async function fetchAllFundPerfData(fundsOverride = null) {
         let cacheChanged = false;
 
         const syncedFlags = await storageHelper.get('fullHistorySyncedFlags', {});
+        if (isStale()) return;
 
         // 第一遍：同步填充缓存命中项并立即渲染，收集需要刷新的 code
         const needFetch = [];
@@ -383,9 +389,11 @@ async function fetchAllFundPerfData(fundsOverride = null) {
         // 改分批后：20 个基金 ≈ 4 批 × ~500ms ≈ 2-3s，且批内并发请求。
         const PERF_BATCH_SIZE = 5;
         for (let i = 0; i < needFetch.length; i += PERF_BATCH_SIZE) {
+            if (isStale()) return; // 已被新一轮刷新取代：停止发后续网络批次
             const batch = needFetch.slice(i, i + PERF_BATCH_SIZE);
             await Promise.all(batch.map(async (code) => {
                 const fetchedPerf = await fetchFundPerfData(code);
+                if (isStale()) return; // 等待期间被取代：丢弃结果，不写缓存不刷行
                 if (fetchedPerf) {
                     fundPerfDailyCacheByCode[code] = {
                         asOfDate: today,
@@ -417,14 +425,17 @@ async function fetchAllFundPerfData(fundsOverride = null) {
             }
         }
 
-        if (cacheChanged) {
+        if (cacheChanged && !isStale()) {
             await persistFundPerfDailyCache();
         }
-    })().finally(() => {
-        fundPerfRefreshPromise = null;
-    });
+    })();
 
-    return fundPerfRefreshPromise;
+    fundPerfRefreshPromise = myPromise;
+    myPromise.finally(() => {
+        // 只有最后一次任务才清槽位：被取代的旧任务不能把新任务的 promise 清掉
+        if (fundPerfRefreshPromise === myPromise) fundPerfRefreshPromise = null;
+    });
+    return myPromise;
 }
 
 function renderFundPerfCells(tr, code) {

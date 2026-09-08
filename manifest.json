@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "资产收益助手",
-  "version": "3.6.0",
+  "version": "3.7.0",
   "description": "实时资产收益追踪器，支持基金/期货、OCR识别、指数行情与自动结算",
   "permissions": [
     "storage",
@@ -24,6 +24,7 @@
     "https://fundsuggest.eastmoney.com/*",
     "https://fundmobapi.eastmoney.com/*",
     "https://push2.eastmoney.com/*",
+    "https://82.push2.eastmoney.com/*",
     "https://push2ex.eastmoney.com/*",
     "https://qt.gtimg.cn/*",
     "https://query1.finance.yahoo.com/*",

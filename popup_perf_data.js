@@ -32,8 +32,33 @@ async function loadData(options = {}) {
     return _loadDataPromise;
 }
 
+// _loadDataImpl 编排器：只做阶段调度与统一错误兜底。
+// 各阶段通过 ctx 共享状态（funds/fetchedData/tradeOrdersMap 等），任一阶段抛错
+// 都会中断后续阶段并走统一错误处理——与原来单函数的行为一致。
 async function _loadDataImpl({ skipLiveRequests = false } = {}) {
     try {
+        const ctx = await _phaseLoadDataInit({ skipLiveRequests });
+        await _phaseFetchLiveData(ctx);
+        await _phaseApplyPenetration(ctx);
+        await _phaseDividendsAndSettlement(ctx);
+        await _phaseProcessFunds(ctx);
+        _phaseRecordIntradayPoints(ctx);
+        await _phasePersistAndNotify(ctx);
+        await _phaseRenderAndBackground(ctx);
+    } catch (error) {
+        console.error('[_loadDataImpl] 数据加载失败:', error);
+        showToast(`数据加载失败: ${error.message}`, 'error');
+        elements.statusText.innerText = '数据加载失败，请重试';
+
+        // 确保在错误情况下也显示一个基本的空表格
+        if (allFundsData.length === 0) {
+            renderTable();
+        }
+    }
+}
+
+// 阶段1：初始化——读存储、恢复名称/addedDate、懒加载走势、预取订单 Map
+async function _phaseLoadDataInit({ skipLiveRequests } = {}) {
         clearSelection();
         elements.statusText.innerText = '同步行情中...';
 
@@ -85,16 +110,29 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
             await loadFundHistoryData(codes);
         }
 
-        // 1. 获取行情数据 + 交易订单 Map（两者独立，并发启动）
-        let fetchedData = [];
-        // 提前启动 buildTradeOrdersMap，与行情请求并发
+        // 订单 Map 提前启动，与行情请求并发
         const tradeOrdersMapPromise = buildTradeOrdersMap(codes);
 
-        if (skipLiveRequests) {
+        return {
+            skipLiveRequests,
+            funds, todayStr, dataChanged, codes, results,
+            fetchedData: [],
+            tradeOrdersMapPromise,
+            lastSettlementDate, lastDayProfits, lastUpdateDate,
+            autoSettlementBlockedDate, dailyProfitHistory
+        };
+}
+
+// 阶段2：获取行情数据（实时或快照）+ 全源失败提醒 + 快照持久化
+async function _phaseFetchLiveData(ctx) {
+        const { codes, funds, todayStr } = ctx;
+        let fetchedData = ctx.fetchedData;
+
+        if (ctx.skipLiveRequests) {
             fetchedData = await buildLiveDataFromSnapshot(codes, funds, todayStr);
         }
 
-        if (!skipLiveRequests && codes.length > 0) {
+        if (!ctx.skipLiveRequests && codes.length > 0) {
             fetchedData = await fetchPrioritizedLiveInfo(codes);
             // 记录全源失败的基金（[无估值] 占位、prevPrice=0），在 enrich 补净值之前判定
             const liveFailedCodes = fetchedData
@@ -123,11 +161,16 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
             ]);
         }
 
-        // 智能穿透估值：两条路径（实时 or 快照）均尝试
-        // 对无官方盘中估值（如纯债/二级债基/FOF等GSZ为null）的基金，自动解析重仓持仓实时计算
-        // 注意：持仓数据有12小时内存缓存，15:00后股票停止撮合但我们仍可展示最终加权收益
+        ctx.fetchedData = fetchedData;
+}
+
+// 阶段3：智能穿透估值（实时/快照两条路径均尝试）
+// 对无官方盘中估值（如纯债/二级债基/FOF等GSZ为null）的基金，自动解析重仓持仓实时计算
+// 注意：持仓数据有12小时内存缓存，15:00后股票停止撮合但我们仍可展示最终加权收益
+async function _phaseApplyPenetration(ctx) {
+        const { funds, todayStr, fetchedData } = ctx;
         if (fetchedData.length > 0) {
-            // —— 阶段1：判定哪些基金需要穿透，并收集 prevPrice ——
+            // —— 步骤1：判定哪些基金需要穿透，并收集 prevPrice ——
             const needPen = [];
             for (const entry of fetchedData) {
                 const { code, live } = entry;
@@ -207,22 +250,27 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
                 }
             }));
         }
+}
 
-        const tradeOrdersMap = await tradeOrdersMapPromise;
+// 阶段4：分红检测 + 自动结算（必须在分红检测之后）
+async function _phaseDividendsAndSettlement(ctx) {
+        const { funds, todayStr, fetchedData } = ctx;
+        const tradeOrdersMap = await ctx.tradeOrdersMapPromise;
+        ctx.tradeOrdersMap = tradeOrdersMap;
 
-        // 2. 保留实时接口分红检测；历史分红补录改为按需触发（如添加资产时）
+        // 保留实时接口分红检测；历史分红补录改为按需触发（如添加资产时）
         const dividendsDetectedThisRound = await detectAutoDividends(funds, fetchedData, todayStr, tradeOrdersMap);
         if (dividendsDetectedThisRound) {
             // 本刷产生了新分红订单：让 reconcile 的 backfill 会话缓存失效，
             // 确保收益日历当天就能补写分红标记（否则同日迟检分红要等次日才进日历）
             invalidateDailyProfitBackfillCache();
         }
-        dataChanged = dividendsDetectedThisRound || dataChanged;
+        ctx.dataChanged = dividendsDetectedThisRound || ctx.dataChanged;
 
-        // 3. 自动结算逻辑（在分红检测之后）
+        // 自动结算逻辑（在分红检测之后）
         // 修复：同一天内如果有基金晚到更新，仍允许继续补结算；
         // 只有“今日已执行撤销”时才整天禁止自动结算。
-        const { blockedDate } = parseSettlementState(lastSettlementDate, autoSettlementBlockedDate);
+        const { blockedDate } = parseSettlementState(ctx.lastSettlementDate, ctx.autoSettlementBlockedDate);
         const isRollbackToday = blockedDate === todayStr;
         if (!isRollbackToday) {
             const autoSettlementEntries = collectAutoSettlementEntries(funds, fetchedData);
@@ -230,33 +278,45 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
                 const { backupFunds } = await storageHelper.getAll(['backupFunds']);
                 const settlementSnapshot = createBackupSnapshot({
                     myFunds: funds,
-                    lastUpdateDate,
-                    lastDayProfits,
-                    lastSettlementDate,
-                    autoSettlementBlockedDate,
+                    lastUpdateDate: ctx.lastUpdateDate,
+                    lastDayProfits: ctx.lastDayProfits,
+                    lastSettlementDate: ctx.lastSettlementDate,
+                    autoSettlementBlockedDate: ctx.autoSettlementBlockedDate,
                     backupFunds,
-                    dailyProfitHistory
+                    dailyProfitHistory: ctx.dailyProfitHistory
                 });
                 await autoSettlement(funds, autoSettlementEntries, todayStr, settlementSnapshot);
             }
         }
+}
 
-        // 4. 处理数据 & 自动确认份额
+// 阶段5：逐基金处理——成本反推、分红补齐、份额确认、结果集构造。
+// 不同基金（code）之间相互独立，整循环并行执行（含 persistTradeOrder 的 IndexedDB
+// 写入与 resolveTradeExecutionPrice 的取价），同一基金内部的待确认单仍串行处理
+//（共享 findMatching/去重逻辑）——消除原来 N 只基金全串行的累计等待；
+// 结果按索引写回 results，保持与原 for 循环一致的顺序。
+async function _phaseProcessFunds(ctx) {
+        const { funds, todayStr, fetchedData, tradeOrdersMap, results } = ctx;
+        let dataChanged = ctx.dataChanged;
+
         // 收集所有确认的交易，最后合并通知
         const confirmedTransactions = buildConfirmedTransactionsState();
+        ctx.confirmedTransactions = confirmedTransactions;
 
         // 历史收益数据需要在循环中用于昨日收益展示，所以先在循环前完成 reconcile
         const latestHistoryState = await storageHelper.getAll(['dailyProfitHistory']);
         const normalizedDailyProfitHistory = normalizeDailyProfitHistory(
-            mergeDailyProfitHistories(dailyProfitHistory, latestHistoryState.dailyProfitHistory)
+            mergeDailyProfitHistories(ctx.dailyProfitHistory, latestHistoryState.dailyProfitHistory)
         );
         const { history: nextDailyProfitHistory, changed: dailyProfitHistoryChanged } = await reconcileDailyProfitHistory(
             normalizedDailyProfitHistory,
             funds,
             fetchedData
         );
+        ctx.nextDailyProfitHistory = nextDailyProfitHistory;
+        ctx.dailyProfitHistoryChanged = dailyProfitHistoryChanged;
 
-        for (const { code, live } of fetchedData) {
+        await Promise.all(fetchedData.map(async ({ code, live }, resultIndex) => {
             const item = funds[code];
             if (live && item) {
                 const normalizedItemShares = roundShares(item.shares || 0);
@@ -622,7 +682,7 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
 
                 const codeTradeOrders = tradeOrdersMap.get(code) || [];
                 const totalInvestedCost = calculateTotalInvestedCostFromOrders(codeTradeOrders);
-                results.push({
+                results[resultIndex] = {
                     code,
                     name: live.name,
                     amount: displayAmount,
@@ -662,12 +722,16 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
                     penetrationType: live.penetrationType || '',
                     penetrationDetails: live.penetrationDetails || [],
                     penetrationWeight: live.penetrationWeight || 0
-                });
+                };
             }
-        }
+        }));
+        ctx.dataChanged = dataChanged;
         allFundsData = results.filter(Boolean);
+}
 
-        // 记录实时走势点（每次刷新追加一个时间点到 fundHistoryData）
+// 阶段6：记录实时走势点（每次刷新追加一个时间点到 fundHistoryData）
+function _phaseRecordIntradayPoints(ctx) {
+        const { todayStr } = ctx;
         const now = new Date();
         const hhmm = formatTime(now);
         const shouldRecordIntradayPoint = isIntradayChartTime(hhmm);
@@ -698,7 +762,11 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
             }
         });
         if (fundHistoryChanged) saveFundHistoryData();
+}
 
+// 阶段7：持久化变更 + 合并弹交易确认通知
+async function _phasePersistAndNotify(ctx) {
+        const { funds, results, lastDayProfits, confirmedTransactions, nextDailyProfitHistory, dailyProfitHistoryChanged, dataChanged } = ctx;
         const todayProfits = buildTodayProfits(results);
         const dataToPersist = buildLoadDataPersistPayload({
             todayProfits,
@@ -747,9 +815,13 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
         if (totalConfirmed > 0) {
             showToast(`✅ 已确认 ${totalConfirmed} 笔交易\n${notifications.join('\n')}`, 'success', 4000);
         }
+}
 
+// 阶段8：渲染 + 后台任务（区间涨跌幅、历史缺口同步）
+async function _phaseRenderAndBackground(ctx) {
+        const { funds, todayStr } = ctx;
         updateGroupFilter();
-        await hydrateFundPerfCache(funds, allFundsData.map(item => item.code), tradeOrdersMap);
+        await hydrateFundPerfCache(funds, allFundsData.map(item => item.code), ctx.tradeOrdersMap);
         renderTable();
         lastUpdateTime = new Date().toLocaleTimeString();
         elements.statusText.innerText = `最后更新: ${lastUpdateTime}`;
@@ -770,16 +842,6 @@ async function _loadDataImpl({ skipLiveRequests = false } = {}) {
                 }
             }, 2000);
         }
-    } catch (error) {
-        console.error('[_loadDataImpl] 数据加载失败:', error);
-        showToast(`数据加载失败: ${error.message}`, 'error');
-        elements.statusText.innerText = '数据加载失败，请重试';
-
-        // 确保在错误情况下也显示一个基本的空表格
-        if (allFundsData.length === 0) {
-            renderTable();
-        }
-    }
 }
 
 async function enrichLiveDataWithLocalNavHistory(fetchedData) {

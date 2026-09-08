@@ -11,6 +11,9 @@ const LIVE_API_FIELD_DEFAULTS = Object.freeze({
 const HOLDINGS_API_FIELD_DEFAULTS = Object.freeze({
     stockCode: 'GPDM', stockName: 'GPJC', holdingPercent: 'JZBL', exchange: 'TEXCH', newExchange: 'NEWTEXCH'
 });
+const STOCK_API_FIELD_DEFAULTS = Object.freeze({
+    code: 'f12', name: 'f14', price: 'f2', rate: 'f3'
+});
 const INDEX_API_FIELD_DEFAULTS = Object.freeze({
     indexCode: 'f12', indexName: 'f14', price: 'f2', changeAmount: 'f4', changeRate: 'f3', marketValue: 'f20'
 });
@@ -34,6 +37,10 @@ const API_FIELD_LAYOUTS = Object.freeze({
         ['fieldCode', 'stockCode', '股票代码字段路径'], ['fieldName', 'stockName', '股票名称字段路径'],
         ['fieldPrevPrice', 'holdingPercent', '持仓占比字段路径'], ['fieldPrice', 'exchange', '交易所字段路径'],
         ['fieldRate', 'newExchange', '新交易所字段路径']
+    ],
+    stock: [
+        ['fieldCode', 'code', '股票代码字段路径'], ['fieldName', 'name', '股票名称字段路径'],
+        ['fieldPrice', 'price', '当前价格字段路径'], ['fieldRate', 'rate', '涨跌幅字段路径']
     ],
     index: [
         ['fieldCode', 'indexCode', '指数代码字段路径'], ['fieldName', 'indexName', '指数名称字段路径'],
@@ -145,6 +152,22 @@ const FUND_HOLDINGS_API_SETTINGS = Object.freeze({
     fields: HOLDINGS_API_FIELD_DEFAULTS
 });
 
+const STOCK_EASTMONEY_API_SETTINGS = Object.freeze({
+    source: 'stock_eastmoney', category: 'stock', enabled: true,
+    name: '东财股票行情（Push2）',
+    urlTemplate: 'https://push2.eastmoney.com/api/qt/ulist.np/get?secids={secids}&fields=f12,f14,f2,f3&fltt=2',
+    responseType: 'json', dataPath: 'data.diff', dataKind: 'estimate', requestMode: 'batch',
+    fields: STOCK_API_FIELD_DEFAULTS
+});
+
+const STOCK_TENCENT_API_SETTINGS = Object.freeze({
+    source: 'stock_tencent', category: 'stock', enabled: true,
+    name: '腾讯股票行情（Qt.gtimg）',
+    urlTemplate: 'https://qt.gtimg.cn/q={codes}',
+    responseType: 'tencent_stock', dataPath: '', dataKind: 'estimate', requestMode: 'batch',
+    fields: { code: 'code', name: 'name', price: 'price', rate: 'rate' }
+});
+
 const MARKET_INDEX_API_SETTINGS = Object.freeze({
     source: 'market_index', category: 'index', enabled: true,
     name: '市场指数行情',
@@ -195,8 +218,8 @@ const HOLIDAY_CALENDAR_API_SETTINGS = Object.freeze({
     fields: LIVE_API_FIELD_DEFAULTS
 });
 
-const API_CATEGORIES = Object.freeze(['live', 'history', 'holdings', 'index', 'breadth', 'calendar']);
-const API_CATEGORY_LABELS = Object.freeze({ live: '实时', history: '历史', holdings: '重仓', index: '指数', breadth: '涨跌', calendar: '日历' });
+const API_CATEGORIES = Object.freeze(['live', 'history', 'holdings', 'stock', 'index', 'breadth', 'calendar']);
+const API_CATEGORY_LABELS = Object.freeze({ live: '实时', history: '历史', holdings: '重仓', stock: '股票', index: '指数', breadth: '涨跌', calendar: '日历' });
 
 let liveApiSettings = normalizeLiveApiSettings(null);
 let liveApiProfiles = [];
@@ -448,7 +471,7 @@ function normalizeLiveApiFields(fields, defaults = LIVE_API_FIELD_DEFAULTS) {
 }
 
 function normalizeLiveApiSettings(value) {
-    const source = ['fundgz', 'custom', 'wealthagent', 'fundvaluationlast', 'fundvaluationlast_single', 'sina', 'eastmoney_history', 'fund_holdings', 'market_index', 'market_index_tencent', 'market_index_sina', 'market_index_yahoo', 'market_breadth', 'holiday_calendar'].includes(value?.source) ? value.source : 'fundgz';
+    const source = ['fundgz', 'custom', 'wealthagent', 'fundvaluationlast', 'fundvaluationlast_single', 'sina', 'eastmoney_history', 'fund_holdings', 'stock_eastmoney', 'stock_tencent', 'market_index', 'market_index_tencent', 'market_index_sina', 'market_index_yahoo', 'market_breadth', 'holiday_calendar'].includes(value?.source) ? value.source : 'fundgz';
     const defaults = source === 'wealthagent'
         ? WEALTHAGENT_LIVE_API_SETTINGS
         : source === 'fundvaluationlast' ? FUND_VALUATION_LAST_SETTINGS
@@ -456,17 +479,20 @@ function normalizeLiveApiSettings(value) {
                 : source === 'sina' ? SINA_LIVE_API_SETTINGS
                     : source === 'eastmoney_history' ? EASTMONEY_HISTORY_API_SETTINGS
                         : source === 'fund_holdings' ? FUND_HOLDINGS_API_SETTINGS
-                            : source === 'market_index' ? MARKET_INDEX_API_SETTINGS
-                                : source === 'market_index_tencent' ? MARKET_INDEX_TENCENT_API_SETTINGS
-                                    : source === 'market_index_sina' ? MARKET_INDEX_SINA_API_SETTINGS
-                                        : source === 'market_index_yahoo' ? MARKET_INDEX_YAHOO_API_SETTINGS
-                                            : source === 'market_breadth' ? MARKET_BREADTH_API_SETTINGS
-                                                : source === 'holiday_calendar' ? HOLIDAY_CALENDAR_API_SETTINGS : DEFAULT_LIVE_API_SETTINGS;
+                            : source === 'stock_eastmoney' ? STOCK_EASTMONEY_API_SETTINGS
+                                : source === 'stock_tencent' ? STOCK_TENCENT_API_SETTINGS
+                                    : source === 'market_index' ? MARKET_INDEX_API_SETTINGS
+                                        : source === 'market_index_tencent' ? MARKET_INDEX_TENCENT_API_SETTINGS
+                                            : source === 'market_index_sina' ? MARKET_INDEX_SINA_API_SETTINGS
+                                                : source === 'market_index_yahoo' ? MARKET_INDEX_YAHOO_API_SETTINGS
+                                                    : source === 'market_breadth' ? MARKET_BREADTH_API_SETTINGS
+                                                        : source === 'holiday_calendar' ? HOLIDAY_CALENDAR_API_SETTINGS : DEFAULT_LIVE_API_SETTINGS;
     const rawTemplate = safeString(value?.urlTemplate, defaults.urlTemplate);
     const category = API_CATEGORIES.includes(value?.category) ? value.category : (defaults.category || 'live');
     const categoryFieldDefaults = category === 'holdings' ? HOLDINGS_API_FIELD_DEFAULTS
-        : category === 'index' ? INDEX_API_FIELD_DEFAULTS
-            : category === 'breadth' ? BREADTH_API_FIELD_DEFAULTS : defaults.fields;
+        : category === 'stock' ? STOCK_API_FIELD_DEFAULTS
+            : category === 'index' ? INDEX_API_FIELD_DEFAULTS
+                : category === 'breadth' ? BREADTH_API_FIELD_DEFAULTS : defaults.fields;
     return {
         source,
         category,
@@ -477,7 +503,7 @@ function normalizeLiveApiSettings(value) {
             : rawTemplate,
         secondaryUrlTemplate: safeString(value?.secondaryUrlTemplate, defaults.secondaryUrlTemplate || ''),
         secondaryDataPath: safeString(value?.secondaryDataPath, defaults.secondaryDataPath || ''),
-        responseType: ['auto', 'json', 'jsonp', 'eastmoney_js', 'tencent_index', 'sina_index', 'yahoo_index'].includes(value?.responseType) ? value.responseType : defaults.responseType,
+        responseType: ['auto', 'json', 'jsonp', 'eastmoney_js', 'tencent_index', 'sina_index', 'yahoo_index', 'tencent_stock'].includes(value?.responseType) ? value.responseType : defaults.responseType,
         dataPath: safeString(value?.dataPath, defaults.dataPath),
         dataKind: value?.dataKind === 'nav' ? 'nav' : defaults.dataKind,
         requestMode: value?.requestMode === 'batch' ? 'batch' : defaults.requestMode,
@@ -502,6 +528,8 @@ function createDefaultLiveApiProfiles() {
         createLiveApiProfile('wealthagent_local', { ...WEALTHAGENT_LIVE_API_SETTINGS, category: 'live', enabled: false }),
         createLiveApiProfile('eastmoney_history_default', EASTMONEY_HISTORY_API_SETTINGS),
         createLiveApiProfile('fund_holdings_default', FUND_HOLDINGS_API_SETTINGS),
+        createLiveApiProfile('stock_eastmoney_default', STOCK_EASTMONEY_API_SETTINGS),
+        createLiveApiProfile('stock_tencent_default', STOCK_TENCENT_API_SETTINGS),
         createLiveApiProfile('market_index_default', MARKET_INDEX_API_SETTINGS),
         createLiveApiProfile('market_index_tencent_default', MARKET_INDEX_TENCENT_API_SETTINGS),
         createLiveApiProfile('market_index_sina_default', MARKET_INDEX_SINA_API_SETTINGS),
@@ -518,6 +546,8 @@ function getApiProfileIdentity(profile) {
     template = template.replaceAll('{code}', '{codes}');
     if (template.includes('/fundvaluationlast')) template = `tiantian-fundvaluationlast-${safeString(profile?.source, '')}-${safeString(profile?.requestMode, '')}`;
     if (category === 'history' && template.includes('/pingzhongdata/')) template = 'eastmoney-pingzhongdata';
+    if (category === 'stock' && template.includes('/ulist.np/')) return 'stock-eastmoney-push2';
+    if (category === 'stock' && template.includes('qt.gtimg.cn')) return 'stock-tencent-gtimg';
     if (template.includes('/fdfundservice.getestimatenetworthpic')) template = 'sina-estimate-networth';
     return `${category}|${template}`;
 }
@@ -601,6 +631,13 @@ function getSystemApiSettings(category, fallback) {
 
 function getEnabledApiProfileBySource(source, fallback = null) {
     return liveApiProfiles.find(profile => profile.source === source && profile.enabled !== false) || fallback;
+}
+
+function getEnabledStockApiProfiles() {
+    const list = liveApiProfiles.filter(profile => profile.category === 'stock' && profile.enabled !== false);
+    if (list.length > 0) return list;
+    // 兜底返回默认配置
+    return [STOCK_EASTMONEY_API_SETTINGS, STOCK_TENCENT_API_SETTINGS];
 }
 
 async function fetchPrioritizedHistoryText(code) {
@@ -958,7 +995,7 @@ function updateLiveApiSettingsButton() {
     if (!elements.apiSettingsBtn) return;
     const liveCount = getEnabledApiProfiles('live').length;
     const historyCount = getEnabledApiProfiles('history').length;
-    const systemCount = ['holdings', 'index', 'breadth', 'calendar'].filter(category => getEnabledApiProfiles(category).length > 0).length;
+    const systemCount = ['holdings', 'stock', 'index', 'breadth', 'calendar'].filter(category => getEnabledApiProfiles(category).length > 0).length;
     elements.apiSettingsBtn.title = `数据源管理：实时 ${liveCount}，历史 ${historyCount}，功能 ${systemCount}`;
     elements.apiSettingsBtn.setAttribute('aria-label', elements.apiSettingsBtn.title);
 }
@@ -1029,12 +1066,72 @@ function liveApiSettingsFromForm(getField) {
 }
 
 async function testLiveApiSettings(settings, code) {
-    if (['holdings', 'index', 'breadth', 'calendar'].includes(settings.category)) {
+    if (['holdings', 'stock', 'index', 'breadth', 'calendar'].includes(settings.category)) {
         let url = settings.urlTemplate
             .replaceAll('{code}', encodeURIComponent(code.split(',')[0].trim() || '000001'))
-            .replaceAll('{secids}', '1.000001,0.399001')
+            .replaceAll('{secids}', '1.600118,0.000001')
+            .replaceAll('{codes}', 'sh600118,sz000001')
             .replaceAll('{timestamp}', String(Date.now()))
             .replaceAll('{random}', String(Math.random()));
+
+        if (settings.category === 'stock') {
+            if (settings.source === 'stock_tencent' || settings.responseType === 'tencent_stock') {
+                const testUrl = settings.urlTemplate
+                    .replaceAll('{codes}', 'sh600118,sz000001')
+                    .replaceAll('{code}', 'sh600118')
+                    .replaceAll('{timestamp}', String(Date.now()))
+                    .replaceAll('{random}', String(Math.random()));
+                const response = await fetch(testUrl);
+                const buffer = await response.arrayBuffer();
+                const text = new TextDecoder('gbk').decode(buffer);
+                const results = [];
+                text.split(';').forEach(line => {
+                    const match = line.match(/v_([a-z0-9]+)="(.+)"/);
+                    if (!match) return;
+                    const parts = match[2].split('~');
+                    if (parts.length > 32) {
+                        const price = parseFloat(parts[3]) || 0;
+                        const rate = parseFloat(parts[32]) || 0;
+                        results.push(`${parts[1]} ${price > 0 ? price.toFixed(2) : '--'}（${rate >= 0 ? '+' : ''}${rate.toFixed(2)}%）`);
+                    }
+                });
+                if (results.length === 0) throw new Error('腾讯股票接口未返回有效行情');
+                return { systemSummary: results.join('；') };
+            }
+
+            // 东财 push2 或兼容接口测试
+            const testUrl = settings.urlTemplate
+                .replaceAll('{secids}', '1.600118,0.000001')
+                .replaceAll('{codes}', '1.600118,0.000001')
+                .replaceAll('{code}', '1.600118')
+                .replaceAll('{timestamp}', String(Date.now()))
+                .replaceAll('{random}', String(Math.random()));
+            let resText = null;
+            if (typeof proxyFetchText === 'function') {
+                try {
+                    resText = await proxyFetchText(testUrl, {
+                        timeout: 5000,
+                        headers: { 'Referer': 'https://quote.eastmoney.com/', 'Accept': 'application/json, text/plain, */*' }
+                    });
+                } catch (_) {}
+            }
+            if (!resText) {
+                resText = await fetchConfiguredLiveApiText(testUrl, 10000);
+            }
+            const payload = parseJsonApiPayload(resText, settings.responseType);
+            const data = getValueByPath(payload, settings.dataPath);
+            if (!Array.isArray(data) || data.length === 0) {
+                const apiMessage = safeString(payload?.ErrMsg || payload?.ErrorMessage || payload?.Message, '接口未返回有效股票行情');
+                throw new Error(`${apiMessage}（ErrCode: ${payload?.ErrCode ?? payload?.ErrorCode ?? '--'}）`);
+            }
+            const stocks = data.map(item => {
+                const name = safeString(getValueByPath(item, settings.fields.name), getValueByPath(item, settings.fields.code) || '股票');
+                const price = Number(getValueByPath(item, settings.fields.price));
+                const rate = Number(getValueByPath(item, settings.fields.rate));
+                return `${name} ${price > 0 ? price.toFixed(2) : '--'}（${rate >= 0 ? '+' : ''}${Number.isFinite(rate) ? rate.toFixed(2) : '--'}%）`;
+            });
+            return { systemSummary: stocks.join('；') };
+        }
 
         if (settings.category === 'calendar') {
             const year = new Date().getFullYear();
@@ -1231,14 +1328,14 @@ async function openLiveApiSettings() {
         fields: [
             { id: 'profileId', label: '已保存接口', type: 'select', value: current.id, options: profiles.map(profile => ({ value: profile.id, label: profile.name })) },
             { id: 'source', type: 'hidden', value: current.source },
-            { id: 'category', label: '接口分类', type: 'select', value: current.category, options: [{ value: 'live', label: '实时估值' }, { value: 'history', label: '历史净值' }, { value: 'holdings', label: '前十重仓股票' }, { value: 'index', label: '市场指数' }, { value: 'breadth', label: '市场涨跌' }, { value: 'calendar', label: '节假日历' }] },
+            { id: 'category', label: '接口分类', type: 'select', value: current.category, options: [{ value: 'live', label: '实时估值' }, { value: 'history', label: '历史净值' }, { value: 'holdings', label: '前十重仓股票' }, { value: 'stock', label: '股票行情' }, { value: 'index', label: '市场指数' }, { value: 'breadth', label: '市场涨跌' }, { value: 'calendar', label: '节假日历' }] },
             { id: 'enabled', label: '启用状态', type: 'select', value: String(current.enabled !== false), options: [{ value: 'true', label: '已启用' }, { value: 'false', label: '已停用' }] },
             { id: 'requestMode', label: '请求策略', type: 'select', value: current.requestMode, options: [{ value: 'single', label: '逐个请求' }, { value: 'batch', label: '批量请求' }] },
             { id: 'name', label: '接口名称', value: current.name, required: true },
             { id: 'urlTemplate', label: 'URL 模板', value: current.urlTemplate, required: true },
             { id: 'secondaryUrlTemplate', label: '辅助 URL（市场涨跌停）', value: current.secondaryUrlTemplate || '' },
             { id: 'secondaryDataPath', label: '辅助数据路径（涨跌停列表）', value: current.secondaryDataPath || '' },
-            { id: 'responseType', label: '响应类型', type: 'select', value: current.responseType, options: [{ value: 'auto', label: '自动识别' }, { value: 'json', label: 'JSON' }, { value: 'jsonp', label: 'JSONP' }, { value: 'eastmoney_js', label: '东财净值 JS' }, { value: 'tencent_index', label: '腾讯指数文本' }, { value: 'sina_index', label: '新浪指数文本' }, { value: 'yahoo_index', label: 'Yahoo 指数 JSON' }] },
+            { id: 'responseType', label: '响应类型', type: 'select', value: current.responseType, options: [{ value: 'auto', label: '自动识别' }, { value: 'json', label: 'JSON' }, { value: 'jsonp', label: 'JSONP' }, { value: 'eastmoney_js', label: '东财净值 JS' }, { value: 'tencent_stock', label: '腾讯股票文本' }, { value: 'tencent_index', label: '腾讯指数文本' }, { value: 'sina_index', label: '新浪指数文本' }, { value: 'yahoo_index', label: 'Yahoo 指数 JSON' }] },
             { id: 'dataKind', label: '数据语义', type: 'select', value: current.dataKind, options: [{ value: 'estimate', label: '盘中实时估值' }, { value: 'nav', label: '已公布净值' }] },
             { id: 'dataPath', label: '数据路径', value: current.dataPath, placeholder: '例如 data.result；根对象留空' },
             { id: 'fieldCode', label: '基金代码字段路径', value: current.fields.code },
@@ -1275,7 +1372,7 @@ async function openLiveApiSettings() {
                 if (index >= 0) profiles[index] = { id: selectedId, ...liveApiSettingsFromForm(getField) };
             };
             const renderOptions = () => {
-                const categoryIndexes = { live: 0, history: 0, holdings: 0, index: 0, breadth: 0 };
+                const categoryIndexes = { live: 0, history: 0, holdings: 0, stock: 0, index: 0, breadth: 0, calendar: 0 };
                 profileSelect.replaceChildren(...profiles.map(profile => {
                     const option = document.createElement('option');
                     option.value = profile.id;
@@ -1289,7 +1386,7 @@ async function openLiveApiSettings() {
             const sync = () => {
                 const eastmoneyJs = responseType.value === 'eastmoney_js';
                 const category = getField('category').value;
-                const operational = ['holdings', 'index', 'breadth', 'calendar'].includes(category);
+                const operational = ['holdings', 'stock', 'index', 'breadth', 'calendar'].includes(category);
                 const secondaryGroup = getField('secondaryUrlTemplate').closest('.form-group');
                 const secondaryLabel = secondaryGroup?.querySelector('label');
                 const secondaryDataGroup = getField('secondaryDataPath').closest('.form-group');
@@ -1299,7 +1396,7 @@ async function openLiveApiSettings() {
                 if (secondaryGroup) secondaryGroup.style.display = ['holdings', 'breadth'].includes(category) ? '' : 'none';
                 if (secondaryLabel) secondaryLabel.textContent = category === 'holdings' ? '备用 URL（F10 持仓）' : '辅助 URL（市场涨跌停）';
                 if (secondaryDataGroup) secondaryDataGroup.style.display = category === 'breadth' ? '' : 'none';
-                getField('testCode').disabled = !['live', 'history', 'holdings'].includes(category);
+                getField('testCode').disabled = !['live', 'history', 'holdings', 'stock'].includes(category);
             };
             profileSelect.addEventListener('change', () => {
                 rememberCurrent();
@@ -1311,8 +1408,9 @@ async function openLiveApiSettings() {
             getField('category').addEventListener('change', () => {
                 const category = getField('category').value;
                 const defaults = category === 'holdings' ? HOLDINGS_API_FIELD_DEFAULTS
+                    : category === 'stock' ? STOCK_API_FIELD_DEFAULTS
                     : category === 'index' ? INDEX_API_FIELD_DEFAULTS
-                        : category === 'breadth' ? BREADTH_API_FIELD_DEFAULTS : LIVE_API_FIELD_DEFAULTS;
+                    : category === 'breadth' ? BREADTH_API_FIELD_DEFAULTS : LIVE_API_FIELD_DEFAULTS;
                 applyApiFieldsToForm(getField, category, defaults);
                 sync();
             });

@@ -1,91 +1,42 @@
 // ==================== 请求 / 行情 / 历史净值接口域 ====================
 
-function proxyFetchSina(url, timeout = 5000) {
+// 三个 proxyFetch* 的公共骨架：超时兜底 + lastError 兜底 + 一次性 resolve。
+// extract 负责从成功响应中提取返回值；任何失败路径都 resolve(null)（调用方按"无数据"降级）。
+function _proxySendMessage(message, timeout, extract) {
     return new Promise((resolve) => {
         let resolved = false;
-        const timer = setTimeout(() => {
-            if (!resolved) {
-                resolved = true;
-                resolve(null);
-            }
-        }, timeout);
-
-        chrome.runtime.sendMessage({ type: 'FETCH_SINA', url }, (response) => {
+        const done = (value) => {
             if (resolved) return;
             resolved = true;
             clearTimeout(timer);
-
-            if (chrome.runtime.lastError) {
-                resolve(null);
+            resolve(value);
+        };
+        const timer = setTimeout(() => done(null), timeout);
+        chrome.runtime.sendMessage(message, (response) => {
+            if (chrome.runtime.lastError || !response?.success || !response.data) {
+                done(null);
                 return;
             }
-
-            if (response && response.success && response.data) {
-                const content = response.data.match(/"([^"]*)"/s);
-                resolve(content ? content[1] : null);
-            } else {
-                resolve(null);
-            }
+            done(extract(response.data));
         });
     });
+}
+
+function proxyFetchSina(url, timeout = 5000) {
+    return _proxySendMessage({ type: 'FETCH_SINA', url }, timeout,
+        data => {
+            const content = String(data).match(/"([^"]*)"/s);
+            return content ? content[1] : null;
+        });
 }
 
 function proxyFetchJson(url, { timeout = 5000, headers = {} } = {}) {
-    return new Promise((resolve) => {
-        let resolved = false;
-        const timer = setTimeout(() => {
-            if (!resolved) {
-                resolved = true;
-                resolve(null);
-            }
-        }, timeout);
-
-        chrome.runtime.sendMessage({ type: 'FETCH_JSON', url, headers }, (response) => {
-            if (resolved) return;
-            resolved = true;
-            clearTimeout(timer);
-
-            if (chrome.runtime.lastError) {
-                resolve(null);
-                return;
-            }
-
-            if (response && response.success && response.data) {
-                resolve(response.data);
-            } else {
-                resolve(null);
-            }
-        });
-    });
+    return _proxySendMessage({ type: 'FETCH_JSON', url, headers }, timeout, data => data);
 }
 
 function proxyFetchText(url, { timeout = 5000, headers = {} } = {}) {
-    return new Promise((resolve) => {
-        let resolved = false;
-        const timer = setTimeout(() => {
-            if (!resolved) {
-                resolved = true;
-                resolve(null);
-            }
-        }, timeout);
-
-        chrome.runtime.sendMessage({ type: 'FETCH_TEXT', url, headers }, (response) => {
-            if (resolved) return;
-            resolved = true;
-            clearTimeout(timer);
-
-            if (chrome.runtime.lastError) {
-                resolve(null);
-                return;
-            }
-
-            if (response && response.success && typeof response.data === 'string') {
-                resolve(response.data);
-            } else {
-                resolve(null);
-            }
-        });
-    });
+    return _proxySendMessage({ type: 'FETCH_TEXT', url, headers }, timeout,
+        data => (typeof data === 'string' ? data : null));
 }
 
 async function fetchLiveApiText(url, timeout = CONFIG.API_TIMEOUT) {
@@ -118,7 +69,118 @@ function withTimeout(promise, ms, fallback) {
     return Promise.race([promise, timer]);
 }
 
-async function fetchEastmoneyJson(url, timeout = CONFIG.MARKET_BREADTH_TIMEOUT) {
+// ==================== push2 行情接口闸门 ====================
+// 东财 push2 对请求频率极其敏感：实测同一 URL 间隔 1 秒连发两次，第二次会被直接断连
+//（popup 报 net::ERR_EMPTY_RESPONSE，curl 报 HTTP 000）；间隔 1.5 秒仍偶发断连，
+// 是"上一请求后的冷却窗口"行为。取 1800ms 作为最小间隔留足余量。
+// 启动时涨跌家数(push2)、涨跌停(push2ex)、指数行情(push2)、穿透估值股票行情(push2)
+// 曾并发打出 3~4 个请求，必然触发断连。统一闸门：全局同时只有一个 push2 请求在飞，
+// 请求之间强制最小间隔，失败退避重试一次、再换备用域名（82.push2 为东财备用节点，
+// 部分网络不可用，仅作最后一次尝试）；连续失败则会话级降级提示（不刷屏）。
+const PUSH2_MIN_INTERVAL_MS = 1800;
+// 重试间隔须 ≥ PUSH2_MIN_INTERVAL_MS：task 内部的重试不经过 pump 的最小间隔检查，
+// 若首次请求快速失败（断连是秒级返回），间隔过短的重试仍会撞进东财的冷却窗口
+const PUSH2_RETRY_DELAY_MS = 1800;
+const PUSH2_ATTEMPT_TIMEOUT_MS = 6000;
+const PUSH2_ALT_HOST = 'https://82.push2.eastmoney.com/';
+// 优先级：数值越大越先执行。穿透估值的股票行情在 loadData 关键路径上（priority=1），
+// 涨跌家数/指数行情属于装饰性指标（priority=0），避免首屏被装饰性请求堵住。
+const _push2Queue = [];
+let _push2Running = false;
+let _push2LastRequestAt = 0;
+let _push2DegradedNotified = false;
+
+function _push2Sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function _push2Pump() {
+    if (_push2Running) return;
+    const next = _push2Queue.shift();
+    if (!next) return;
+    _push2Running = true;
+    const waitMs = Math.max(0, _push2LastRequestAt + PUSH2_MIN_INTERVAL_MS - Date.now());
+    if (waitMs > 0) await _push2Sleep(waitMs);
+    try {
+        next.resolve(await next.task());
+    } catch (error) {
+        next.reject(error);
+    } finally {
+        _push2LastRequestAt = Date.now();
+        _push2Running = false;
+        _push2Pump();
+    }
+}
+
+// 串行闸门：无论调用方如何并发，都排队执行；高优先级插队到低优先级之前；
+// 前一个失败不影响后续
+function _enqueuePush2(task, priority = 0) {
+    return new Promise((resolve, reject) => {
+        const entry = { task, priority, resolve, reject };
+        const insertAt = _push2Queue.findIndex(item => item.priority < priority);
+        if (insertAt < 0) _push2Queue.push(entry);
+        else _push2Queue.splice(insertAt, 0, entry);
+        _push2Pump();
+    });
+}
+
+async function _attemptPush2(url) {
+    const headers = {
+        'Referer': 'https://quote.eastmoney.com/',
+        'Accept': 'application/json, text/plain, */*'
+    };
+    const proxied = await proxyFetchText(url, { timeout: PUSH2_ATTEMPT_TIMEOUT_MS, headers }).catch(() => null);
+    if (proxied) return proxied;
+    const direct = await withTimeout(
+        fetch(url, { headers })
+            .then(res => (res.ok ? res.text() : Promise.reject(new Error(`HTTP ${res.status}`))))
+            .catch(() => null),
+        PUSH2_ATTEMPT_TIMEOUT_MS,
+        null
+    );
+    return direct;
+}
+
+// push2 专用取文本：串行 + 退避重试 + 备用域名；全部失败返回 null
+function fetchPush2Text(url, priority = 0) {
+    return _enqueuePush2(async () => {
+        let text = await _attemptPush2(url);
+        if (text) return text;
+        await _push2Sleep(PUSH2_RETRY_DELAY_MS);
+        text = await _attemptPush2(url);
+        if (text) return text;
+        if (url.startsWith('https://push2.eastmoney.com/')) {
+            text = await _attemptPush2(url.replace('https://push2.eastmoney.com/', PUSH2_ALT_HOST));
+        }
+        if (!text && !_push2DegradedNotified) {
+            _push2DegradedNotified = true;
+            console.warn('[push2] 行情接口连续失败（东财限流或网络受限），相关指标降级显示；后续不再重复提示');
+        }
+        return text;
+    });
+}
+
+// push2 专用取 JSON（与 fetchPush2Text 共用闸门）
+async function fetchPush2Json(url, priority = 0) {
+    const text = await fetchPush2Text(url, priority);
+    if (!text) return null;
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        console.warn('[push2] 响应不是合法 JSON:', url.slice(0, 80));
+        return null;
+    }
+}
+
+function isPush2Url(url) {
+    return typeof url === 'string' && url.includes('push2');
+}
+
+async function fetchEastmoneyJson(url, timeout = CONFIG.MARKET_BREADTH_TIMEOUT, priority = 0) {
+    // push2 系接口统一走闸门（串行 + 重试 + 备用域名），避免频控断连
+    if (isPush2Url(url)) {
+        return await fetchPush2Json(url, priority);
+    }
     const direct = await withTimeout(
         fetch(url)
             .then(res => {
@@ -493,40 +555,6 @@ async function _fetchFuturesSina(cleanCode) {
     return { name: `[未知]${cleanCode}`, rate: 0, price: 0, prevPrice: 0 };
 }
 
-async function fetchStockPrices(codes) {
-    if (!codes || codes.length === 0) return {};
-
-    try {
-        const list = codes.join(',');
-        const url = `https://qt.gtimg.cn/q=${list}`;
-        const response = await fetch(url);
-        const buffer = await response.arrayBuffer();
-        const decoder = new TextDecoder('gbk');
-        const text = decoder.decode(buffer);
-
-        const result = {};
-        const lines = text.split(';');
-
-        lines.forEach(line => {
-            if (!line.trim() || !line.includes('~')) return;
-
-            const parts = line.split('~');
-            if (parts.length < 33) return;
-
-            const match = parts[0].match(/v_([a-z0-9]+)=/);
-            if (!match) return;
-            const fullCode = match[1];
-            const rate = parseFloat(parts[32]) || 0;
-            result[fullCode] = { rate };
-        });
-
-        return result;
-    } catch (err) {
-        console.error('获取股票行情失败:', err);
-        return {};
-    }
-}
-
 // ==================== 持仓穿透估值引擎 (Holdings Penetration Engine) ====================
 
 const _fundHoldingsMemoryCache = new Map(); // code -> { timestamp, ttl, data }
@@ -615,6 +643,141 @@ async function tryFetchFundMobapi(cleanCode) {
     }
 }
 
+const _stockSourceCooldowns = new Map();
+
+async function _fetchStockQuotesFromEastmoney(stocks, profile) {
+    const secids = stocks.map(s => {
+        const c = s.code;
+        const prefix = /^[69]/.test(c) || /^5/.test(c) ? '1' : '0';
+        return `${prefix}.${c}`;
+    });
+    const url = profile.urlTemplate.replaceAll('{secids}', encodeURIComponent(secids.join(',')));
+    let text = null;
+    if (isPush2Url(url)) {
+        // 东财 push2 系接口必须走全局串行闸门（与指数/涨跌家数互斥，避免频控断连）。
+        // priority=1：穿透行情在 loadData 关键路径上，优先于装饰性的指数/涨跌家数请求；
+        // 闸门自带代理/直连双通道、退避重试与 82.push2 备用域名，比此处单次请求更稳。
+        text = await fetchPush2Text(url, 1);
+    } else {
+        // 非东财 push2 的自定义源：保持代理 + 直连双通道
+        try {
+            if (typeof proxyFetchText === 'function') {
+                text = await proxyFetchText(url, {
+                    timeout: 5000,
+                    headers: { 'Referer': 'https://quote.eastmoney.com/', 'Accept': 'application/json, text/plain, */*' }
+                });
+            }
+        } catch (e) { text = null; }
+        if (!text) {
+            try {
+                const r = await fetch(url, { headers: { 'Referer': 'https://quote.eastmoney.com/' }, signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
+                if (r.ok) text = await r.text();
+            } catch (e) { /* ignore */ }
+        }
+    }
+    const resultMap = new Map();
+    if (!text) return null; // network failure or empty
+    try {
+        const payload = parseJsonApiPayload(text, profile.responseType);
+        const data = getValueByPath(payload, profile.dataPath);
+        if (!Array.isArray(data)) return null;
+        for (const item of data) {
+            const code = String(getValueByPath(item, profile.fields.code) || '').trim();
+            const price = parseFloat(getValueByPath(item, profile.fields.price)) || 0;
+            const rate = parseFloat(getValueByPath(item, profile.fields.rate)) || 0;
+            const name = String(getValueByPath(item, profile.fields.name) || '').trim();
+            if (code && price > 0) {
+                resultMap.set(code, { code, name, price, prevClose: 0, rate: round2(rate) });
+            }
+        }
+    } catch (e) {
+        console.warn(`[stock-quotes] ${profile.name} 解析失败:`, e.message);
+        return null;
+    }
+    return resultMap;
+}
+
+async function _fetchStockQuotesFromTencent(stocks, profile) {
+    const tencentCodes = stocks.map(s => {
+        const c = String(s.code).trim();
+        const prefix = /^[69]/.test(c) || /^5/.test(c) ? 'sh' : (/^[03]/.test(c) ? 'sz' : (/^[48]/.test(c) ? 'bj' : 'sh'));
+        return `${prefix}${c}`;
+    });
+    const url = profile.urlTemplate.replaceAll('{codes}', tencentCodes.join(','));
+    let text = null;
+    try {
+        const r = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
+        if (r.ok) {
+            const buffer = await r.arrayBuffer();
+            text = new TextDecoder('gbk').decode(buffer);
+        }
+    } catch (e) { text = null; }
+    if (!text) return null;
+
+    const resultMap = new Map();
+    text.split(';').forEach(line => {
+        if (!line.trim() || !line.includes('~')) return;
+        const parts = line.split('~');
+        if (parts.length < 33) return;
+        const match = parts[0].match(/v_([a-z0-9]+)=/);
+        if (!match) return;
+        const rawCode = match[1].replace(/^[a-z]+/, ''); // strip prefix
+        const name = String(parts[1] || '').trim();
+        const price = parseFloat(parts[3]) || 0;
+        const rate = parseFloat(parts[32]) || 0;
+        if (rawCode && price > 0) {
+            resultMap.set(rawCode, {
+                code: rawCode,
+                name,
+                price,
+                prevClose: parseFloat(parts[4]) || 0,
+                rate: round2(rate)
+            });
+        }
+    });
+    if (resultMap.size === 0) return null;
+    return resultMap;
+}
+
+async function fetchStockQuotesBatch(stocks) {
+    if (!Array.isArray(stocks) || stocks.length === 0) return new Map();
+    const profiles = typeof getEnabledStockApiProfiles === 'function' ? getEnabledStockApiProfiles() : [];
+    if (profiles.length === 0) return new Map();
+
+    const now = Date.now();
+    let sortedProfiles = [...profiles].sort((a, b) => {
+        const coolA = _stockSourceCooldowns.get(a.source) || 0;
+        const coolB = _stockSourceCooldowns.get(b.source) || 0;
+        return (coolA > now ? 1 : 0) - (coolB > now ? 1 : 0);
+    });
+    if (sortedProfiles.every(p => (_stockSourceCooldowns.get(p.source) || 0) > now)) {
+        // all cooling down, clear cooldowns and try again
+        _stockSourceCooldowns.clear();
+    }
+
+    for (const profile of sortedProfiles) {
+        if (PEN_DEBUG) console.log(`[stock-quotes] 尝试源: ${profile.name}`);
+        let resultMap = null;
+        if (profile.source === 'stock_tencent' || profile.responseType === 'tencent_stock') {
+            resultMap = await _fetchStockQuotesFromTencent(stocks, profile);
+        } else {
+            resultMap = await _fetchStockQuotesFromEastmoney(stocks, profile);
+        }
+
+        if (resultMap && resultMap.size > 0) {
+            _stockSourceCooldowns.delete(profile.source);
+            if (PEN_DEBUG) console.log(`[stock-quotes] 从 ${profile.name} 成功拉取 ${resultMap.size} 只股票行情`);
+            return resultMap;
+        } else {
+            console.warn(`[stock-quotes] 源 ${profile.name} 无效或失败，冷却 60s`);
+            _stockSourceCooldowns.set(profile.source, Date.now() + 60000);
+        }
+    }
+
+    console.warn('[stock-quotes] 所有可用股票行情源均失败（请检查网络或权限）');
+    return new Map();
+}
+
 // 源2: 东财基金详情页 pingzhongdata.js（fund.eastmoney.com 子域，环境已验证可用）。
 // 提取前十大重仓股代码（stockCodes）+ 股票总仓位（Data_fundSharesPositions 最新值），
 // 个股权重缺失时用「总仓位等权分摊到前十大」近似：方向正确、数值近似，优于空白。
@@ -676,60 +839,6 @@ async function tryFetchPingzhongdata(cleanCode) {
     }
 }
 
-async function fetchStockQuotesBatch(stocks) {
-    if (!Array.isArray(stocks) || stocks.length === 0) return new Map();
-    // 东财 push2 secid 前缀：沪市(6/9/5 开头)=1，深市(0/3)=0，北交所(4/8)=0
-    // 用 ulist.np 批量接口 + fltt=2（真实小数）。字段用标准映射：
-    //   f12=代码(字符串)  f14=名称  f2=最新价  f3=涨跌幅%
-    // 同时兼容 f57/f58/f43/f170 老字段（部分数据中心字段含义不同），优先取 f12。
-    const secids = stocks.map(s => {
-        const c = s.code;
-        const prefix = /^[69]/.test(c) || /^5/.test(c) ? '1' : '0';
-        return `${prefix}.${c}`;
-    });
-    const url = `https://push2.eastmoney.com/api/qt/ulist.np/get?secids=${encodeURIComponent(secids.join(','))}&fields=f12,f14,f2,f3&fltt=2`;
-
-    // 主路径：走 background FETCH_TEXT 代理（与 pingzhongdata 同源，已验证可用）
-    let text = null;
-    try {
-        text = await proxyFetchText(url, {
-            timeout: 5000,
-            headers: { 'Referer': 'https://quote.eastmoney.com/', 'Accept': 'application/json, text/plain, */*' }
-        });
-    } catch (e) { text = null; }
-    // 兜底：popup 直连（扩展环境常因 CORS 失败，仅作最后尝试）
-    if (!text) {
-        try {
-            const r = await fetch(url, { headers: { 'Referer': 'https://quote.eastmoney.com/' } });
-            if (r.ok) text = await r.text();
-        } catch (e) { /* ignore */ }
-    }
-
-    if (PEN_DEBUG) console.log(`[stock-quotes] 请求 ${stocks.length} 只, secids示例=${secids.slice(0, 3).join(',')}..., text长度=${text ? text.length : 0}`);
-    const resultMap = new Map();
-    if (!text) {
-        console.warn('[stock-quotes] push2 返回空（代理与直连均失败）—— 检查 host_permissions 与网络');
-        return resultMap;
-    }
-    try {
-        const j = JSON.parse(text);
-        const diff = (j && j.data && j.data.diff) || [];
-        if (PEN_DEBUG) console.log(`[stock-quotes] diff 长度=${diff.length}`);
-        for (const d of diff) {
-            const code = String(d.f12 != null ? d.f12 : d.f57 || '').trim();
-            const price = parseFloat(d.f2 != null ? d.f2 : d.f43) || 0;
-            const rate = parseFloat(d.f3 != null ? d.f3 : d.f170) || 0;
-            const name = String(d.f14 != null ? d.f14 : d.f58 || '').trim();
-            if (code && price > 0) {
-                resultMap.set(code, { code, name, price, prevClose: 0, rate: round2(rate) });
-            }
-        }
-        if (PEN_DEBUG) console.log(`[stock-quotes] 成功映射 ${resultMap.size} 只行情, 样本keys=${[...resultMap.keys()].slice(0, 5).join(',')}`);
-    } catch (e) {
-        console.warn('[stock-quotes] push2 解析失败:', e.message, '原始前200:', text.slice(0, 200));
-    }
-    return resultMap;
-}
 
 async function fetchPenetrationValuation(code, prevPrice, sharedQuotes) {
     const basePrevPrice = Number(prevPrice) || 0;

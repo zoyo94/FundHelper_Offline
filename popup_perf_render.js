@@ -393,6 +393,58 @@ function _renderSummary({ sumAmount, sumYesterdayProfit, sumTodayProfit, sumHold
     }
 }
 
+// 行级差量更新：数据未变的基金复用现有 <tr> 节点（仅移动、不重建），
+// 避免每次刷新销毁重建整个 tbody 造成的视觉闪烁与 17 单元格 × N 行的重建开销。
+// 指纹 = 行数据 + 区间缓存 + 置顶状态 + 列显隐配置 + 全屏态——任一变化才重建该行；
+// 列显隐/全屏切换会改变所有行指纹 → 整体重建（与原行为一致）；排序/过滤只移动节点。
+const _fundRowFingerprints = new Map(); // code -> fingerprint
+
+function _fingerprintFundRow(item) {
+    // 只剔除两个渲染层不消费、可能较大的数组（穿透明细 penetrationDetails、待确认单 pendingAdjustments），
+    // 其余字段整体序列化。刻意不手工列举"关键字段"：renderTable 有 12 个单元格渲染器依赖
+    // ~20 个字段，手挑漏掉任何一个都会让该行显示陈旧数字——在金融场景里，
+    // 数字不刷新比多花几毫秒严重得多。剔除后的序列化开销约 1ms/50 行，可忽略。
+    const { penetrationDetails, pendingAdjustments, ...rowData } = item;
+    return JSON.stringify([
+        rowData,
+        fundPerfCache[item.code] || null,
+        pinnedFunds.has(item.code),
+        columnVisibility,
+        document.body.classList.contains('is-fullscreen')
+    ]);
+}
+
+// 从 renderTable 提取的单行构建逻辑（差量更新时仅对新建/数据变化的行调用）
+function _buildFundRow(item, index, todayStr, latestTradingDayStr) {
+    const tr = document.createElement('tr');
+    tr.dataset.code = item.code;
+    tr.dataset.idx = index;   // 供 tableBody 事件委托计算 Shift 范围选
+    if (pinnedFunds.has(item.code)) tr.classList.add('pinned-row');
+    _td(tr, String(index + 1), 'index');
+    _td(tr, item.code, 'code');
+    _renderNameCell(tr, item);
+    _renderAmountCell(tr, item);
+    _renderSharesCell(tr, item);
+    _renderNavCell(tr, item, todayStr);
+    // 持有天数/区间涨跌幅
+    PERF_FIELDS.forEach(field => {
+        const tdPerf = document.createElement('td');
+        tdPerf.className = 'col-hide perf-cell';
+        tdPerf.dataset.col = field;
+        tdPerf.dataset.perf = field;
+        setColumnVisibilityClass(tdPerf, field);
+        tdPerf.textContent = '—';
+        tr.appendChild(tdPerf);
+    });
+    renderFundPerfCells(tr, item.code);
+    _renderYesterdayCell(tr, item, latestTradingDayStr);
+    _renderTodayCell(tr, item, todayStr);
+    _renderPositionProfitCell(tr, item);
+    _renderHoldProfitCell(tr, item);
+    _renderActionsCell(tr, item);
+    return tr;
+}
+
 function renderTable() {
     let displayData = allFundsData.filter(item =>
         groupFilterController.matches(item) && fundSearchController.matches(item)
@@ -436,39 +488,10 @@ function renderTable() {
         { sumAmount: 0, sumYesterdayProfit: 0, sumTodayProfit: 0, sumHoldProfit: 0, sumPositionProfit: 0 }
     );
 
-    const fragment = document.createDocumentFragment();
-    displayData.forEach((item, index) => {
-        const tr = document.createElement('tr');
-        tr.dataset.code = item.code;
-        tr.dataset.idx = index;   // 供 tableBody 事件委托计算 Shift 范围选
-        if (pinnedFunds.has(item.code)) tr.classList.add('pinned-row');
-        _td(tr, String(index + 1), 'index');
-        _td(tr, item.code, 'code');
-        _renderNameCell(tr, item);
-        _renderAmountCell(tr, item);
-        _renderSharesCell(tr, item);
-        _renderNavCell(tr, item, todayStr);
-        // 持有天数/区间涨跌幅
-        PERF_FIELDS.forEach(field => {
-            const tdPerf = document.createElement('td');
-            tdPerf.className = 'col-hide perf-cell';
-            tdPerf.dataset.col = field;
-            tdPerf.dataset.perf = field;
-            setColumnVisibilityClass(tdPerf, field);
-            tdPerf.textContent = '—';
-            tr.appendChild(tdPerf);
-        });
-        renderFundPerfCells(tr, item.code);
-        _renderYesterdayCell(tr, item, latestTradingDayStr);
-        _renderTodayCell(tr, item, todayStr);
-        _renderPositionProfitCell(tr, item);
-        _renderHoldProfitCell(tr, item);
-        _renderActionsCell(tr, item);
-        fragment.appendChild(tr);
-    });
-    // 用户正在编辑可编辑单元格（如累计收益）时跳过 tbody 重建：
-    // 定时刷新若此时 replaceChildren 会把焦点和未保存输入冲掉；
-    // 汇总行照常更新，失焦保存后 debouncedSave 会再次触发 renderTable 完成重建
+    // 用户正在编辑可编辑单元格（如累计收益）时跳过行同步：
+    // 定时刷新若此时移动/替换行节点会把焦点和未保存输入冲掉；
+    // 汇总行照常更新，失焦保存后 debouncedSave 会再次触发 renderTable 完成同步。
+    // 注意：行复用会移动已有节点，判断必须先于任何 DOM 操作。
     const activeEl = document.activeElement;
     const isEditingCell = Boolean(
         activeEl
@@ -477,6 +500,33 @@ function renderTable() {
         && elements.tableBody.contains(activeEl)
     );
     if (!isEditingCell) {
+        const existingRows = new Map(
+            [...elements.tableBody.children].map(tr => [tr.dataset.code, tr])
+        );
+        const fragment = document.createDocumentFragment();
+        displayData.forEach((item, index) => {
+            const fingerprint = _fingerprintFundRow(item);
+            let tr = existingRows.get(item.code);
+            if (tr && _fundRowFingerprints.get(item.code) === fingerprint) {
+                // 数据未变：复用行节点（appendChild 为移动而非重建），仅更新行号与 Shift 索引
+                existingRows.delete(item.code);
+                tr.dataset.idx = index;
+                if (tr.cells[0]) tr.cells[0].textContent = String(index + 1);
+            } else {
+                tr = _buildFundRow(item, index, todayStr, latestTradingDayStr);
+            }
+            _fundRowFingerprints.set(item.code, fingerprint);
+            fragment.appendChild(tr);
+        });
+        // 被过滤/已删除的基金：移除残留行
+        existingRows.forEach(tr => tr.remove());
+        // 清理已不在组合里的基金指纹，防止 Map 泄漏
+        if (_fundRowFingerprints.size > displayData.length) {
+            const portfolioCodes = new Set(allFundsData.map(item => item.code));
+            for (const code of [..._fundRowFingerprints.keys()]) {
+                if (!portfolioCodes.has(code)) _fundRowFingerprints.delete(code);
+            }
+        }
         elements.tableBody.replaceChildren(fragment);
     }
 

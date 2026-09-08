@@ -95,39 +95,9 @@ const safeArray = (value, defaultValue = []) => {
 const nonNegativeFloat = (value) => Math.max(0, safeFloat(value, 0));
 
 // ==================== 全局状态 ====================
-let allFundsData = []; // 所有基金的当前行情数据（每次 loadData 完整刷新）
-let sortField = 'todayProfit'; // 默认排序字段
-let sortDirection = -1;        // 1:升序, -1:降序
-let selectedCodes = new Set();
-let lastClickedIndex = -1; // 上次点击行索引，用于 Shift 范围选
-let fundHistoryData = {}; // 存储基金历史估值数据 { code: { date: 'YYYY-MM-DD', points: [{ time, rate }] } }
-let lastUpdateTime = ''; // 最后一次 loadData 完成的时间，用于选中状态切换后恢复显示
-let currentFundDetailCode = '';
-let currentFundDetailSessionId = 0;
-let profitCalendarViewMonth = '';
-let profitCalendarSelectedDate = '';
-let profitCalendarViewMode = 'day';
-let profitCalendarViewYear = '';
-let profitCalendarSelectedMonth = '';
-let profitCalendarSelectedYear = '';
-let modalDismissHandler = null;
-let marketBreadthData = null;
-let indexSettings = null;   // 用户选择的指数列表
-let indexQuotesData = [];   // 最新指数行情 [{ code, market, name, price, changeRate }]
-let autoRefreshIntervalMs = CONFIG.AUTO_REFRESH_INTERVAL;
-let nextAutoRefreshAt = 0;
-let refreshCountdownTimer = null;
-let unifiedRefreshPromise = null;
-let lastLiveApiRequestDate = '';
-let lastLiveApiFinalRequestDate = '';
-let isManuallyPaused = false;  // 手动暂停自动刷新标记
-// 持有天数 & 区间涨跌幅展示缓存（用于表格渲染）
-let fundPerfCache = {};
-// 区间涨跌幅日级持久化缓存（跨会话硬保留）
-let fundPerfDailyCacheByCode = {};
-let fundPerfDailyCacheLoaded = false;
-// 置顶基金代码集合（持久化到 storage）
-let pinnedFunds = new Set();
+// ==================== 全局应用状态 ====================
+// 原 30+ 个散落顶层 let 已全部收敛到 AppState（定义在 TABLE_COLUMNS 之后，
+// 因为 columnVisibility 的初始值依赖它）。此处保留注释作为位置标记。
 
 const TABLE_COLUMNS = [
     { id: 'index', label: '序号', defaultVisible: true, required: true },
@@ -154,10 +124,59 @@ const TABLE_COLUMN_MAP = TABLE_COLUMNS.reduce((acc, col) => {
     return acc;
 }, {});
 const PERF_FIELDS = ['holdDays', 'w1', 'm1', 'm3', 'm6', 'y1', 'ly'];
-let columnVisibility = TABLE_COLUMNS.reduce((acc, col) => {
-    acc[col.id] = col.defaultVisible !== false;
-    return acc;
-}, {});
+
+// ==================== 全局应用状态（单一数据源） ====================
+// 原 30+ 个散落顶层 let 收敛为 AppState 命名空间。
+// 通过全局访问器桥接：各模块既有裸名读写（allFundsData = ...、selectedCodes.add(...)）
+// 全部透明转发到 AppState，25+ 个模块无需任何改动；新代码请直接访问 AppState.xxx。
+const AppState = {
+    allFundsData: [],           // 所有基金的当前行情数据（每次 loadData 完整刷新）
+    sortField: 'todayProfit',   // 默认排序字段
+    sortDirection: -1,          // 1:升序, -1:降序
+    selectedCodes: new Set(),
+    lastClickedIndex: -1,       // 上次点击行索引，用于 Shift 范围选
+    fundHistoryData: {},        // 基金历史估值数据 { code: { date: 'YYYY-MM-DD', points: [{ time, rate }] } }
+    lastUpdateTime: '',         // 最后一次 loadData 完成的时间，用于选中状态切换后恢复显示
+    currentFundDetailCode: '',
+    currentFundDetailSessionId: 0,
+    profitCalendarViewMonth: '',
+    profitCalendarSelectedDate: '',
+    profitCalendarViewMode: 'day',
+    profitCalendarViewYear: '',
+    profitCalendarSelectedMonth: '',
+    profitCalendarSelectedYear: '',
+    modalDismissHandler: null,
+    marketBreadthData: null,
+    indexSettings: null,        // 用户选择的指数列表
+    indexQuotesData: [],        // 最新指数行情 [{ code, market, name, price, changeRate }]
+    autoRefreshIntervalMs: CONFIG.AUTO_REFRESH_INTERVAL,
+    nextAutoRefreshAt: 0,
+    refreshCountdownTimer: null,
+    unifiedRefreshPromise: null,
+    lastLiveApiRequestDate: '',
+    lastLiveApiFinalRequestDate: '',
+    isManuallyPaused: false,    // 手动暂停自动刷新标记
+    fundPerfCache: {},          // 持有天数 & 区间涨跌幅展示缓存（用于表格渲染）
+    fundPerfDailyCacheByCode: {}, // 区间涨跌幅日级持久化缓存（跨会话硬保留）
+    fundPerfDailyCacheLoaded: false,
+    pinnedFunds: new Set(),     // 置顶基金代码集合（持久化到 storage）
+    columnVisibility: TABLE_COLUMNS.reduce((acc, col) => {
+        acc[col.id] = col.defaultVisible !== false;
+        return acc;
+    }, {}),
+    elements: {},               // DOM 元素引用
+    fundDetailFitPage: false,
+    fundDetailResizeObserver: null,
+    fundDetailLayoutFrameId: null,
+    fundDetailChartRenderState: { intraday: null }
+};
+Object.keys(AppState).forEach(key => {
+    Object.defineProperty(globalThis, key, {
+        get: () => AppState[key],
+        set: value => { AppState[key] = value; },
+        configurable: true
+    });
+});
 
 function clearSelection() {
     selectedCodes.clear();
@@ -467,42 +486,13 @@ function debugDividendTrace(code, stage, payload = {}) {
 }
 
 // ==================== DOM 元素引用 ====================
-let elements = {};
+// elements 已收敛到 AppState.elements（经全局访问器桥接，elements.xxx 用法不变）
 
 // ==================== 工具函数 ====================
 
 /**
- * 统一的 storage 访问层（Promise 化，带错误处理）
- */
-const storage = {
-    async get(keys) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(keys, (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(new Error(`Storage get error: ${chrome.runtime.lastError.message}`));
-                } else {
-                    resolve(result);
-                }
-            });
-        });
-    },
-    async set(data) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.set(data, () => {
-                if (chrome.runtime.lastError) {
-                    reject(new Error(`Storage set error: ${chrome.runtime.lastError.message}`));
-                } else {
-                    resolve();
-                }
-            });
-        });
-    }
-};
-
-// 历史数据域函数已拆分到 popup_history.js
-
-/**
- * Storage 辅助对象（统一封装 storage 操作）
+ * 统一的 storage 访问层（Promise 化 chrome.storage.local，带错误处理）。
+ * get/set 为单键便捷封装，getAll/setAll 直达 chrome API。
  */
 const storageHelper = {
     /**
@@ -528,7 +518,15 @@ const storageHelper = {
      */
     async getAll(keys) {
         try {
-            const result = await storage.get(keys);
+            const result = await new Promise((resolve, reject) => {
+                chrome.storage.local.get(keys, (value) => {
+                    if (chrome.runtime.lastError) {
+                        reject(new Error(`Storage get error: ${chrome.runtime.lastError.message}`));
+                    } else {
+                        resolve(value);
+                    }
+                });
+            });
             return result || {};
         } catch (error) {
             console.warn('[StorageHelper] 批量获取失败:', error);
@@ -557,7 +555,15 @@ const storageHelper = {
      */
     async setAll(data) {
         try {
-            await storage.set(data);
+            await new Promise((resolve, reject) => {
+                chrome.storage.local.set(data, () => {
+                    if (chrome.runtime.lastError) {
+                        reject(new Error(`Storage set error: ${chrome.runtime.lastError.message}`));
+                    } else {
+                        resolve();
+                    }
+                });
+            });
         } catch (error) {
             console.error('[StorageHelper] 批量设置失败:', error);
         }
@@ -706,12 +712,8 @@ const fundSearchController = (() => {
     };
 })();
 
-let fundDetailFitPage = false;
-let fundDetailResizeObserver = null;
-let fundDetailLayoutFrameId = null;
-let fundDetailChartRenderState = {
-    intraday: null
-};
+// fundDetailFitPage / fundDetailResizeObserver / fundDetailLayoutFrameId /
+// fundDetailChartRenderState 已收敛到 AppState（经全局访问器桥接，读写用法不变）
 
 function resetFundDetailChartRenderState() {
     fundDetailChartRenderState = {

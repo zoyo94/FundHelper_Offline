@@ -191,7 +191,7 @@ FundHelper 是一款纯本地存储 (Local-First)、隐私优先的 Chrome 资�
 
 ```
 FundHelper_Offline/
-├── manifest.json                    # 扩展配置文件 (v3.6.0)
+├── manifest.json                    # 扩展配置文件 (v3.7.0)
 ├── popup.html                       # 主界面 HTML (311 行，纯结构)
 │
 ├── popup_base.css                   # 基础样式：重置 / Header / 指数面板 / 统计栏 / 筛选栏
@@ -439,7 +439,7 @@ function round2(num) {
 {
   "manifest_version": 3,
   "name": "资产收益助手",
-  "version": "3.6.0",
+  "version": "3.7.0",
   "permissions": [
     "storage",
     "declarativeNetRequestWithHostAccess"
@@ -522,6 +522,23 @@ A: 目前支持基金（6位数字代码）和期货（字母+数字代码）。
 ---
 
 ## 📝 更新日志
+
+### v3.7.0 (2026-09-08) - push2 全局串行闸门 + 股票行情双源 + AppState 状态收敛
+
+#### push2 全局串行闸门
+- 🔧 **东财 push2 频控治理**：实测 push2 对请求频率极其敏感（间隔 1 秒连发即被断连，`ERR_EMPTY_RESPONSE`），启动时涨跌家数/涨跌停/指数行情/穿透股票行情曾并发打出 3~4 个请求必然触发断连。新增统一闸门：全局同时只有一个 push2 请求在飞，请求间强制最小间隔 1800ms；高优先级插队（穿透行情 priority=1 优先于装饰性指标）；失败退避重试 + `82.push2` 备用域名；连续失败会话级降级提示（不刷屏）。
+- 🐛 **穿透股票行情接入闸门（本次复查修复）**：闸门初版实现遗漏了最关键的调用方——`_fetchStockQuotesFromEastmoney` 仍直连请求、绕过串行闸门，与指数/涨跌家数并发仍可能复现断连。现已接入（priority=1），非 push2 的自定义源保持原双通道。
+- 🐛 **重试间隔对齐冷却窗口（本次复查修复）**：闸门内重试间隔 800ms 小于 1800ms 最小间隔，快速失败后的重试仍会撞进东财冷却窗口，已对齐为 1800ms。
+
+#### 股票行情双源（stock 数据源分类）
+- ✨ 新增 `stock` 数据源分类（数据源管理中可停用/改地址/测试）：东财 push2（主）+ 腾讯 `qt.gtimg.cn`（备，GBK 解码），单源失败自动冷却 60s 切换备源，全部冷却时重置重试。腾讯字段映射：名称=`~[1]`、现价=`~[3]`、昨收=`~[4]`、涨跌幅=`~[32]`，代码去 `sh/sz/bj` 前缀与持仓代码对齐。
+- 🧹 删除死代码 `fetchStockPrices`（旧腾讯单源实现，已被 settings 驱动版完全替代，无调用点）。
+
+#### 架构与重构
+- 🏗️ **AppState 全局状态收敛**：popup.js 中 30+ 个散落顶层 `let` 收敛为单一 `AppState` 命名空间，经 `defineProperty(globalThis)` 访问器桥接——各模块既有裸名读写（`allFundsData = ...`、`selectedCodes.add(...)`）透明转发，25+ 个模块零改动。
+- 🏗️ **`_loadDataImpl` 拆分为 8 个阶段函数**（init → fetchLive → penetration → dividends/settlement → processFunds → intraday → persist → render），通过 ctx 对象共享状态；保持原单 try/catch 整体错误兜底语义，逐字段核对与原实现等价。
+- 🔧 background.js：`FETCH_JSON`/`FETCH_TEXT` 合并为 `proxyFetchAndRespond` 共用实现（唯一差异是 json/text 解析）；push2 断连静默处理避免与闸门降级提示双份刷屏。
+- 🗑️ 清理调试残留：`[diag][item-build]` / `[diag][render-nav]` 探针移除，穿透诊断日志统一由 `PEN_DEBUG` 开关控制。
 
 ### v3.6.0 (2026-09-07) - 穿透稳定性治理 + 请求限流优化 + 节假日历年份修复
 

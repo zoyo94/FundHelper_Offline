@@ -240,6 +240,7 @@ async function loadHoldings(code, isStale = createFundDetailStaleGuard(code)) {
                 const priceInfo = stockQuotes.get(stock.code) || { rate: 0 };
                 const changeClass = priceInfo.rate >= 0 ? 'up' : 'down';
                 const changeSign = priceInfo.rate >= 0 ? '+' : '';
+                if (!stock.name && priceInfo.name) stock.name = priceInfo.name;
                 const name = stock.name || stock.code;
                 const percent = stock.weight ? stock.weight.toFixed(2) : '--';
                 const contrib = ((priceInfo.rate * stock.weight) / 100).toFixed(4);
